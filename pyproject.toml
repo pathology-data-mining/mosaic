@@ -22,7 +22,7 @@ paladin_inference = "mosaic.inference.paladin:main"
 mosaic = "mosaic.gradio_app:main"
 
 [dependency-groups]
-dev = ["black>=25.1.0", "pylint>=3.3.6"]
+dev = ["black>=25.1.0", "pylint>=3.3.6", "pytest>=8.3.0", "pytest-cov>=6.0.0", "pytest-mock>=3.14.0"]
 
 [tool.pylint."messages control"]
 disable = [
@@ -34,3 +34,10 @@ disable = [
 [tool.uv.sources]
 paladin = { git = "ssh://git@github.com/pathology-data-mining/paladin.git", rev = "dev" }
 mussel = { git = "https://github.com/pathology-data-mining/Mussel.git", rev = "ray-dev" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=src/mosaic --cov-report=term-missing"
