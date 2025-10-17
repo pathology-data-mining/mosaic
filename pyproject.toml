@@ -1,0 +1,36 @@
+[build-system]
+requires = ["uv_build>=0.8.1,<0.9.0"]
+build-backend = "uv_build"
+
+[project]
+name = "mosaic"
+version = "0.1.0"
+description = "Mussel-Aeon-Paladin workflow for digital pathology"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "gradio>=5.49.0",
+  "loguru>=0.7.3",
+  "memory-profiler>=0.61.0",
+  "mussel[torch-gpu]",
+  "paladin",
+]
+
+[project.scripts]
+aeon_inference = "mosaic.inference.aeon:main"
+paladin_inference = "mosaic.inference.paladin:main"
+mosaic = "mosaic.gradio_app:main"
+
+[dependency-groups]
+dev = ["black>=25.1.0", "pylint>=3.3.6"]
+
+[tool.pylint."messages control"]
+disable = [
+  "logging-fstring-interpolation",
+  "broad-exception-caught",
+  "unspecified-encoding",
+]
+
+[tool.uv.sources]
+paladin = { git = "ssh://git@github.com/pathology-data-mining/paladin.git", rev = "dev" }
+mussel = { git = "https://github.com/pathology-data-mining/Mussel.git", rev = "ray-dev" }

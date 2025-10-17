@@ -1,0 +1,14 @@
+<svg width="256" height="256" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Slide background -->
+  <rect x="16" y="24" width="96" height="80" rx="12" fill="#f4f4f4" stroke="#ccc" stroke-width="3"/>
+  <!-- Mosaic cancer cells (H&E colored, randomly distributed) -->
+  <rect x="32" y="36" width="18" height="18" rx="5" fill="#7253ba"/> <!-- Hematoxylin -->
+  <rect x="74" y="42" width="16" height="16" rx="5" fill="#e9b2c8"/> <!-- Eosin -->
+  <rect x="56" y="50" width="14" height="14" rx="5" fill="#7e6eb8"/> <!-- Hematoxylin -->
+  <rect x="88" y="68" width="18" height="18" rx="5" fill="#edc2d8"/> <!-- Eosin -->
+  <rect x="38" y="70" width="18" height="18" rx="5" fill="#6e7eb8"/> <!-- Hematoxylin -->
+  <rect x="63" y="65" width="16" height="16" rx="5" fill="#f5d0e3"/> <!-- Eosin -->
+  <rect x="93" y="85" width="14" height="14" rx="5" fill="#7b5fc7"/> <!-- Hematoxylin -->
+  <rect x="27" y="85" width="16" height="16" rx="5" fill="#f2b8d8"/> <!-- Eosin -->
+  <rect x="56" y="86" width="18" height="18" rx="5" fill="#6855a5"/> <!-- Hematoxylin, moved up -->
+</svg>

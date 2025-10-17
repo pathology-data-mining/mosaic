@@ -1,0 +1,14 @@
+**/.DS_Store
+__pycache__/
+*.log
+.venv*/
+venv*/
+*.pyc
+outputs/
+*.env
+tmp*
+*~
+*.swp
+.idea/
+.vscode/
+data/

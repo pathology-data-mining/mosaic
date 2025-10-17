@@ -1,0 +1,173 @@
+import pickle  # nosec
+import sys
+from argparse import ArgumentParser
+from pathlib import Path
+
+import pandas as pd
+import torch
+from torch.utils.data import DataLoader
+
+from mosaic.inference.data import (
+    SiteType,
+    TileFeatureTensorDataset,
+    INT_TO_CANCER_TYPE_MAP,
+    CANCER_TYPE_TO_INT_MAP,
+)
+
+from loguru import logger
+
+cancer_types_to_drop = [
+    "UDMN",
+    "ADNOS",
+    "CUP",
+    "CUPNOS",
+    "BRCNOS",
+    "GNOS",
+    "SCCNOS",
+    "PDC",
+    "NSCLC",
+    "BRCA",
+    "SARCNOS",
+    "NETNOS",
+    "MEL",
+    "RCC",
+    "BRCANOS",
+    "COADREAD",
+    "MUP",
+    "NECNOS",
+    "UCEC",
+    "NOT",
+]
+col_indices_to_drop = [CANCER_TYPE_TO_INT_MAP[x] for x in cancer_types_to_drop]
+
+
+BATCH_SIZE = 8
+NUM_WORKERS = 8
+
+
+def run(
+    features, model_path, metastatic=False, batch_size=8, num_workers=8, use_cpu=False
+):
+    device = torch.device(
+        "cuda" if not use_cpu and torch.cuda.is_available() else "cpu"
+    )
+
+    with open(model_path, "rb") as f:
+        model = pickle.load(f)  # nosec
+    model.to(device)
+    model.eval()
+
+    site_type = SiteType.METASTASIS if metastatic else SiteType.PRIMARY
+
+    # For UI, InferenceDataset will just be a single slide.  Sample id is not relevant.
+    dataset = TileFeatureTensorDataset(
+        site_type=site_type,
+        tile_features=features,
+        n_max_tiles=20000,
+    )
+    dataloader = DataLoader(
+        dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+    )
+
+    results = []
+    batch = next(iter(dataloader))
+    with torch.no_grad():
+        batch["tile_tensor"] = batch["tile_tensor"].to(device)
+        y = model(batch)
+        y["logits"][:, col_indices_to_drop] = -1e6
+
+        batch_size = y["logits"].shape[0]
+        assert batch_size == 1
+
+        softmax = torch.nn.functional.softmax(y["logits"][0], dim=0)
+        argmax = torch.argmax(softmax, dim=0)
+        class_assignment = INT_TO_CANCER_TYPE_MAP[argmax.item()]
+        max_confidence = softmax[argmax].item()
+        mean_confidence = torch.mean(softmax).item()
+
+        logger.info(
+            f"class {class_assignment} :  confidence {max_confidence:8.5f} "
+            f"(mean {mean_confidence:8.5f})"
+        )
+
+        part_embedding = y["whole_part_representation"][0].cpu()
+
+        for cancer_subtype, j in sorted(CANCER_TYPE_TO_INT_MAP.items()):
+            confidence = softmax[j].item()
+            results.append((cancer_subtype, confidence))
+        results.sort(key=lambda row: row[1], reverse=True)
+
+    results_df = pd.DataFrame(results, columns=["Cancer Subtype", "Confidence"])
+
+    return results_df, part_embedding
+
+
+def parse_args():
+    parser = ArgumentParser(
+        description="Run Aeon inference on a specified set of slides"
+    )
+    parser.add_argument(
+        "-i",
+        "--features-path",
+        required=True,
+        help="Pathname to a .pt file with optimus tile features for this slide",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-prediction-path",
+        help="The filename for the Aeon predictions file (CSV)",
+        required=True,
+    )
+    parser.add_argument(
+        "--output-embedding-path",
+        help="The filename for the whole-part representation of the slide (.pt)",
+    )
+    parser.add_argument(
+        "--model-path",
+        type=str,
+        help="Pathname to the pickle file for an Aeon model",
+        required=True,
+    )
+    parser.add_argument(
+        "--metastatic", action="store_true", help="Tissue is from a metastatic site"
+    )
+    parser.add_argument("--batch-size", type=int, default=BATCH_SIZE, help="Batch size")
+    parser.add_argument(
+        "--num-workers", type=int, default=NUM_WORKERS, help="Number of workers"
+    )
+    parser.add_argument("--use-cpu", action="store_true", help="Use CPU")
+    opt = parser.parse_args()
+
+    return opt
+
+
+def main():
+    opt = parse_args()
+
+    output_path = opt.output_prediction_path
+    logger.info(f"output_path: '{output_path}'")
+
+    embedding_path = opt.output_embedding_path
+    logger.info(f"part_embedding_path: '{embedding_path}'")
+
+    features = torch.load(opt.features_path)
+
+    results_df, part_embedding = run(
+        features=features,
+        model_path=opt.model_path,
+        metastatic=opt.metastatic,
+        batch_size=opt.batch_size,
+        num_workers=opt.num_workers,
+        use_cpu=opt.use_cpu,
+    )
+
+    results_df.to_csv(output_path, index=False)
+    logger.info(f"Wrote {output_path}")
+
+    if embedding_path:
+        torch.save(part_embedding, embedding_path)
+        logger.info(f"Wrote {embedding_path}")
+
+
+if __name__ == "__main__":
+    main()
