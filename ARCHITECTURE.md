@@ -85,10 +85,10 @@ gradio_app.main()
 
 ## File Size Comparison
 
-| File | Original | Refactored | Change |
-|------|----------|------------|--------|
-| `gradio_app.py` | 843 lines | 230 lines | -73% |
-| UI Components | - | 474 lines | +474 |
-| Analysis Logic | - | 200 lines | +200 |
+File | Original | Refactored | Change
+-----|----------|------------|--------
+`gradio_app.py` | 843 lines | 230 lines | -73%
+UI Components | - | 474 lines | +474
+Analysis Logic | - | 200 lines | +200
 
 The refactoring distributed the original monolithic file into focused, maintainable modules while maintaining all functionality.
