@@ -157,6 +157,7 @@ class TestLogitsToPointEstimates:
     def test_logits_to_point_estimates_shape(self):
         """Test that output shape is correct."""
         # logits shape: (batch_size, 2 * n_tasks)
+        torch.manual_seed(42)
         batch_size = 4
         n_tasks = 5
         logits = torch.rand(batch_size, 2 * n_tasks)
@@ -185,6 +186,7 @@ class TestLogitsToPointEstimates:
 
     def test_logits_to_point_estimates_multiple_batches(self):
         """Test with multiple batches."""
+        torch.manual_seed(42)
         logits = torch.rand(10, 8)  # 10 batches, 4 tasks
         result = logits_to_point_estimates(logits)
         assert result.shape == (10, 4)

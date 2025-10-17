@@ -63,16 +63,19 @@ class TestTileFeatureTensorDataset:
     @pytest.fixture
     def sample_features(self):
         """Create sample features for testing."""
+        np.random.seed(42)
         return np.random.rand(100, 768).astype(np.float32)
 
     @pytest.fixture
     def large_features(self):
         """Create large sample features for testing padding/truncation."""
+        np.random.seed(42)
         return np.random.rand(25000, 768).astype(np.float32)
 
     @pytest.fixture
     def small_features(self):
         """Create small sample features for testing padding."""
+        np.random.seed(42)
         return np.random.rand(50, 768).astype(np.float32)
 
     def test_dataset_initialization(self, sample_features):
@@ -157,6 +160,7 @@ class TestTileFeatureTensorDataset:
 
     def test_features_exact_size(self):
         """Test that features of exactly n_max_tiles are not modified."""
+        np.random.seed(42)
         n_max_tiles = 100
         features = np.random.rand(n_max_tiles, 768).astype(np.float32)
         dataset = TileFeatureTensorDataset(
@@ -178,6 +182,7 @@ class TestTileFeatureTensorDataset:
 
     def test_different_feature_dimensions(self):
         """Test dataset with different feature dimensions."""
+        np.random.seed(42)
         for dim in [256, 512, 768, 1024]:
             features = np.random.rand(100, dim).astype(np.float32)
             dataset = TileFeatureTensorDataset(

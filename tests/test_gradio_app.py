@@ -177,10 +177,10 @@ class TestGetOncotreeCodeName:
         """Test that invalid code returns 'Unknown'."""
         from mosaic.gradio_app import get_oncotree_code_name, oncotree_code_map
 
-        # Mock the requests.get call to return 404
+        # Mock the requests.get call to return empty response (no matching codes)
         mock_response = mocker.Mock()
-        mock_response.status_code = 404
-        mock_response.json.return_value = []
+        mock_response.status_code = 200
+        mock_response.json.return_value = []  # Empty list means no matching codes found
         mocker.patch("requests.get", return_value=mock_response)
 
         # Clear cache and use an invalid code
