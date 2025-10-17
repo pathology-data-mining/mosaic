@@ -12,3 +12,6 @@ tmp*
 .idea/
 .vscode/
 data/
+.pytest_cache/
+.coverage
+htmlcov/
