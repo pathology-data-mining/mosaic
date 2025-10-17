@@ -1,4 +1,4 @@
-"""Unit tests for mosaic.gradio_app module."""
+"""Unit tests for mosaic UI utility functions."""
 
 import tempfile
 from pathlib import Path
@@ -6,11 +6,14 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from mosaic.gradio_app import (
+from mosaic.ui.utils import (
     IHC_SUBTYPES,
     SETTINGS_COLUMNS,
     load_settings,
     validate_settings,
+    export_to_csv,
+    get_oncotree_code_name,
+    oncotree_code_map,
 )
 
 
@@ -54,6 +57,21 @@ class TestConstants:
 
 class TestLoadSettings:
     """Test load_settings function."""
+
+    @pytest.fixture
+    def sample_cancer_subtype_maps(self):
+        """Create sample cancer subtype maps for testing."""
+        cancer_subtypes = ["LUAD", "BRCA", "COAD"]
+        cancer_subtype_name_map = {
+            "Lung Adenocarcinoma (LUAD)": "LUAD",
+            "Breast Invasive Carcinoma (BRCA)": "BRCA",
+            "Colon Adenocarcinoma (COAD)": "COAD",
+            "Unknown": "UNK",
+        }
+        reversed_cancer_subtype_name_map = {
+            value: key for key, value in cancer_subtype_name_map.items()
+        }
+        return cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map
 
     @pytest.fixture
     def temp_settings_csv(self):
@@ -135,8 +153,6 @@ class TestGetOncotreeCodeName:
 
     def test_oncotree_code_name_caching(self, mocker):
         """Test that oncotree code names are cached."""
-        from mosaic.gradio_app import get_oncotree_code_name, oncotree_code_map
-
         # Mock the requests.get call
         mock_response = mocker.Mock()
         mock_response.status_code = 200
@@ -159,8 +175,6 @@ class TestGetOncotreeCodeName:
 
     def test_oncotree_code_name_returns_string(self, mocker):
         """Test that function returns a string."""
-        from mosaic.gradio_app import get_oncotree_code_name, oncotree_code_map
-
         # Mock the requests.get call
         mock_response = mocker.Mock()
         mock_response.status_code = 200
@@ -175,8 +189,6 @@ class TestGetOncotreeCodeName:
 
     def test_oncotree_invalid_code_returns_unknown(self, mocker):
         """Test that invalid code returns 'Unknown'."""
-        from mosaic.gradio_app import get_oncotree_code_name, oncotree_code_map
-
         # Mock the requests.get call to return empty response (no matching codes)
         mock_response = mocker.Mock()
         mock_response.status_code = 200
@@ -194,8 +206,6 @@ class TestExportToCsv:
 
     def test_export_to_csv_returns_path(self):
         """Test that export_to_csv returns a file path."""
-        from mosaic.gradio_app import export_to_csv
-
         df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
         result = export_to_csv(df)
         assert isinstance(result, str)
@@ -205,8 +215,6 @@ class TestExportToCsv:
 
     def test_export_to_csv_creates_file(self):
         """Test that export_to_csv creates a CSV file."""
-        from mosaic.gradio_app import export_to_csv
-
         df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
         result = export_to_csv(df)
         assert Path(result).exists()
@@ -215,7 +223,6 @@ class TestExportToCsv:
 
     def test_export_to_csv_with_empty_dataframe_raises_error(self):
         """Test that exporting empty DataFrame raises error."""
-        from mosaic.gradio_app import export_to_csv
         import gradio as gr
 
         df = pd.DataFrame()
@@ -224,7 +231,6 @@ class TestExportToCsv:
 
     def test_export_to_csv_with_none_raises_error(self):
         """Test that exporting None raises error."""
-        from mosaic.gradio_app import export_to_csv
         import gradio as gr
 
         with pytest.raises(gr.Error):
