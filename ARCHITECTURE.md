@@ -1,6 +1,16 @@
 
 # Mosaic Architecture
 
+This document describes the internal architecture and module organization of the Mosaic application.
+
+## Overview
+
+Mosaic is a deep learning pipeline for analyzing H&E whole slide images (WSIs) to predict:
+1. **Cancer Subtypes** using the Aeon model
+2. **Biomarkers** using the Paladin model
+
+The application is organized into several focused modules with clear separation of concerns.
+
 ## Module Structure
 
 The Mosaic application has been refactored for better readability and maintainability. The codebase is now organized into the following modules:
@@ -93,4 +103,66 @@ UI Components | - | 474 lines | +474
 Analysis Logic | - | 200 lines | +200
 
 The refactoring distributed the original monolithic file into focused, maintainable modules while maintaining all functionality.
+
+## Key Dependencies
+
+### External Libraries
+
+- **Gradio**: Web interface framework for creating the UI
+- **PyTorch**: Deep learning framework for model inference
+- **Pandas**: Data manipulation and CSV handling
+- **Mussel**: Pathology-specific utilities for:
+  - Tissue segmentation
+  - Feature extraction (CTransPath, Optimus)
+  - Marker classification
+- **Paladin**: Biomarker prediction models
+- **HuggingFace Hub**: Model downloading and management
+- **Loguru**: Logging with enhanced features
+
+### Model Components
+
+1. **CTransPath**: Pre-trained vision transformer for histopathology feature extraction
+2. **Optimus**: Foundation model for pathology image features
+3. **Marker Classifier**: Filters features to tumor-relevant regions
+4. **Aeon**: Multi-task model for cancer subtype classification
+5. **Paladin**: Suite of models for biomarker prediction across cancer subtypes
+
+## Data Flow
+
+```
+WSI File (*.svs, *.tif)
+    ↓
+Tissue Segmentation (Mussel)
+    ↓
+CTransPath Feature Extraction
+    ↓
+Marker Classification (filter to tumor regions)
+    ↓
+Optimus Feature Extraction (on filtered tiles)
+    ↓
+├── Aeon Inference → Cancer Subtype Predictions
+│       ↓
+└── Paladin Inference → Biomarker Predictions
+        ↓
+    Results (CSV, Visualizations)
+```
+
+## Design Principles
+
+1. **Modularity**: Each component has a single, well-defined responsibility
+2. **Testability**: Modules can be tested independently with mocking
+3. **Reusability**: Core analysis functions can be used without UI
+4. **Maintainability**: Clear interfaces and documentation
+5. **Extensibility**: New models or features can be added with minimal changes
+
+## Future Enhancements
+
+Potential areas for extension:
+
+- Support for additional image formats
+- Real-time analysis progress tracking
+- Integration with PACS systems
+- Support for additional biomarkers
+- Batch processing optimization
+- Cloud deployment configurations
 

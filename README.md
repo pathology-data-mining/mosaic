@@ -19,6 +19,7 @@ Mosaic is a deep learning model designed for predicting cancer subtypes and biom
 - [Cancer Subtypes](#cancer-subtypes)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
+- [Architecture](#architecture)
 - [License](#license)
 
 ### System requirements
@@ -292,6 +293,10 @@ If the default port 7860 is already in use:
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
+
+## Architecture
+
+For detailed information about the code structure and module organization, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License
 
