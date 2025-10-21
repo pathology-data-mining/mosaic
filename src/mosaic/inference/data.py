@@ -1,3 +1,11 @@
+"""Data structures and utilities for inference modules.
+
+This module provides:
+- Cancer type to integer mappings for model inputs/outputs
+- SiteType enum for primary vs metastatic classification
+- TileFeatureTensorDataset for feeding features to PyTorch models
+"""
+
 from enum import Enum
 from typing import List
 

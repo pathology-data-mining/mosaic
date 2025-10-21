@@ -1,3 +1,10 @@
+"""Paladin model inference module for biomarker prediction.
+
+This module provides functionality to run the Paladin deep learning models
+for predicting various biomarkers from H&E whole slide image features, based
+on the predicted or known cancer subtype.
+"""
+
 import csv
 import pickle  # nosec
 import sys
@@ -27,11 +34,16 @@ class UsageError(Exception):
 
 
 def load_model_map(model_map_path: str) -> dict[Any, Any]:
-    """Load the table mapping cancer_subtypes and targets to the paladin
-    model (a pickle file) that predicts that target for that cancer subtype.
+    """Load the table mapping cancer subtypes and targets to Paladin models.
 
     A dict is returned, mapping each cancer_subtype to a table mapping a
     target to the pathname for the model that predicts it.
+    
+    Args:
+        model_map_path: Path to the CSV file containing the model map
+        
+    Returns:
+        Dictionary mapping cancer subtypes to their target-specific models
     """
     models = defaultdict(dict)
     with Path(model_map_path).open() as fp:
@@ -45,10 +57,13 @@ def load_model_map(model_map_path: str) -> dict[Any, Any]:
 
 
 def load_aeon_scores(df: pd.DataFrame) -> dict[str, float]:
-    """Load the output table from a single-slide Aeon run, listing Oncotree
-    cancer subtypes and their confidence values.
-
-    A dict is returned, mapping each cancersubtype to its confidence score.
+    """Load Aeon output table with cancer subtypes and confidence values.
+    
+    Args:
+        df: DataFrame with columns 'Cancer Subtype' and 'Confidence'
+    
+    Returns:
+        Dictionary mapping cancer subtypes to their confidence scores
     """
     score = {}
     for _, row in df.iterrows():
@@ -59,7 +74,15 @@ def load_aeon_scores(df: pd.DataFrame) -> dict[str, float]:
 
 
 def select_cancer_subtypes(aeon_scores: dict[str, float], k=1) -> list[str]:
-    """Return the three top-scoring cancer_subtypes, based on the given Aeon scores."""
+    """Select the top k cancer subtypes based on Aeon confidence scores.
+    
+    Args:
+        aeon_scores: Dictionary mapping cancer subtypes to confidence scores
+        k: Number of top subtypes to select (default: 1)
+        
+    Returns:
+        List of cancer subtype codes sorted by confidence (highest first)
+    """
     sorted_cancer_subtypes = list(
         sorted([(v, k) for k, v in aeon_scores.items()], reverse=True)
     )
@@ -67,7 +90,15 @@ def select_cancer_subtypes(aeon_scores: dict[str, float], k=1) -> list[str]:
 
 
 def select_models(cancer_subtypes: list[str], model_map: dict[Any, Any]) -> list[Any]:
-    """ """
+    """Select Paladin models for the given cancer subtypes.
+    
+    Args:
+        cancer_subtypes: List of cancer subtype codes
+        model_map: Dictionary mapping cancer subtypes to their models
+        
+    Returns:
+        List of tuples (cancer_subtype, target, model_path)
+    """
     models = []
     for cancer_subtype, target, model in model_map.items():
         if cancer_subtype in cancer_subtypes:
@@ -76,8 +107,17 @@ def select_models(cancer_subtypes: list[str], model_map: dict[Any, Any]) -> list
 
 
 def run_model(device, dataset, model_path: str, num_workers, batch_size) -> float:
-    """Run inference for the given embeddings and model.
-    The point estimate is returned.
+    """Run inference for the given dataset and Paladin model.
+    
+    Args:
+        device: Torch device (CPU or CUDA)
+        dataset: TileFeatureTensorDataset containing the features
+        model_path: Path to the pickled Paladin model
+        num_workers: Number of workers for data loading
+        batch_size: Batch size for inference
+        
+    Returns:
+        Point estimate (predicted value) from the model
     """
 
     logger.debug(f"[loading model {model_path}]")
@@ -108,6 +148,17 @@ def run_model(device, dataset, model_path: str, num_workers, batch_size) -> floa
 
 
 def logits_to_point_estimates(logits):
+    """Convert model logits to point estimates for beta-binomial distribution.
+    
+    The logits tensor contains alpha and beta parameters interleaved.
+    This function computes the mean of the beta-binomial distribution: alpha/(alpha+beta).
+    
+    Args:
+        logits: Tensor of shape (batch_size, 2*(n_tasks)) with alpha/beta parameters
+        
+    Returns:
+        Tensor of shape (batch_size, n_tasks) with point estimates
+    """
     # logits is a tensor of shape (batch_size, 2 * (n_clf_tasks + n_reg_tasks))
     # need to convert it to a tensor of shape (batch_size, n_clf_tasks + n_reg_tasks)
     return logits[:, ::2] / (logits[:, ::2] + logits[:, 1::2])
@@ -124,13 +175,28 @@ def run(
     num_workers: int = NUM_WORKERS,
     use_cpu: bool = False,
 ):
-    """Run Paladin inference on a single slide, using the given embeddings
-    and either a single model or a table mapping cancer_subtypes and targets to models.
-    If cancer_subtype_codes is given, it is a list of OncoTree codes for the slide.
-    If aeon_predictions_path is given, it is the pathname to a CSV file
-    with the output of an Aeon run on the slide.
-    If both are given, an error is raised.
-    The output is written to the given output_path (a CSV file).
+    """Run Paladin inference for biomarker prediction on a single slide.
+    
+    Uses either Aeon predictions or user-provided cancer subtype codes to select
+    the appropriate Paladin models for biomarker prediction.
+    
+    Args:
+        features: NumPy array of tile features extracted from the WSI
+        aeon_results: DataFrame with Aeon predictions (Cancer Subtype, Confidence)
+        cancer_subtype_codes: List of OncoTree codes if cancer subtype is known
+        model_map_path: Path to CSV file mapping subtypes/targets to model paths
+        model_path: Path to a single Paladin model (alternative to model_map_path)
+        metastatic: Whether the slide is from a metastatic site
+        batch_size: Batch size for inference
+        num_workers: Number of workers for data loading
+        use_cpu: Force CPU usage instead of GPU
+        
+    Returns:
+        DataFrame with columns: Cancer Subtype, Target, Score
+        
+    Note:
+        Either aeon_results or cancer_subtype_codes must be provided, but not both.
+        Either model_map_path or model_path must be provided, but not both.
     """
 
     if aeon_results is not None:

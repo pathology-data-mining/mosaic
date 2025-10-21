@@ -1,3 +1,9 @@
+"""Core slide analysis module for Mosaic.
+
+This module provides the main slide analysis pipeline that integrates tissue segmentation,
+feature extraction, and model inference for cancer subtype and biomarker prediction.
+"""
+
 import pickle
 import torch
 import pandas as pd
@@ -22,6 +28,37 @@ def analyze_slide(
     num_workers=4,
     progress=gr.Progress(track_tqdm=True),
 ):
+    """Analyze a whole slide image for cancer subtype and biomarker prediction.
+    
+    This function performs a complete analysis pipeline including:
+    1. Tissue segmentation
+    2. CTransPath feature extraction
+    3. Feature filtering with marker classifier
+    4. Optimus feature extraction on filtered tiles
+    5. Aeon inference for cancer subtype (if not provided)
+    6. Paladin inference for biomarker prediction
+    
+    Args:
+        slide_path: Path to the whole slide image file
+        seg_config: Segmentation configuration, one of "Biopsy", "Resection", or "TCGA"
+        site_type: Site type, either "Primary" or "Metastatic"
+        cancer_subtype: Cancer subtype (OncoTree code or "Unknown" for inference)
+        cancer_subtype_name_map: Dictionary mapping cancer subtype names to codes
+        ihc_subtype: IHC subtype for breast cancer (optional)
+        num_workers: Number of worker processes for feature extraction
+        progress: Gradio progress tracker for UI updates
+        
+    Returns:
+        tuple: (slide_mask, aeon_results, paladin_results)
+            - slide_mask: PIL Image of tissue segmentation visualization
+            - aeon_results: DataFrame with cancer subtype predictions and confidence scores
+            - paladin_results: DataFrame with biomarker predictions
+            
+    Raises:
+        gr.Error: If no slide is provided
+        gr.Warning: If no tissue is detected in the slide
+        ValueError: If an unknown segmentation configuration is provided
+    """
     if slide_path is None:
         raise gr.Error("Please upload a slide.")
     # Step 1: Segment tissue

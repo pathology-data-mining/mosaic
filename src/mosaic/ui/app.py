@@ -1,3 +1,13 @@
+"""Gradio web interface for Mosaic.
+
+This module provides the web-based user interface for analyzing whole slide images.
+It includes functionality for:
+- Multi-slide upload and analysis
+- Settings configuration (site type, cancer subtype, IHC subtype, segmentation)
+- Results visualization and export
+- CSV-based batch processing
+"""
+
 import gradio as gr
 import pandas as pd
 from pathlib import Path
