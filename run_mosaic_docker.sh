@@ -43,8 +43,13 @@ echo
 echo "You may need to wait a minute or so for the models to download before the site appears."
 echo
 
+# Get current user ID and group ID to ensure files have correct ownership
+USER_ID=$(id -u)
+GROUP_ID=$(id -g)
+
 docker run -it \
     --gpus=all --runtime=nvidia \
+    --user "${USER_ID}:${GROUP_ID}" \
     --env HF_TOKEN=${HF_TOKEN} \
     --shm-size=500m \
     -p ${MOSAIC_PORT}:7860 \

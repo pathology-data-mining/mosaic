@@ -114,8 +114,13 @@ if [ "$USE_GPU" = true ]; then
     GPU_ARGS+=("--gpus=all" "--runtime=nvidia")
 fi
 
+# Get current user ID and group ID to ensure output files have correct ownership
+USER_ID=$(id -u)
+GROUP_ID=$(id -g)
+
 docker run --rm \
     "${GPU_ARGS[@]}" \
+    --user "${USER_ID}:${GROUP_ID}" \
     --env HF_TOKEN="${HF_TOKEN}" \
     --shm-size=500m \
     "${VOLUME_ARGS[@]}" \
