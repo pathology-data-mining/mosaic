@@ -15,6 +15,10 @@
 #   - NVIDIA Docker runtime (for GPU support)
 #   - HF_TOKEN environment variable set
 #   - Docker image pulled: docker pull tomp/mosaic-gradio
+#
+# Note: When using --slide-csv, the CSV file and all referenced slides should be
+#       in the same directory tree. Slides can be in subdirectories relative to
+#       the CSV file location.
 
 DOCKER_IMAGE="tomp/mosaic-gradio"
 USE_GPU=true
@@ -66,12 +70,11 @@ while [[ $# -gt 0 ]]; do
                 CSV_PATH=$(readlink -f "$CSV_PATH")
                 CSV_DIR=$(dirname "$CSV_PATH")
                 CSV_FILE=$(basename "$CSV_PATH")
-                # Mount the directory containing the CSV
-                VOLUME_MOUNTS+=("-v" "$CSV_DIR:/mnt/csv:ro")
+                # Mount the parent directory of CSV (to allow slides in subdirs)
+                # This allows the CSV to reference slides with relative paths
+                VOLUME_MOUNTS+=("-v" "$CSV_DIR:/mnt/data:ro")
                 # Pass the container path to mosaic
-                ARGS+=("--slide-csv" "/mnt/csv/$CSV_FILE")
-                # Note: CSV may reference slide paths that also need to be mounted
-                # For simplicity, we assume slides are in same dir or subdirs
+                ARGS+=("--slide-csv" "/mnt/data/$CSV_FILE")
             fi
             shift
             ;;

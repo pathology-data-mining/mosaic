@@ -120,6 +120,11 @@ The `mosaic` wrapper script:
 - Handles the HF_TOKEN environment variable
 - Detects and uses GPU support if available (falls back to CPU if not)
 
+**Note**: When using `--slide-csv`, the script mounts the directory containing the CSV file.
+For slides referenced in the CSV, they should be in the same directory as the CSV file or in
+subdirectories relative to it. If slides are in different locations, you may need to modify
+the CSV to use relative paths or run the docker command directly with additional volume mounts.
+
 #### Requirements for CLI usage
 
 - Docker installed and running
