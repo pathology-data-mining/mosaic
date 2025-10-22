@@ -15,3 +15,5 @@ data/
 .pytest_cache/
 .coverage
 htmlcov/
+flagged/
+gradio_cached_examples/
