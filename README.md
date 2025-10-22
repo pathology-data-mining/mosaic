@@ -43,7 +43,7 @@ Supported systems:
 
 ### Pre-requisites
 
-- [python3.11+](https://www.python.org/)
+- [python3.11](https://www.python.org/)
 - [uv](https://docs.astral.sh/uv/)
 
     ```bash
@@ -52,16 +52,26 @@ Supported systems:
 
 ## Installation
 
+Ensure that you have ssh credentials setup to access the paladin private repository. (Create key with `ssh-keygen` and put in your github profile, Settings -> SSH and GPG keys.)
+
 ```bash
 git clone https://github.com/pathology-data-mining/mosaic.git
 cd mosaic
 uv sync
 ```
 
-Alternatively, install directly from the repository:
+Note that when installing via `uv sync`, the virtual environment will be created in the `./.venv` directory. To activate it, run:
 
 ```bash
-uv pip install git+https://github.com/pathology-data-mining/mosaic.git
+source .venv/bin/activate
+```
+
+Alternatively, create a virtual environment mosaic-venv (in a subdirectory), activate it, and install the app directly from the repository:
+
+```bash
+uv venv mosaic-venv --python 3.11
+source mosaic-venv/bin/activate
+uv pip install git+ssh://git@github.com/pathology-data-mining/paladin_webapp.git@dev
 ```
 
 ## Deploying to Hugging Face Spaces
@@ -85,6 +95,7 @@ This repository is configured for deployment on Hugging Face Spaces with Zero GP
 ### Zero GPU Configuration
 
 The app uses the `@spaces.GPU` decorator to allocate GPU resources only when needed for inference. This allows efficient use of Zero GPU resources on Hugging Face Spaces. The GPU is automatically allocated when:
+
 - Processing tissue segmentation
 - Extracting features with CTransPath and Optimus models
 - Running Aeon and Paladin model inference
@@ -230,6 +241,7 @@ mosaic --server-name 0.0.0.0 --server-port 7860
 ```
 
 Check for available ports using:
+
 ```bash
 ss -tuln | grep :7860
 ```
