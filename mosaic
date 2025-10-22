@@ -1,0 +1,129 @@
+#!/bin/bash
+
+# Mosaic CLI wrapper script for Docker
+# This script enables seamless usage of the Mosaic CLI through Docker
+#
+# Usage: ./mosaic [mosaic-arguments]
+#
+# Examples:
+#   ./mosaic --help
+#   ./mosaic --slide-path /path/to/slide.svs --output-dir /path/to/output
+#   ./mosaic --slide-csv /path/to/slides.csv --output-dir /path/to/output
+#
+# Requirements:
+#   - Docker installed and running
+#   - NVIDIA Docker runtime (for GPU support)
+#   - HF_TOKEN environment variable set
+#   - Docker image pulled: docker pull tomp/mosaic-gradio
+#
+# Note: When using --slide-csv, the CSV file and all referenced slides should be
+#       in the same directory tree. Slides can be in subdirectories relative to
+#       the CSV file location.
+
+DOCKER_IMAGE="tomp/mosaic-gradio"
+USE_GPU=true
+
+die () { echo "FATAL: $*" >&2; exit 1; }
+
+# Check if Docker is available
+command -v docker >/dev/null 2>&1 || die "Docker is not installed or not in PATH"
+
+# Check if HF_TOKEN is set
+[[ -n $HF_TOKEN ]] || die "HF_TOKEN environment variable is not set. Please set it to your HuggingFace access token."
+
+# Check if nvidia runtime is available
+if docker info 2>/dev/null | grep -q nvidia; then
+    USE_GPU=true
+else
+    echo "Warning: NVIDIA Docker runtime not detected. Running without GPU support." >&2
+    echo "         To enable GPU support, install the NVIDIA Container Toolkit." >&2
+    USE_GPU=false
+fi
+
+# Parse arguments to identify paths that need to be mounted
+VOLUME_MOUNTS=()
+ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    ARG="$1"
+    case "$ARG" in
+        --slide-path)
+            shift
+            SLIDE_PATH="$1"
+            if [[ -n "$SLIDE_PATH" ]]; then
+                # Convert to absolute path
+                SLIDE_PATH=$(readlink -f "$SLIDE_PATH")
+                SLIDE_DIR=$(dirname "$SLIDE_PATH")
+                SLIDE_FILE=$(basename "$SLIDE_PATH")
+                # Mount the directory containing the slide
+                VOLUME_MOUNTS+=("-v" "$SLIDE_DIR:/mnt/slides:ro")
+                # Pass the container path to mosaic
+                ARGS+=("--slide-path" "/mnt/slides/$SLIDE_FILE")
+            fi
+            shift
+            ;;
+        --slide-csv)
+            shift
+            CSV_PATH="$1"
+            if [[ -n "$CSV_PATH" ]]; then
+                # Convert to absolute path
+                CSV_PATH=$(readlink -f "$CSV_PATH")
+                CSV_DIR=$(dirname "$CSV_PATH")
+                CSV_FILE=$(basename "$CSV_PATH")
+                # Mount the parent directory of CSV (to allow slides in subdirs)
+                # This allows the CSV to reference slides with relative paths
+                VOLUME_MOUNTS+=("-v" "$CSV_DIR:/mnt/data:ro")
+                # Pass the container path to mosaic
+                ARGS+=("--slide-csv" "/mnt/data/$CSV_FILE")
+            fi
+            shift
+            ;;
+        --output-dir)
+            shift
+            OUTPUT_DIR="$1"
+            if [[ -n "$OUTPUT_DIR" ]]; then
+                # Convert to absolute path and create if it doesn't exist
+                mkdir -p "$OUTPUT_DIR"
+                OUTPUT_DIR=$(readlink -f "$OUTPUT_DIR")
+                # Mount the output directory
+                VOLUME_MOUNTS+=("-v" "$OUTPUT_DIR:/mnt/output")
+                # Pass the container path to mosaic
+                ARGS+=("--output-dir" "/mnt/output")
+            fi
+            shift
+            ;;
+        *)
+            # Pass through all other arguments
+            ARGS+=("$ARG")
+            shift
+            ;;
+    esac
+done
+
+# Remove duplicate volume mounts
+UNIQUE_MOUNTS=$(printf '%s\n' "${VOLUME_MOUNTS[@]}" | awk '!seen[$0]++')
+VOLUME_ARGS=()
+while IFS= read -r mount; do
+    [[ -n "$mount" ]] && VOLUME_ARGS+=("$mount")
+done <<< "$UNIQUE_MOUNTS"
+
+# Run the Docker container with the mosaic CLI
+# Override the entrypoint to run mosaic command instead of gradio_app
+GPU_ARGS=()
+if [ "$USE_GPU" = true ]; then
+    GPU_ARGS+=("--gpus=all" "--runtime=nvidia")
+fi
+
+# Get current user ID and group ID to ensure output files have correct ownership
+USER_ID=$(id -u)
+GROUP_ID=$(id -g)
+
+docker run --rm \
+    "${GPU_ARGS[@]}" \
+    --user "${USER_ID}:${GROUP_ID}" \
+    --env HF_TOKEN="${HF_TOKEN}" \
+    --shm-size=500m \
+    "${VOLUME_ARGS[@]}" \
+    --entrypoint mosaic \
+    "$DOCKER_IMAGE" \
+    "${ARGS[@]}"

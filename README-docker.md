@@ -51,6 +51,8 @@ export HF_TOKEN="TOKEN-FROM-HUGGINGFACE"
 
 ## Usage
 
+### Web Application
+
 1. Start up the web app using the command
 
 ```bash
@@ -78,6 +80,56 @@ or
 
 ./run_mosaic_docker.sh --port 7863
 ```
+
+### Command Line Interface (CLI)
+
+For seamless CLI usage via Docker, use the provided `mosaic` wrapper script. This script
+automatically handles volume mounting and passes all arguments to the containerized
+Mosaic CLI.
+
+#### Basic Usage
+
+```bash
+# Show help
+./mosaic --help
+
+# Process a single slide
+./mosaic --slide-path /path/to/slide.svs \
+         --output-dir /path/to/output \
+         --site-type Primary \
+         --cancer-subtype Unknown \
+         --segmentation-config Resection
+
+# Process multiple slides from a CSV file
+./mosaic --slide-csv /path/to/slides.csv \
+         --output-dir /path/to/output
+
+# Process a breast cancer slide with IHC subtype
+./mosaic --slide-path /path/to/breast_slide.svs \
+         --output-dir /path/to/output \
+         --site-type Primary \
+         --cancer-subtype BRCA \
+         --ihc-subtype "HR+/HER2-"
+```
+
+#### How it works
+
+The `mosaic` wrapper script:
+- Automatically mounts input slide directories and output directories into the container
+- Passes through all Mosaic CLI arguments
+- Handles the HF_TOKEN environment variable
+- Detects and uses GPU support if available (falls back to CPU if not)
+
+**Note**: When using `--slide-csv`, the script mounts the directory containing the CSV file.
+For slides referenced in the CSV, they should be in the same directory as the CSV file or in
+subdirectories relative to it. If slides are in different locations, you may need to modify
+the CSV to use relative paths or run the docker command directly with additional volume mounts.
+
+#### Requirements for CLI usage
+
+- Docker installed and running
+- HF_TOKEN environment variable set (same as web app)
+- NVIDIA Docker runtime for GPU support (optional, will run on CPU if not available)
 
 ### Notes
 
