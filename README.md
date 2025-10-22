@@ -19,6 +19,7 @@ Mosaic is a deep learning model designed for predicting cancer subtypes and biom
 - [System Requirements](#system-requirements)
 - [Pre-requisites](#pre-requisites)
 - [Installation](#installation)
+- [Deploying to Hugging Face Spaces](#deploying-to-hugging-face-spaces)
 - [Usage](#usage)
   - [Initial Setup](#initial-setup)
   - [Web Application](#web-application)
@@ -62,6 +63,31 @@ Alternatively, install directly from the repository:
 ```bash
 uv pip install git+https://github.com/pathology-data-mining/mosaic.git
 ```
+
+## Deploying to Hugging Face Spaces
+
+This repository is configured for deployment on Hugging Face Spaces with Zero GPU support.
+
+### Prerequisites
+
+1. You need to be added to the [PDM Group](https://huggingface.co/PDM-Group) on Hugging Face to access the models
+2. Create a Hugging Face access token with read permissions for the PDM-Group space
+
+### Deployment Steps
+
+1. Create a new Space on Hugging Face
+2. Select "Gradio" as the SDK
+3. Choose "Zero GPU" as the hardware option (if available)
+4. Clone this repository to your Space or push the code
+5. In your Space settings, add a secret named `HF_TOKEN` with your Hugging Face access token
+6. The app will automatically start and download the necessary models on first run
+
+### Zero GPU Configuration
+
+The app uses the `@spaces.GPU` decorator to allocate GPU resources only when needed for inference. This allows efficient use of Zero GPU resources on Hugging Face Spaces. The GPU is automatically allocated when:
+- Processing tissue segmentation
+- Extracting features with CTransPath and Optimus models
+- Running Aeon and Paladin model inference
 
 ## Usage
 

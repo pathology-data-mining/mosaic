@@ -4,7 +4,7 @@ This module serves as the main entry point when deploying Mosaic to
 Hugging Face Spaces. It initializes the models and launches the Gradio interface.
 """
 
-from mosaic.gradio_app import download_and_process_models, main
+from mosaic.gradio_app import download_and_process_models
 from mosaic.ui import launch_gradio
 
 if __name__ == "__main__":
