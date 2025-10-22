@@ -65,6 +65,10 @@ def _run_gpu_inference(
             - aeon_results: DataFrame with cancer subtype predictions and confidence scores
             - paladin_results: DataFrame with biomarker predictions
     """
+    # Zero GPU requires num_workers=0 to avoid multiprocessing issues
+    if HAS_SPACES:
+        num_workers = 0
+        logger.info("Running on Hugging Face Spaces Zero GPU: setting num_workers=0")
 
     # Step 2: Extract features with CTransPath
     start_time = pd.Timestamp.now()
