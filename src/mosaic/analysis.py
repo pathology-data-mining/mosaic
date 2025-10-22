@@ -30,91 +30,41 @@ from mosaic.inference import run_aeon, run_paladin
 
 
 @spaces.GPU
-def analyze_slide(
+def _run_gpu_inference(
+    coords,
     slide_path,
-    seg_config,
+    attrs,
     site_type,
     cancer_subtype,
     cancer_subtype_name_map,
-    ihc_subtype="",
-    num_workers=4,
-    progress=gr.Progress(track_tqdm=True),
+    num_workers,
+    progress,
 ):
-    """Analyze a whole slide image for cancer subtype and biomarker prediction.
+    """Run GPU-intensive feature extraction and model inference.
     
-    This function performs a complete analysis pipeline including:
-    1. Tissue segmentation
-    2. CTransPath feature extraction
-    3. Feature filtering with marker classifier
-    4. Optimus feature extraction on filtered tiles
-    5. Aeon inference for cancer subtype (if not provided)
-    6. Paladin inference for biomarker prediction
+    This function is decorated with @spaces.GPU to allocate GPU resources only
+    when needed for GPU-intensive operations including:
+    - CTransPath feature extraction
+    - Feature filtering with marker classifier
+    - Optimus feature extraction
+    - Aeon cancer subtype inference
+    - Paladin biomarker prediction
     
     Args:
+        coords: Tissue tile coordinates
         slide_path: Path to the whole slide image file
-        seg_config: Segmentation configuration, one of "Biopsy", "Resection", or "TCGA"
+        attrs: Slide attributes
         site_type: Site type, either "Primary" or "Metastatic"
         cancer_subtype: Cancer subtype (OncoTree code or "Unknown" for inference)
         cancer_subtype_name_map: Dictionary mapping cancer subtype names to codes
-        ihc_subtype: IHC subtype for breast cancer (optional)
         num_workers: Number of worker processes for feature extraction
         progress: Gradio progress tracker for UI updates
         
     Returns:
-        tuple: (slide_mask, aeon_results, paladin_results)
-            - slide_mask: PIL Image of tissue segmentation visualization
+        tuple: (aeon_results, paladin_results)
             - aeon_results: DataFrame with cancer subtype predictions and confidence scores
             - paladin_results: DataFrame with biomarker predictions
-            
-    Raises:
-        gr.Error: If no slide is provided
-        gr.Warning: If no tissue is detected in the slide
-        ValueError: If an unknown segmentation configuration is provided
     """
-    if slide_path is None:
-        raise gr.Error("Please upload a slide.")
-    # Step 1: Segment tissue
-    start_time = pd.Timestamp.now()
-
-    if seg_config == "Biopsy":
-        seg_config = BiopsySegConfig()
-    elif seg_config == "Resection":
-        seg_config = ResectionSegConfig()
-    elif seg_config == "TCGA":
-        seg_config = TcgaSegConfig()
-    else:
-        raise ValueError(f"Unknown segmentation configuration: {seg_config}")
-
-    progress(0.0, desc="Segmenting tissue")
-    logger.info(f"Segmenting tissue for slide: {slide_path}")
-    if values := segment_tissue(
-        slide_path=slide_path,
-        patch_size=224,
-        mpp=0.5,
-        seg_level=-1,
-        segment_threshold=seg_config.segment_threshold,
-        median_blur_ksize=seg_config.median_blur_ksize,
-        morphology_ex_kernel=seg_config.morphology_ex_kernel,
-        tissue_area_threshold=seg_config.tissue_area_threshold,
-        hole_area_threshold=seg_config.hole_area_threshold,
-        max_num_holes=seg_config.max_num_holes,
-    ):
-        polygon, _, coords, attrs = values
-    else:
-        gr.Warning(f"No tissue detected in slide: {slide_path}")
-        return None, None, None
-    end_time = pd.Timestamp.now()
-    logger.info(f"Tissue segmentation took {end_time - start_time}")
-    logger.info(f"Found {len(coords)} tissue tiles")
-    progress(0.2, desc="Tissue segmented")
-
-    # Draw slide mask for visualization
-    logger.info("Drawing slide mask")
-    progress(0.25, desc="Drawing slide mask")
-    slide_mask = draw_slide_mask(
-        slide_path, polygon, outline="black", fill=(255, 0, 0, 80), vis_level=-1
-    )
-    logger.info("Slide mask drawn")
 
     # Step 2: Extract features with CTransPath
     start_time = pd.Timestamp.now()
@@ -185,7 +135,7 @@ def analyze_slide(
 
     torch.cuda.reset_peak_memory_stats()
 
-    # Step 3: Run Aeon to predict histology if not supplied
+    # Step 5: Run Aeon to predict histology if not supplied
     if cancer_subtype == "Unknown":
         start_time = pd.Timestamp.now()
         progress(0.9, desc="Running Aeon for cancer subtype inference")
@@ -218,10 +168,10 @@ def analyze_slide(
         )
         logger.info(f"Using user-supplied cancer subtype: {cancer_subtype}")
 
-    # Step 4: Run Paladin to predict biomarkers
+    # Step 6: Run Paladin to predict biomarkers
     if len(aeon_results) == 0:
         logger.warning("No Aeon results, skipping Paladin inference")
-        return slide_mask, None, None
+        return None, None
     start_time = pd.Timestamp.now()
     progress(0.95, desc="Running Paladin for biomarker inference")
     logger.info("Running Paladin for biomarker inference")
@@ -245,5 +195,107 @@ def analyze_slide(
     )
 
     aeon_results.set_index("Cancer Subtype", inplace=True)
+
+    return aeon_results, paladin_results
+
+
+def analyze_slide(
+    slide_path,
+    seg_config,
+    site_type,
+    cancer_subtype,
+    cancer_subtype_name_map,
+    ihc_subtype="",
+    num_workers=4,
+    progress=gr.Progress(track_tqdm=True),
+):
+    """Analyze a whole slide image for cancer subtype and biomarker prediction.
+    
+    This function performs a complete analysis pipeline including:
+    1. Tissue segmentation (CPU-only, no GPU required)
+    2. GPU-intensive feature extraction and model inference
+    
+    The GPU-intensive operations are handled by a separate function decorated
+    with @spaces.GPU to efficiently manage GPU resources on Hugging Face Spaces.
+    Tissue segmentation runs on CPU and is not included in the GPU allocation.
+    
+    Args:
+        slide_path: Path to the whole slide image file
+        seg_config: Segmentation configuration, one of "Biopsy", "Resection", or "TCGA"
+        site_type: Site type, either "Primary" or "Metastatic"
+        cancer_subtype: Cancer subtype (OncoTree code or "Unknown" for inference)
+        cancer_subtype_name_map: Dictionary mapping cancer subtype names to codes
+        ihc_subtype: IHC subtype for breast cancer (optional)
+        num_workers: Number of worker processes for feature extraction
+        progress: Gradio progress tracker for UI updates
+        
+    Returns:
+        tuple: (slide_mask, aeon_results, paladin_results)
+            - slide_mask: PIL Image of tissue segmentation visualization
+            - aeon_results: DataFrame with cancer subtype predictions and confidence scores
+            - paladin_results: DataFrame with biomarker predictions
+            
+    Raises:
+        gr.Error: If no slide is provided
+        gr.Warning: If no tissue is detected in the slide
+        ValueError: If an unknown segmentation configuration is provided
+    """
+    if slide_path is None:
+        raise gr.Error("Please upload a slide.")
+    
+    # Step 1: Segment tissue (CPU-only, not GPU-intensive)
+    start_time = pd.Timestamp.now()
+
+    if seg_config == "Biopsy":
+        seg_config = BiopsySegConfig()
+    elif seg_config == "Resection":
+        seg_config = ResectionSegConfig()
+    elif seg_config == "TCGA":
+        seg_config = TcgaSegConfig()
+    else:
+        raise ValueError(f"Unknown segmentation configuration: {seg_config}")
+
+    progress(0.0, desc="Segmenting tissue")
+    logger.info(f"Segmenting tissue for slide: {slide_path}")
+    if values := segment_tissue(
+        slide_path=slide_path,
+        patch_size=224,
+        mpp=0.5,
+        seg_level=-1,
+        segment_threshold=seg_config.segment_threshold,
+        median_blur_ksize=seg_config.median_blur_ksize,
+        morphology_ex_kernel=seg_config.morphology_ex_kernel,
+        tissue_area_threshold=seg_config.tissue_area_threshold,
+        hole_area_threshold=seg_config.hole_area_threshold,
+        max_num_holes=seg_config.max_num_holes,
+    ):
+        polygon, _, coords, attrs = values
+    else:
+        gr.Warning(f"No tissue detected in slide: {slide_path}")
+        return None, None, None
+    end_time = pd.Timestamp.now()
+    logger.info(f"Tissue segmentation took {end_time - start_time}")
+    logger.info(f"Found {len(coords)} tissue tiles")
+    progress(0.2, desc="Tissue segmented")
+
+    # Draw slide mask for visualization
+    logger.info("Drawing slide mask")
+    progress(0.25, desc="Drawing slide mask")
+    slide_mask = draw_slide_mask(
+        slide_path, polygon, outline="black", fill=(255, 0, 0, 80), vis_level=-1
+    )
+    logger.info("Slide mask drawn")
+
+    # Step 2-6: Run GPU-intensive operations (feature extraction and inference)
+    aeon_results, paladin_results = _run_gpu_inference(
+        coords,
+        slide_path,
+        attrs,
+        site_type,
+        cancer_subtype,
+        cancer_subtype_name_map,
+        num_workers,
+        progress,
+    )
 
     return slide_mask, aeon_results, paladin_results
