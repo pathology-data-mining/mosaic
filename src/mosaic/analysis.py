@@ -15,9 +15,21 @@ from mussel.utils.segment import draw_slide_mask
 from mussel.cli.tessellate import BiopsySegConfig, ResectionSegConfig, TcgaSegConfig
 from loguru import logger
 
+try:
+    import spaces
+    HAS_SPACES = True
+except ImportError:
+    HAS_SPACES = False
+    # Create a no-op decorator if spaces is not available
+    class spaces:
+        @staticmethod
+        def GPU(fn):
+            return fn
+
 from mosaic.inference import run_aeon, run_paladin
 
 
+@spaces.GPU
 def analyze_slide(
     slide_path,
     seg_config,

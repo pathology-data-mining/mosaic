@@ -1,3 +1,15 @@
+---
+title: Mosaic
+emoji: 🧬
+colorFrom: blue
+colorTo: purple
+sdk: gradio
+sdk_version: 5.49.0
+app_file: app.py
+pinned: false
+license: apache-2.0
+---
+
 # Mosaic: H&E Whole Slide Image Cancer Subtype and Biomarker Inference
 
 Mosaic is a deep learning model designed for predicting cancer subtypes and biomarkers from Hematoxylin and Eosin (H&E) stained whole slide images (WSIs). This repository provides the code, pre-trained models, and instructions to use Mosaic for your own datasets.
