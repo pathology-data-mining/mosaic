@@ -1,3 +1,12 @@
+"""Mosaic command-line interface and entry point.
+
+This module provides the main CLI for the Mosaic application, handling:
+- Model downloading and initialization
+- Single slide processing
+- Batch slide processing from CSV
+- Launching the Gradio web interface
+"""
+
 from argparse import ArgumentParser
 import pandas as pd
 from pathlib import Path
@@ -17,6 +26,17 @@ from mosaic.analysis import analyze_slide
 
 
 def download_and_process_models():
+    """Download models from HuggingFace and initialize cancer subtype mappings.
+    
+    Downloads the Paladin and Aeon models from the PDM-Group HuggingFace repository
+    and creates mappings between cancer subtype names and OncoTree codes.
+    
+    Returns:
+        tuple: (cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes)
+            - cancer_subtype_name_map: Dict mapping display names to OncoTree codes
+            - reversed_cancer_subtype_name_map: Dict mapping OncoTree codes to display names
+            - cancer_subtypes: List of all supported cancer subtype codes
+    """
     snapshot_download(repo_id="PDM-Group/paladin-aeon-models", local_dir="data")
 
     model_map = pd.read_csv(
@@ -41,6 +61,16 @@ def download_and_process_models():
 
 
 def main():
+    """Main entry point for the Mosaic application.
+    
+    Parses command-line arguments and routes to the appropriate mode:
+    - Single slide processing (--slide-path)
+    - Batch processing (--slide-csv)
+    - Web interface (default, no slide arguments)
+    
+    Command-line arguments control analysis parameters like site type,
+    cancer subtype, segmentation configuration, and output directory.
+    """
     parser = ArgumentParser()
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument(

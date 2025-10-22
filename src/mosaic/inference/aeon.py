@@ -1,3 +1,9 @@
+"""Aeon model inference module for cancer subtype prediction.
+
+This module provides functionality to run the Aeon deep learning model
+for predicting cancer subtypes from H&E whole slide image features.
+"""
+
 import pickle  # nosec
 import sys
 from argparse import ArgumentParser
@@ -16,6 +22,7 @@ from mosaic.inference.data import (
 
 from loguru import logger
 
+# Cancer types excluded from prediction (too broad or ambiguous)
 cancer_types_to_drop = [
     "UDMN",
     "ADNOS",
@@ -48,6 +55,21 @@ NUM_WORKERS = 8
 def run(
     features, model_path, metastatic=False, batch_size=8, num_workers=8, use_cpu=False
 ):
+    """Run Aeon model inference for cancer subtype prediction.
+    
+    Args:
+        features: NumPy array of tile features extracted from the WSI
+        model_path: Path to the pickled Aeon model file
+        metastatic: Whether the slide is from a metastatic site
+        batch_size: Batch size for inference
+        num_workers: Number of workers for data loading
+        use_cpu: Force CPU usage instead of GPU
+        
+    Returns:
+        tuple: (results_df, part_embedding)
+            - results_df: DataFrame with cancer subtypes and confidence scores
+            - part_embedding: Torch tensor of the learned part representation
+    """
     device = torch.device(
         "cuda" if not use_cpu and torch.cuda.is_available() else "cpu"
     )

@@ -1,3 +1,12 @@
+"""UI utility functions for the Mosaic Gradio interface.
+
+This module provides helper functions for:
+- OncoTree code lookup and caching
+- User session directory management
+- Settings CSV loading and validation
+- Data export functionality
+"""
+
 import tempfile
 from pathlib import Path
 import pandas as pd
@@ -21,6 +30,17 @@ oncotree_code_map = {}
 
 
 def get_oncotree_code_name(code):
+    """Retrieve the human-readable name for an OncoTree code.
+    
+    Queries the OncoTree API to get the cancer subtype name corresponding
+    to the given code. Results are cached to avoid repeated API calls.
+    
+    Args:
+        code: OncoTree code (e.g., "LUAD", "BRCA")
+        
+    Returns:
+        Human-readable cancer subtype name, or "Unknown" if not found
+    """
     global oncotree_code_map
     if code in oncotree_code_map.keys():
         return oncotree_code_map[code]
@@ -38,7 +58,15 @@ def get_oncotree_code_name(code):
 
 
 def create_user_directory(state, request: gr.Request):
-    """Create a unique directory for each user session."""
+    """Create a unique directory for each user session.
+    
+    Args:
+        state: Gradio state object (unused)
+        request: Gradio request object containing session hash
+        
+    Returns:
+        Path to user's session directory, or None if no session hash available
+    """
     session_hash = request.session_hash
     if session_hash is None:
         return None, None
@@ -49,7 +77,20 @@ def create_user_directory(state, request: gr.Request):
 
 
 def load_settings(slide_csv_path):
-    """Load settings from CSV file and validate columns."""
+    """Load slide analysis settings from CSV file.
+    
+    Loads the CSV and ensures all required columns are present, adding defaults
+    for optional columns if they are missing.
+    
+    Args:
+        slide_csv_path: Path to the CSV file containing slide settings
+        
+    Returns:
+        DataFrame with columns: Slide, Site Type, Cancer Subtype, IHC Subtype, Segmentation Config
+        
+    Raises:
+        ValueError: If required columns are missing from the CSV
+    """
     settings_df = pd.read_csv(slide_csv_path, na_filter=False)
     if "Segmentation Config" not in settings_df.columns:
         settings_df["Segmentation Config"] = "Biopsy"
@@ -64,7 +105,24 @@ def load_settings(slide_csv_path):
 
 
 def validate_settings(settings_df, cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map):
-    """Validate settings DataFrame and provide warnings for invalid entries."""
+    """Validate and normalize slide analysis settings.
+    
+    Checks each row for valid values and normalizes cancer subtype names.
+    Generates warnings for invalid entries and replaces them with defaults.
+    
+    Args:
+        settings_df: DataFrame with slide settings to validate
+        cancer_subtype_name_map: Dict mapping subtype display names to codes
+        cancer_subtypes: List of valid cancer subtype codes
+        reversed_cancer_subtype_name_map: Dict mapping codes to display names
+        
+    Returns:
+        Validated DataFrame with normalized values
+        
+    Note:
+        Invalid entries are replaced with defaults and warnings are displayed
+        to the user via Gradio warnings.
+    """
     settings_df.columns = SETTINGS_COLUMNS
     warnings = []
     for idx, row in settings_df.iterrows():
@@ -110,6 +168,17 @@ def validate_settings(settings_df, cancer_subtype_name_map, cancer_subtypes, rev
 
 
 def export_to_csv(df):
+    """Export a DataFrame to CSV file for download.
+    
+    Args:
+        df: DataFrame to export
+        
+    Returns:
+        Path to the exported CSV file
+        
+    Raises:
+        gr.Error: If the DataFrame is None or empty
+    """
     if df is None or df.empty:
         raise gr.Error("No data to export.")
     csv_path = "paladin_results.csv"
