@@ -14,8 +14,8 @@ try:
 except ImportError:
     print("Installing mosaic package...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", "."])
-    import mosaic
 
+# Import after installation
 from mosaic.gradio_app import download_and_process_models
 from mosaic.ui import launch_gradio
 
