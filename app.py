@@ -8,9 +8,16 @@ from mosaic.gradio_app import download_and_process_models
 from mosaic.ui import launch_gradio
 
 if __name__ == "__main__":
+    # Install Paladin from GitHub
+    GIT_TOKEN = os.environ.get("GH_TOKEN")
+    subprocess.run(
+        f"pip install git+https://{GIT_TOKEN}@github.com/pathology-data-mining/paladin.git@dev",
+        shell=True,
+    )
+
     # Download models and initialize cancer subtype mappings
     download_and_process_models()
-    
+
     # Launch the Gradio interface
     # Use default settings suitable for Hugging Face Spaces
     launch_gradio(
