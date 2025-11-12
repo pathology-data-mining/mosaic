@@ -6,6 +6,15 @@ Hugging Face Spaces. It initializes the models and launches the Gradio interface
 
 import os
 import subprocess
+import sys
+
+# Install the mosaic package if not already installed
+try:
+    import mosaic
+except ImportError:
+    print("Installing mosaic package...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", "."])
+    import mosaic
 
 from mosaic.gradio_app import download_and_process_models
 from mosaic.ui import launch_gradio
