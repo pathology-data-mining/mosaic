@@ -4,16 +4,20 @@ This module serves as the main entry point when deploying Mosaic to
 Hugging Face Spaces. It initializes the models and launches the Gradio interface.
 """
 
+import os
+import subprocess
+
 from mosaic.gradio_app import download_and_process_models
 from mosaic.ui import launch_gradio
 
 if __name__ == "__main__":
     # Install Paladin from GitHub
     GIT_TOKEN = os.environ.get("GH_TOKEN")
-    subprocess.run(
-        f"pip install git+https://{GIT_TOKEN}@github.com/pathology-data-mining/paladin.git@dev",
-        shell=True,
-    )
+    if GIT_TOKEN:
+        subprocess.run(
+            f"pip install git+https://{GIT_TOKEN}@github.com/pathology-data-mining/paladin.git@dev",
+            shell=True,
+        )
 
     # Download models and initialize cancer subtype mappings
     download_and_process_models()
