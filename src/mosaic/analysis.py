@@ -4,17 +4,7 @@ This module provides the main slide analysis pipeline that integrates tissue seg
 feature extraction, and model inference for cancer subtype and biomarker prediction.
 """
 
-import pickle
-import torch
-import pandas as pd
-import gradio as gr
-from pathlib import Path
-from mussel.models import ModelType
-from mussel.utils import get_features, segment_tissue, filter_features
-from mussel.utils.segment import draw_slide_mask
-from mussel.cli.tessellate import BiopsySegConfig, ResectionSegConfig, TcgaSegConfig
-from loguru import logger
-
+# Import spaces first before any CUDA-related imports
 try:
     import spaces
 
@@ -27,6 +17,17 @@ except ImportError:
         @staticmethod
         def GPU(fn):
             return fn
+
+import pickle
+import torch
+import pandas as pd
+import gradio as gr
+from pathlib import Path
+from mussel.models import ModelType
+from mussel.utils import get_features, segment_tissue, filter_features
+from mussel.utils.segment import draw_slide_mask
+from mussel.cli.tessellate import BiopsySegConfig, ResectionSegConfig, TcgaSegConfig
+from loguru import logger
 
 
 from mosaic.inference import run_aeon, run_paladin

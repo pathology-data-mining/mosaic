@@ -8,6 +8,12 @@ import os
 import subprocess
 import sys
 
+# Import spaces first to avoid CUDA initialization issues
+try:
+    import spaces
+except ImportError:
+    pass
+
 # Add src directory to path for Hugging Face Spaces
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
