@@ -33,50 +33,24 @@ from loguru import logger
 from mosaic.inference import run_aeon, run_paladin
 
 
-@spaces.GPU(duration=300)
-def _run_gpu_inference(
-    coords,
-    slide_path,
-    attrs,
-    site_type,
-    cancer_subtype,
-    cancer_subtype_name_map,
-    num_workers,
-    progress,
-):
-    """Run GPU-intensive feature extraction and model inference.
-
-    This function is decorated with @spaces.GPU to allocate GPU resources only
-    when needed for GPU-intensive operations including:
-    - CTransPath feature extraction
-    - Feature filtering with marker classifier
-    - Optimus feature extraction
-    - Aeon cancer subtype inference
-    - Paladin biomarker prediction
-
+@spaces.GPU(duration=120)
+def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
+    """Extract CTransPath features on GPU.
+    
     Args:
         coords: Tissue tile coordinates
         slide_path: Path to the whole slide image file
         attrs: Slide attributes
-        site_type: Site type, either "Primary" or "Metastatic"
-        cancer_subtype: Cancer subtype (OncoTree code or "Unknown" for inference)
-        cancer_subtype_name_map: Dictionary mapping cancer subtype names to codes
-        num_workers: Number of worker processes for feature extraction
-        progress: Gradio progress tracker for UI updates
-
+        num_workers: Number of worker processes
+        
     Returns:
-        tuple: (aeon_results, paladin_results)
-            - aeon_results: DataFrame with cancer subtype predictions and confidence scores
-            - paladin_results: DataFrame with biomarker predictions
+        tuple: (ctranspath_features, coords)
     """
-    # Zero GPU requires num_workers=0 to avoid multiprocessing issues
     if HAS_SPACES:
         num_workers = 0
-        logger.info("Running on Hugging Face Spaces Zero GPU: setting num_workers=0")
-
-    # Step 2: Extract features with CTransPath
+        logger.info("Running CTransPath on Zero GPU: setting num_workers=0")
+    
     start_time = pd.Timestamp.now()
-    progress(0.3, desc="Extracting CTransPath features")
     logger.info("Extracting CTransPath features")
     ctranspath_features, _ = get_features(
         coords,
@@ -95,31 +69,31 @@ def _run_gpu_inference(
         else 0
     )
     logger.info(
-        f"CTransPath Feature extraction took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+        f"CTransPath extraction took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
     )
-
     torch.cuda.reset_peak_memory_stats()
+    
+    return ctranspath_features, coords
 
-    # Step 3: Filter features using marker classifier
-    start_time = pd.Timestamp.now()
-    marker_classifier = pickle.load(open("data/marker_classifier.pkl", "rb"))
-    progress(0.35, desc="Filtering features with marker classifier")
-    logger.info("Filtering features with marker classifier")
-    _, filtered_coords = filter_features(
-        ctranspath_features,
-        coords,
-        marker_classifier,
-        threshold=0.25,
-    )
-    end_time = pd.Timestamp.now()
-    logger.info(f"Feature filtering took {end_time - start_time}")
-    logger.info(
-        f"Filtered from {len(coords)} to {len(filtered_coords)} tiles using marker classifier"
-    )
 
-    # Step 4: Extract features with Optimus on filtered coords
+@spaces.GPU(duration=120)
+def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
+    """Extract Optimus features on GPU.
+    
+    Args:
+        filtered_coords: Filtered tissue tile coordinates
+        slide_path: Path to the whole slide image file
+        attrs: Slide attributes
+        num_workers: Number of worker processes
+        
+    Returns:
+        Optimus features
+    """
+    if HAS_SPACES:
+        num_workers = 0
+        logger.info("Running Optimus on Zero GPU: setting num_workers=0")
+    
     start_time = pd.Timestamp.now()
-    progress(0.4, desc="Extracting Optimus features")
     logger.info("Extracting Optimus features")
     features, _ = get_features(
         filtered_coords,
@@ -138,50 +112,71 @@ def _run_gpu_inference(
         else 0
     )
     logger.info(
-        f"Optimus Feature extraction took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+        f"Optimus extraction took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
     )
-
     torch.cuda.reset_peak_memory_stats()
+    
+    return features
 
-    # Step 5: Run Aeon to predict histology if not supplied
-    if cancer_subtype == "Unknown":
-        start_time = pd.Timestamp.now()
-        progress(0.9, desc="Running Aeon for cancer subtype inference")
-        logger.info("Running Aeon for cancer subtype inference")
-        aeon_results, _ = run_aeon(
-            features=features,
-            model_path="data/aeon_model.pkl",
-            metastatic=(site_type == "Metastatic"),
-            batch_size=8,
-            num_workers=num_workers,
-            use_cpu=False,
-        )
-        end_time = pd.Timestamp.now()
-        max_gpu_memory = (
-            torch.cuda.max_memory_allocated() / (1024**3)
-            if torch.cuda.is_available()
-            else 0
-        )
-        logger.info(
-            f"Aeon inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
-        )
-        torch.cuda.reset_peak_memory_stats()
-    else:
-        cancer_subtype_code = cancer_subtype_name_map.get(cancer_subtype)
-        aeon_results = pd.DataFrame(
-            {
-                "Cancer Subtype": [cancer_subtype_code],
-                "Confidence": [1.0],
-            }
-        )
-        logger.info(f"Using user-supplied cancer subtype: {cancer_subtype}")
 
-    # Step 6: Run Paladin to predict biomarkers
-    if len(aeon_results) == 0:
-        logger.warning("No Aeon results, skipping Paladin inference")
-        return None, None
+@spaces.GPU(duration=60)
+def _run_aeon_inference(features, site_type, num_workers):
+    """Run Aeon cancer subtype inference on GPU.
+    
+    Args:
+        features: Optimus features
+        site_type: Site type ("Primary" or "Metastatic")
+        num_workers: Number of worker processes
+        
+    Returns:
+        Aeon results DataFrame
+    """
+    if HAS_SPACES:
+        num_workers = 0
+        logger.info("Running Aeon on Zero GPU: setting num_workers=0")
+    
     start_time = pd.Timestamp.now()
-    progress(0.95, desc="Running Paladin for biomarker inference")
+    logger.info("Running Aeon for cancer subtype inference")
+    aeon_results, _ = run_aeon(
+        features=features,
+        model_path="data/aeon_model.pkl",
+        metastatic=(site_type == "Metastatic"),
+        batch_size=8,
+        num_workers=num_workers,
+        use_cpu=False,
+    )
+    end_time = pd.Timestamp.now()
+    max_gpu_memory = (
+        torch.cuda.max_memory_allocated() / (1024**3)
+        if torch.cuda.is_available()
+        else 0
+    )
+    logger.info(
+        f"Aeon inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+    )
+    torch.cuda.reset_peak_memory_stats()
+    
+    return aeon_results
+
+
+@spaces.GPU(duration=60)
+def _run_paladin_inference(features, aeon_results, site_type, num_workers):
+    """Run Paladin biomarker inference on GPU.
+    
+    Args:
+        features: Optimus features
+        aeon_results: Aeon results DataFrame
+        site_type: Site type ("Primary" or "Metastatic")
+        num_workers: Number of worker processes
+        
+    Returns:
+        Paladin results DataFrame
+    """
+    if HAS_SPACES:
+        num_workers = 0
+        logger.info("Running Paladin on Zero GPU: setting num_workers=0")
+    
+    start_time = pd.Timestamp.now()
     logger.info("Running Paladin for biomarker inference")
     paladin_results = run_paladin(
         features=features,
@@ -201,6 +196,90 @@ def _run_gpu_inference(
     logger.info(
         f"Paladin inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
     )
+    torch.cuda.reset_peak_memory_stats()
+    
+    return paladin_results
+
+
+def _run_inference_pipeline(
+    coords,
+    slide_path,
+    attrs,
+    site_type,
+    cancer_subtype,
+    cancer_subtype_name_map,
+    num_workers,
+    progress,
+):
+    """Run complete inference pipeline with separate GPU calls.
+
+    This function orchestrates the GPU operations by calling separate functions
+    for each GPU-intensive task, allowing HF Spaces to allocate GPU resources
+    independently for each operation.
+
+    Args:
+        coords: Tissue tile coordinates
+        slide_path: Path to the whole slide image file
+        attrs: Slide attributes
+        site_type: Site type, either "Primary" or "Metastatic"
+        cancer_subtype: Cancer subtype (OncoTree code or "Unknown" for inference)
+        cancer_subtype_name_map: Dictionary mapping cancer subtype names to codes
+        num_workers: Number of worker processes for feature extraction
+        progress: Gradio progress tracker for UI updates
+
+    Returns:
+        tuple: (aeon_results, paladin_results)
+            - aeon_results: DataFrame with cancer subtype predictions and confidence scores
+            - paladin_results: DataFrame with biomarker predictions
+    """
+    # Step 2: Extract CTransPath features
+    progress(0.3, desc="Extracting CTransPath features")
+    ctranspath_features, coords = _extract_ctranspath_features(
+        coords, slide_path, attrs, num_workers
+    )
+
+    # Step 3: Filter features using marker classifier (CPU operation)
+    start_time = pd.Timestamp.now()
+    marker_classifier = pickle.load(open("data/marker_classifier.pkl", "rb"))
+    progress(0.35, desc="Filtering features with marker classifier")
+    logger.info("Filtering features with marker classifier")
+    _, filtered_coords = filter_features(
+        ctranspath_features,
+        coords,
+        marker_classifier,
+        threshold=0.25,
+    )
+    end_time = pd.Timestamp.now()
+    logger.info(f"Feature filtering took {end_time - start_time}")
+    logger.info(
+        f"Filtered from {len(coords)} to {len(filtered_coords)} tiles using marker classifier"
+    )
+
+    # Step 4: Extract Optimus features
+    progress(0.4, desc="Extracting Optimus features")
+    features = _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers)
+
+    # Step 5: Run Aeon to predict histology if not supplied
+    if cancer_subtype == "Unknown":
+        progress(0.9, desc="Running Aeon for cancer subtype inference")
+        aeon_results = _run_aeon_inference(features, site_type, num_workers)
+    else:
+        cancer_subtype_code = cancer_subtype_name_map.get(cancer_subtype)
+        aeon_results = pd.DataFrame(
+            {
+                "Cancer Subtype": [cancer_subtype_code],
+                "Confidence": [1.0],
+            }
+        )
+        logger.info(f"Using user-supplied cancer subtype: {cancer_subtype}")
+
+    # Step 6: Run Paladin to predict biomarkers
+    if len(aeon_results) == 0:
+        logger.warning("No Aeon results, skipping Paladin inference")
+        return None, None
+    
+    progress(0.95, desc="Running Paladin for biomarker inference")
+    paladin_results = _run_paladin_inference(features, aeon_results, site_type, num_workers)
 
     aeon_results.set_index("Cancer Subtype", inplace=True)
 
@@ -294,8 +373,8 @@ def analyze_slide(
     )
     logger.info("Slide mask drawn")
 
-    # Step 2-6: Run GPU-intensive operations (feature extraction and inference)
-    aeon_results, paladin_results = _run_gpu_inference(
+    # Step 2-6: Run inference pipeline with separate GPU calls
+    aeon_results, paladin_results = _run_inference_pipeline(
         coords,
         slide_path,
         attrs,
