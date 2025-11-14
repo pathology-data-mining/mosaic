@@ -76,7 +76,7 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     return ctranspath_features, coords
 
 
-@spaces.GPU(duration=120)
+@spaces.GPU(duration=600)
 def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     """Extract Optimus features on GPU.
     
