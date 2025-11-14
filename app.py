@@ -8,14 +8,9 @@ import os
 import subprocess
 import sys
 
-# Install the mosaic package if not already installed
-try:
-    import mosaic
-except ImportError:
-    print("Installing mosaic package...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", "."])
+# Add src directory to path for Hugging Face Spaces
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-# Import after installation
 from mosaic.gradio_app import download_and_process_models
 from mosaic.ui import launch_gradio
 
