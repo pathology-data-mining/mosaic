@@ -17,19 +17,22 @@ from loguru import logger
 
 try:
     import spaces
+
     HAS_SPACES = True
 except ImportError:
     HAS_SPACES = False
+
     # Create a no-op decorator if spaces is not available
     class spaces:
         @staticmethod
         def GPU(fn):
             return fn
 
+
 from mosaic.inference import run_aeon, run_paladin
 
 
-@spaces.GPU
+@spaces.GPU(duration=300)
 def _run_gpu_inference(
     coords,
     slide_path,
@@ -41,7 +44,7 @@ def _run_gpu_inference(
     progress,
 ):
     """Run GPU-intensive feature extraction and model inference.
-    
+
     This function is decorated with @spaces.GPU to allocate GPU resources only
     when needed for GPU-intensive operations including:
     - CTransPath feature extraction
@@ -49,7 +52,7 @@ def _run_gpu_inference(
     - Optimus feature extraction
     - Aeon cancer subtype inference
     - Paladin biomarker prediction
-    
+
     Args:
         coords: Tissue tile coordinates
         slide_path: Path to the whole slide image file
@@ -59,7 +62,7 @@ def _run_gpu_inference(
         cancer_subtype_name_map: Dictionary mapping cancer subtype names to codes
         num_workers: Number of worker processes for feature extraction
         progress: Gradio progress tracker for UI updates
-        
+
     Returns:
         tuple: (aeon_results, paladin_results)
             - aeon_results: DataFrame with cancer subtype predictions and confidence scores
@@ -214,15 +217,15 @@ def analyze_slide(
     progress=gr.Progress(track_tqdm=True),
 ):
     """Analyze a whole slide image for cancer subtype and biomarker prediction.
-    
+
     This function performs a complete analysis pipeline including:
     1. Tissue segmentation (CPU-only, no GPU required)
     2. GPU-intensive feature extraction and model inference
-    
+
     The GPU-intensive operations are handled by a separate function decorated
     with @spaces.GPU to efficiently manage GPU resources on Hugging Face Spaces.
     Tissue segmentation runs on CPU and is not included in the GPU allocation.
-    
+
     Args:
         slide_path: Path to the whole slide image file
         seg_config: Segmentation configuration, one of "Biopsy", "Resection", or "TCGA"
@@ -232,13 +235,13 @@ def analyze_slide(
         ihc_subtype: IHC subtype for breast cancer (optional)
         num_workers: Number of worker processes for feature extraction
         progress: Gradio progress tracker for UI updates
-        
+
     Returns:
         tuple: (slide_mask, aeon_results, paladin_results)
             - slide_mask: PIL Image of tissue segmentation visualization
             - aeon_results: DataFrame with cancer subtype predictions and confidence scores
             - paladin_results: DataFrame with biomarker predictions
-            
+
     Raises:
         gr.Error: If no slide is provided
         gr.Warning: If no tissue is detected in the slide
@@ -246,7 +249,7 @@ def analyze_slide(
     """
     if slide_path is None:
         raise gr.Error("Please upload a slide.")
-    
+
     # Step 1: Segment tissue (CPU-only, not GPU-intensive)
     start_time = pd.Timestamp.now()
 
