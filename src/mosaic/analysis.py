@@ -117,16 +117,19 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     ctranspath_features = np.concatenate(all_features, axis=0)
     
     end_time = pd.Timestamp.now()
-    max_gpu_memory = (
-        torch.cuda.max_memory_allocated() / (1024**3)
-        if torch.cuda.is_available()
-        else 0
-    )
-    logger.info(
-        f"CTransPath extraction took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
-    )
+    
+    # Log memory stats if CUDA is available
     if torch.cuda.is_available():
-        torch.cuda.reset_peak_memory_stats()
+        try:
+            max_gpu_memory = torch.cuda.max_memory_allocated() / (1024**3)
+            logger.info(
+                f"CTransPath extraction took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+            )
+            torch.cuda.reset_peak_memory_stats()
+        except Exception:
+            logger.info(f"CTransPath extraction took {end_time - start_time}")
+    else:
+        logger.info(f"CTransPath extraction took {end_time - start_time}")
     
     return ctranspath_features, coords
 
@@ -209,16 +212,19 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     features = np.concatenate(all_features, axis=0)
     
     end_time = pd.Timestamp.now()
-    max_gpu_memory = (
-        torch.cuda.max_memory_allocated() / (1024**3)
-        if torch.cuda.is_available()
-        else 0
-    )
-    logger.info(
-        f"Optimus extraction took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
-    )
+    
+    # Log memory stats if CUDA is available
     if torch.cuda.is_available():
-        torch.cuda.reset_peak_memory_stats()
+        try:
+            max_gpu_memory = torch.cuda.max_memory_allocated() / (1024**3)
+            logger.info(
+                f"Optimus extraction took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+            )
+            torch.cuda.reset_peak_memory_stats()
+        except Exception:
+            logger.info(f"Optimus extraction took {end_time - start_time}")
+    else:
+        logger.info(f"Optimus extraction took {end_time - start_time}")
     
     return features
 
@@ -253,16 +259,19 @@ def _run_aeon_inference(features, site_type, num_workers):
         use_cpu=False,
     )
     end_time = pd.Timestamp.now()
-    max_gpu_memory = (
-        torch.cuda.max_memory_allocated() / (1024**3)
-        if torch.cuda.is_available()
-        else 0
-    )
-    logger.info(
-        f"Aeon inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
-    )
+    
+    # Log memory stats if CUDA is available
     if torch.cuda.is_available():
-        torch.cuda.reset_peak_memory_stats()
+        try:
+            max_gpu_memory = torch.cuda.max_memory_allocated() / (1024**3)
+            logger.info(
+                f"Aeon inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+            )
+            torch.cuda.reset_peak_memory_stats()
+        except Exception:
+            logger.info(f"Aeon inference took {end_time - start_time}")
+    else:
+        logger.info(f"Aeon inference took {end_time - start_time}")
     
     return aeon_results
 
@@ -299,16 +308,19 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
         use_cpu=False,
     )
     end_time = pd.Timestamp.now()
-    max_gpu_memory = (
-        torch.cuda.max_memory_allocated() / (1024**3)
-        if torch.cuda.is_available()
-        else 0
-    )
-    logger.info(
-        f"Paladin inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
-    )
+    
+    # Log memory stats if CUDA is available
     if torch.cuda.is_available():
-        torch.cuda.reset_peak_memory_stats()
+        try:
+            max_gpu_memory = torch.cuda.max_memory_allocated() / (1024**3)
+            logger.info(
+                f"Paladin inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+            )
+            torch.cuda.reset_peak_memory_stats()
+        except Exception:
+            logger.info(f"Paladin inference took {end_time - start_time}")
+    else:
+        logger.info(f"Paladin inference took {end_time - start_time}")
     
     return paladin_results
 
