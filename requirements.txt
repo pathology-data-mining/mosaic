@@ -14,4 +14,4 @@ scikit-learn>=1.3.0
 requests>=2.31.0
 huggingface-hub>=0.20.0
 openslide-python>=1.3.0
-git+https://github.com/pathology-data-mining/Mussel.git@ray-dev
+git+https://github.com/pathology-data-mining/Mussel.git@mosaic-dev
