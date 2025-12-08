@@ -5,12 +5,18 @@ feature extraction, and model inference for cancer subtype and biomarker predict
 """
 
 # Import spaces first before any CUDA-related imports
+import os
+
 try:
     import spaces
 
     HAS_SPACES = True
+    # Check if we're actually running on ZeroGPU
+    # The ZERO_GPU env var is set when running on ZeroGPU
+    IS_ZEROGPU = os.environ.get("ZERO_GPU") == "true"
 except ImportError:
     HAS_SPACES = False
+    IS_ZEROGPU = False
 
     # Create a no-op decorator if spaces is not available
     class spaces:
@@ -46,9 +52,12 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     Returns:
         tuple: (ctranspath_features, coords)
     """
-    if HAS_SPACES:
+    if IS_ZEROGPU:
         num_workers = 0
-        logger.info("Running CTransPath on Zero GPU: setting num_workers=0")
+        logger.info("Running CTransPath on ZeroGPU: setting num_workers=0")
+    else:
+        num_workers = max(num_workers, 8)
+        logger.info(f"Running CTransPath with num_workers={num_workers}")
     
     start_time = pd.Timestamp.now()
     logger.info("Extracting CTransPath features")
@@ -89,9 +98,12 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     Returns:
         Optimus features
     """
-    if HAS_SPACES:
+    if IS_ZEROGPU:
         num_workers = 0
-        logger.info("Running Optimus on Zero GPU: setting num_workers=0")
+        logger.info("Running Optimus on ZeroGPU: setting num_workers=0")
+    else:
+        num_workers = max(num_workers, 8)
+        logger.info(f"Running Optimus with num_workers={num_workers}")
     
     start_time = pd.Timestamp.now()
     logger.info("Extracting Optimus features")
@@ -131,9 +143,12 @@ def _run_aeon_inference(features, site_type, num_workers):
     Returns:
         Aeon results DataFrame
     """
-    if HAS_SPACES:
+    if IS_ZEROGPU:
         num_workers = 0
-        logger.info("Running Aeon on Zero GPU: setting num_workers=0")
+        logger.info("Running Aeon on ZeroGPU: setting num_workers=0")
+    else:
+        num_workers = max(num_workers, 8)
+        logger.info(f"Running Aeon with num_workers={num_workers}")
     
     start_time = pd.Timestamp.now()
     logger.info("Running Aeon for cancer subtype inference")
@@ -172,9 +187,12 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
     Returns:
         Paladin results DataFrame
     """
-    if HAS_SPACES:
+    if IS_ZEROGPU:
         num_workers = 0
-        logger.info("Running Paladin on Zero GPU: setting num_workers=0")
+        logger.info("Running Paladin on ZeroGPU: setting num_workers=0")
+    else:
+        num_workers = max(num_workers, 8)
+        logger.info(f"Running Paladin with num_workers={num_workers}")
     
     start_time = pd.Timestamp.now()
     logger.info("Running Paladin for biomarker inference")
