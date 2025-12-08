@@ -81,8 +81,8 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     if IS_ZEROGPU:
         num_workers = 0
         logger.info("Running CTransPath on ZeroGPU: setting num_workers=0")
-        # Split into chunks to stay within GPU time limits
-        chunk_size = 15000
+        # Split into smaller chunks to stay within GPU time limits
+        chunk_size = 2000
         total_tiles = len(coords)
         logger.info(f"Processing {total_tiles} tiles in chunks of {chunk_size}")
     else:
@@ -176,8 +176,9 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     if IS_ZEROGPU:
         num_workers = 0
         logger.info("Running Optimus on ZeroGPU: setting num_workers=0")
-        # Split into chunks to stay within GPU time limits
-        chunk_size = 10000
+        # Split into very small chunks to stay within GPU time limits
+        # Even 1881 tiles caused expiry, so use 1500 tiles per chunk
+        chunk_size = 1500
         total_tiles = len(filtered_coords)
         logger.info(f"Processing {total_tiles} tiles in chunks of {chunk_size}")
     else:
