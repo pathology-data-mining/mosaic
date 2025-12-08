@@ -136,8 +136,6 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
 def _extract_optimus_features_single_chunk(coords_chunk, slide_path, attrs, num_workers, batch_size):
     """Extract Optimus features for ONE chunk with its own GPU allocation.
     
-    This function gets its own GPU token for up to 300 seconds.
-    
     Args:
         coords_chunk: Chunk of tissue tile coordinates
         slide_path: Path to the whole slide image file
@@ -162,7 +160,7 @@ def _extract_optimus_features_single_chunk(coords_chunk, slide_path, attrs, num_
 
 
 def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
-    """Extract Optimus features, splitting into multiple GPU calls if needed.
+    """Extract Optimus features, potentially splitting into multiple GPU calls.
     
     Args:
         filtered_coords: Filtered tissue tile coordinates
@@ -175,19 +173,18 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     """
     if IS_ZEROGPU:
         num_workers = 0
-        # Split into chunks - each chunk gets its own GPU call/token
-        chunk_size = 10000  # Increased from 1500 - each chunk gets full 300s
+        # Conservative chunk size - each chunk should complete in ~60-90s
+        # Leaving lots of buffer in the 300s allocation
+        chunk_size = 3000
         logger.info(f"Running Optimus on ZeroGPU: splitting {len(filtered_coords)} tiles into chunks of {chunk_size}")
     else:
         num_workers = max(num_workers, 8)
-        chunk_size = len(filtered_coords)  # Process all at once
+        chunk_size = len(filtered_coords)
         logger.info(f"Running Optimus with {num_workers} workers")
     
     batch_size = 128 if IS_ZEROGPU else 64
-    
     start_time = pd.Timestamp.now()
     
-    # Process each chunk with separate GPU allocation
     all_features = []
     for i in range(0, len(filtered_coords), chunk_size):
         chunk_coords = filtered_coords[i:i+chunk_size]
@@ -197,12 +194,10 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
         logger.info(f"Processing Optimus chunk {chunk_num}/{total_chunks} ({len(chunk_coords)} tiles)")
         
         if IS_ZEROGPU:
-            # Each call gets fresh GPU token
             chunk_features = _extract_optimus_features_single_chunk(
                 chunk_coords, slide_path, attrs, num_workers, batch_size
             )
         else:
-            # Non-ZeroGPU: direct call without decorator overhead
             chunk_features, _ = get_features(
                 chunk_coords, slide_path, attrs,
                 model_type=ModelType.OPTIMUS,
@@ -215,12 +210,11 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
         all_features.append(chunk_features)
         logger.info(f"Chunk {chunk_num}/{total_chunks} completed")
     
-    # Concatenate all features
     import numpy as np
     features = np.concatenate(all_features, axis=0) if len(all_features) > 1 else all_features[0]
     
     end_time = pd.Timestamp.now()
-    logger.info(f"Optimus extraction took {end_time - start_time} total")
+    logger.info(f"Optimus total time: {end_time - start_time}")
     
     return features
 
