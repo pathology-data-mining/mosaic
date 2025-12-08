@@ -59,8 +59,11 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
         num_workers = max(num_workers, 8)
         logger.info(f"Running CTransPath with num_workers={num_workers}")
     
+    # Use larger batch size on H100 for better throughput
+    batch_size = 128 if IS_ZEROGPU else 64
+    
     start_time = pd.Timestamp.now()
-    logger.info("Extracting CTransPath features")
+    logger.info(f"Extracting CTransPath features with batch_size={batch_size}")
     ctranspath_features, _ = get_features(
         coords,
         slide_path,
@@ -68,7 +71,7 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
         model_type=ModelType.CTRANSPATH,
         model_path="data/ctranspath.pth",
         num_workers=num_workers,
-        batch_size=64,
+        batch_size=batch_size,
         use_gpu=True,
     )
     end_time = pd.Timestamp.now()
@@ -85,7 +88,7 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     return ctranspath_features, coords
 
 
-@spaces.GPU(duration=600)
+@spaces.GPU(duration=300)
 def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     """Extract Optimus features on GPU.
     
@@ -105,8 +108,11 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
         num_workers = max(num_workers, 8)
         logger.info(f"Running Optimus with num_workers={num_workers}")
     
+    # Use larger batch size on H100 for better throughput
+    batch_size = 128 if IS_ZEROGPU else 64
+    
     start_time = pd.Timestamp.now()
-    logger.info("Extracting Optimus features")
+    logger.info(f"Extracting Optimus features with batch_size={batch_size}")
     features, _ = get_features(
         filtered_coords,
         slide_path,
@@ -114,7 +120,7 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
         model_type=ModelType.OPTIMUS,
         model_path="data/optimus.pkl",
         num_workers=num_workers,
-        batch_size=64,
+        batch_size=batch_size,
         use_gpu=True,
     )
     end_time = pd.Timestamp.now()
