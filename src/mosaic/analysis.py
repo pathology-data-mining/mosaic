@@ -83,7 +83,7 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     if IS_ZEROGPU:
         num_workers = 0
         # Split into chunks - each chunk gets its own GPU call/token
-        chunk_size = 2000
+        chunk_size = 10000  # Increased from 2000 - each chunk gets full 180s
         logger.info(f"Running CTransPath on ZeroGPU: splitting {len(coords)} tiles into chunks of {chunk_size}")
     else:
         num_workers = max(num_workers, 8)
@@ -176,7 +176,7 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     if IS_ZEROGPU:
         num_workers = 0
         # Split into chunks - each chunk gets its own GPU call/token
-        chunk_size = 1500
+        chunk_size = 10000  # Increased from 1500 - each chunk gets full 300s
         logger.info(f"Running Optimus on ZeroGPU: splitting {len(filtered_coords)} tiles into chunks of {chunk_size}")
     else:
         num_workers = max(num_workers, 8)
