@@ -26,8 +26,16 @@ except ImportError:
                 return lambda f: f
             return fn
 
-# Detect T4 hardware
-IS_T4_GPU = os.environ.get("SPACE_HARDWARE") == "t4-small"
+# Detect T4 hardware by checking actual GPU
+import torch
+IS_T4_GPU = False
+GPU_NAME = "Unknown"
+if not IS_ZEROGPU and torch.cuda.is_available():
+    try:
+        GPU_NAME = torch.cuda.get_device_name(0)
+        IS_T4_GPU = "T4" in GPU_NAME
+    except:
+        pass
 
 # Set optimal parameters based on hardware
 if IS_ZEROGPU:
@@ -37,14 +45,13 @@ if IS_ZEROGPU:
 elif IS_T4_GPU:
     DEFAULT_BATCH_SIZE = 64
     DEFAULT_NUM_WORKERS = 4
-    GPU_TYPE = "T4 Small"
+    GPU_TYPE = f"T4 ({GPU_NAME})"
 else:
     DEFAULT_BATCH_SIZE = 64
     DEFAULT_NUM_WORKERS = 8
-    GPU_TYPE = "Standard GPU"
+    GPU_TYPE = f"Standard GPU ({GPU_NAME})"
 
 import pickle
-import torch
 import pandas as pd
 import gradio as gr
 from pathlib import Path
@@ -53,9 +60,10 @@ from mussel.utils import get_features, segment_tissue, filter_features
 from mussel.utils.segment import draw_slide_mask
 from mussel.cli.tessellate import BiopsySegConfig, ResectionSegConfig, TcgaSegConfig
 from loguru import logger
-
-
 from mosaic.inference import run_aeon, run_paladin
+
+# Log hardware detection at module load
+logger.info(f"Hardware: {GPU_TYPE} | batch_size={DEFAULT_BATCH_SIZE}, num_workers={DEFAULT_NUM_WORKERS}")
 
 
 def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
