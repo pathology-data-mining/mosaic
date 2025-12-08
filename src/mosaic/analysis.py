@@ -39,7 +39,7 @@ from loguru import logger
 from mosaic.inference import run_aeon, run_paladin
 
 
-@spaces.GPU(duration=180)
+@spaces.GPU(duration=60)
 def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     """Extract CTransPath features on GPU.
     
@@ -79,7 +79,7 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     return ctranspath_features, coords
 
 
-@spaces.GPU(duration=300)
+@spaces.GPU(duration=120)
 def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     """Extract Optimus features on GPU.
     
@@ -119,7 +119,7 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     return features
 
 
-@spaces.GPU(duration=90)
+@spaces.GPU(duration=60)
 def _run_aeon_inference(features, site_type, num_workers):
     """Run Aeon cancer subtype inference on GPU.
     
@@ -166,7 +166,7 @@ def _run_aeon_inference(features, site_type, num_workers):
     return aeon_results
 
 
-@spaces.GPU(duration=90)
+@spaces.GPU(duration=60)
 def _run_paladin_inference(features, aeon_results, site_type, num_workers):
     """Run Paladin biomarker inference on GPU.
     
