@@ -21,6 +21,18 @@ from mosaic.gradio_app import download_and_process_models
 from mosaic.ui import launch_gradio
 
 if __name__ == "__main__":
+    # Install flash-attn for H100 acceleration (if on Spaces)
+    if os.environ.get("SPACE_ID"):
+        try:
+            subprocess.run(
+                "pip install flash-attn --no-build-isolation",
+                shell=True,
+                check=False,
+                capture_output=True,
+            )
+        except Exception:
+            pass  # Flash-attn is optional, continue without it
+    
     # Install Paladin from GitHub
     GIT_TOKEN = os.environ.get("GH_TOKEN")
     if GIT_TOKEN:

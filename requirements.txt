@@ -1,7 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cu121
 torch>=2.0.0,<2.6
 torchvision>=0.15.0
-flash-attn>=2.5.0
 open-clip-torch
 gradio>=5.49.0
 loguru>=0.7.3
