@@ -21,8 +21,27 @@ except ImportError:
     # Create a no-op decorator if spaces is not available
     class spaces:
         @staticmethod
-        def GPU(fn):
+        def GPU(fn=None, duration=None):
+            if fn is None:
+                return lambda f: f
             return fn
+
+# Detect T4 hardware
+IS_T4_GPU = os.environ.get("SPACE_HARDWARE") == "t4-small"
+
+# Set optimal parameters based on hardware
+if IS_ZEROGPU:
+    DEFAULT_BATCH_SIZE = 128
+    DEFAULT_NUM_WORKERS = 0
+    GPU_TYPE = "ZeroGPU (H100)"
+elif IS_T4_GPU:
+    DEFAULT_BATCH_SIZE = 64
+    DEFAULT_NUM_WORKERS = 4
+    GPU_TYPE = "T4 Small"
+else:
+    DEFAULT_BATCH_SIZE = 64
+    DEFAULT_NUM_WORKERS = 8
+    GPU_TYPE = "Standard GPU"
 
 import pickle
 import torch
@@ -53,12 +72,17 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     """
     if IS_ZEROGPU:
         num_workers = 0
+        batch_size = 128
         logger.info(f"Running CTransPath on ZeroGPU: processing {len(coords)} tiles")
+    elif IS_T4_GPU:
+        num_workers = DEFAULT_NUM_WORKERS
+        batch_size = DEFAULT_BATCH_SIZE
+        logger.info(f"Running CTransPath on T4: processing {len(coords)} tiles with batch_size={batch_size}")
     else:
         num_workers = max(num_workers, 8)
+        batch_size = 64
         logger.info(f"Running CTransPath with {num_workers} workers")
     
-    batch_size = 128 if IS_ZEROGPU else 64
     start_time = pd.Timestamp.now()
     
     ctranspath_features, _ = get_features(
@@ -92,12 +116,17 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     """
     if IS_ZEROGPU:
         num_workers = 0
+        batch_size = 128
         logger.info(f"Running Optimus on ZeroGPU: processing {len(filtered_coords)} tiles")
+    elif IS_T4_GPU:
+        num_workers = DEFAULT_NUM_WORKERS
+        batch_size = DEFAULT_BATCH_SIZE
+        logger.info(f"Running Optimus on T4: processing {len(filtered_coords)} tiles with batch_size={batch_size}")
     else:
         num_workers = max(num_workers, 8)
+        batch_size = 64
         logger.info(f"Running Optimus with {num_workers} workers")
     
-    batch_size = 128 if IS_ZEROGPU else 64
     start_time = pd.Timestamp.now()
     
     features, _ = get_features(
@@ -131,6 +160,9 @@ def _run_aeon_inference(features, site_type, num_workers):
     if IS_ZEROGPU:
         num_workers = 0
         logger.info("Running Aeon on ZeroGPU: setting num_workers=0")
+    elif IS_T4_GPU:
+        num_workers = DEFAULT_NUM_WORKERS
+        logger.info(f"Running Aeon on T4 with num_workers={num_workers}")
     else:
         num_workers = max(num_workers, 8)
         logger.info(f"Running Aeon with num_workers={num_workers}")
@@ -178,6 +210,9 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
     if IS_ZEROGPU:
         num_workers = 0
         logger.info("Running Paladin on ZeroGPU: setting num_workers=0")
+    elif IS_T4_GPU:
+        num_workers = DEFAULT_NUM_WORKERS
+        logger.info(f"Running Paladin on T4 with num_workers={num_workers}")
     else:
         num_workers = max(num_workers, 8)
         logger.info(f"Running Paladin with num_workers={num_workers}")
