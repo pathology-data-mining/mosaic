@@ -12,8 +12,8 @@ try:
 
     HAS_SPACES = True
     # Check if we're actually running on ZeroGPU
-    # The ZERO_GPU env var is set when running on ZeroGPU
-    IS_ZEROGPU = os.environ.get("ZERO_GPU") == "true"
+    # HF Spaces sets SPACES_ZERO_GPU=1 when using ZeroGPU
+    IS_ZEROGPU = os.environ.get("SPACES_ZERO_GPU") == "1"
 except ImportError:
     HAS_SPACES = False
     IS_ZEROGPU = False
