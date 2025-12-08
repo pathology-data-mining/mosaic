@@ -39,7 +39,33 @@ from loguru import logger
 from mosaic.inference import run_aeon, run_paladin
 
 
-@spaces.GPU(duration=120)
+@spaces.GPU(duration=180)
+def _extract_ctranspath_features_chunk(coords_chunk, slide_path, attrs, num_workers, batch_size):
+    """Extract CTransPath features for a chunk of coordinates on GPU.
+    
+    Args:
+        coords_chunk: Chunk of tissue tile coordinates
+        slide_path: Path to the whole slide image file
+        attrs: Slide attributes
+        num_workers: Number of worker processes
+        batch_size: Batch size for inference
+        
+    Returns:
+        tuple: (ctranspath_features, coords_chunk)
+    """
+    features, _ = get_features(
+        coords_chunk,
+        slide_path,
+        attrs,
+        model_type=ModelType.CTRANSPATH,
+        model_path="data/ctranspath.pth",
+        num_workers=num_workers,
+        batch_size=batch_size,
+        use_gpu=True,
+    )
+    return features
+
+
 def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     """Extract CTransPath features on GPU.
     
@@ -55,25 +81,41 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     if IS_ZEROGPU:
         num_workers = 0
         logger.info("Running CTransPath on ZeroGPU: setting num_workers=0")
+        # Split into chunks to stay within GPU time limits
+        chunk_size = 15000
+        total_tiles = len(coords)
+        logger.info(f"Processing {total_tiles} tiles in chunks of {chunk_size}")
     else:
         num_workers = max(num_workers, 8)
         logger.info(f"Running CTransPath with num_workers={num_workers}")
+        chunk_size = len(coords)  # Process all at once
     
     # Use larger batch size on H100 for better throughput
     batch_size = 128 if IS_ZEROGPU else 64
     
     start_time = pd.Timestamp.now()
-    logger.info(f"Extracting CTransPath features with batch_size={batch_size}")
-    ctranspath_features, _ = get_features(
-        coords,
-        slide_path,
-        attrs,
-        model_type=ModelType.CTRANSPATH,
-        model_path="data/ctranspath.pth",
-        num_workers=num_workers,
-        batch_size=batch_size,
-        use_gpu=True,
-    )
+    
+    # Process in chunks
+    all_features = []
+    for i in range(0, len(coords), chunk_size):
+        chunk_coords = coords[i:i+chunk_size]
+        chunk_num = i // chunk_size + 1
+        total_chunks = (len(coords) + chunk_size - 1) // chunk_size
+        
+        logger.info(f"Extracting CTransPath features for chunk {chunk_num}/{total_chunks} "
+                   f"({len(chunk_coords)} tiles, batch_size={batch_size})")
+        
+        chunk_features = _extract_ctranspath_features_chunk(
+            chunk_coords, slide_path, attrs, num_workers, batch_size
+        )
+        all_features.append(chunk_features)
+        
+        logger.info(f"Chunk {chunk_num}/{total_chunks} completed")
+    
+    # Concatenate all features
+    import numpy as np
+    ctranspath_features = np.concatenate(all_features, axis=0)
+    
     end_time = pd.Timestamp.now()
     max_gpu_memory = (
         torch.cuda.max_memory_allocated() / (1024**3)
@@ -89,6 +131,32 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
 
 
 @spaces.GPU(duration=300)
+def _extract_optimus_features_chunk(coords_chunk, slide_path, attrs, num_workers, batch_size):
+    """Extract Optimus features for a chunk of coordinates on GPU.
+    
+    Args:
+        coords_chunk: Chunk of tissue tile coordinates
+        slide_path: Path to the whole slide image file
+        attrs: Slide attributes
+        num_workers: Number of worker processes
+        batch_size: Batch size for inference
+        
+    Returns:
+        Optimus features for this chunk
+    """
+    features, _ = get_features(
+        coords_chunk,
+        slide_path,
+        attrs,
+        model_type=ModelType.OPTIMUS,
+        model_path="data/optimus.pkl",
+        num_workers=num_workers,
+        batch_size=batch_size,
+        use_gpu=True,
+    )
+    return features
+
+
 def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     """Extract Optimus features on GPU.
     
@@ -104,25 +172,41 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     if IS_ZEROGPU:
         num_workers = 0
         logger.info("Running Optimus on ZeroGPU: setting num_workers=0")
+        # Split into chunks to stay within GPU time limits
+        chunk_size = 10000
+        total_tiles = len(filtered_coords)
+        logger.info(f"Processing {total_tiles} tiles in chunks of {chunk_size}")
     else:
         num_workers = max(num_workers, 8)
         logger.info(f"Running Optimus with num_workers={num_workers}")
+        chunk_size = len(filtered_coords)  # Process all at once
     
     # Use larger batch size on H100 for better throughput
     batch_size = 128 if IS_ZEROGPU else 64
     
     start_time = pd.Timestamp.now()
-    logger.info(f"Extracting Optimus features with batch_size={batch_size}")
-    features, _ = get_features(
-        filtered_coords,
-        slide_path,
-        attrs,
-        model_type=ModelType.OPTIMUS,
-        model_path="data/optimus.pkl",
-        num_workers=num_workers,
-        batch_size=batch_size,
-        use_gpu=True,
-    )
+    
+    # Process in chunks
+    all_features = []
+    for i in range(0, len(filtered_coords), chunk_size):
+        chunk_coords = filtered_coords[i:i+chunk_size]
+        chunk_num = i // chunk_size + 1
+        total_chunks = (len(filtered_coords) + chunk_size - 1) // chunk_size
+        
+        logger.info(f"Extracting Optimus features for chunk {chunk_num}/{total_chunks} "
+                   f"({len(chunk_coords)} tiles, batch_size={batch_size})")
+        
+        chunk_features = _extract_optimus_features_chunk(
+            chunk_coords, slide_path, attrs, num_workers, batch_size
+        )
+        all_features.append(chunk_features)
+        
+        logger.info(f"Chunk {chunk_num}/{total_chunks} completed")
+    
+    # Concatenate all features
+    import numpy as np
+    features = np.concatenate(all_features, axis=0)
+    
     end_time = pd.Timestamp.now()
     max_gpu_memory = (
         torch.cuda.max_memory_allocated() / (1024**3)
@@ -137,7 +221,7 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     return features
 
 
-@spaces.GPU(duration=60)
+@spaces.GPU(duration=90)
 def _run_aeon_inference(features, site_type, num_workers):
     """Run Aeon cancer subtype inference on GPU.
     
@@ -180,7 +264,7 @@ def _run_aeon_inference(features, site_type, num_workers):
     return aeon_results
 
 
-@spaces.GPU(duration=60)
+@spaces.GPU(duration=90)
 def _run_paladin_inference(features, aeon_results, site_type, num_workers):
     """Run Paladin biomarker inference on GPU.
     
