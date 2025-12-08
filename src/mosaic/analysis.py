@@ -125,7 +125,8 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     logger.info(
         f"CTransPath extraction took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
     )
-    torch.cuda.reset_peak_memory_stats()
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
     
     return ctranspath_features, coords
 
@@ -216,7 +217,8 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     logger.info(
         f"Optimus extraction took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
     )
-    torch.cuda.reset_peak_memory_stats()
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
     
     return features
 
@@ -259,7 +261,8 @@ def _run_aeon_inference(features, site_type, num_workers):
     logger.info(
         f"Aeon inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
     )
-    torch.cuda.reset_peak_memory_stats()
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
     
     return aeon_results
 
@@ -304,7 +307,8 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
     logger.info(
         f"Paladin inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
     )
-    torch.cuda.reset_peak_memory_stats()
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
     
     return paladin_results
 
