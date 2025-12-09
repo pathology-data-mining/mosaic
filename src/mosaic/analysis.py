@@ -254,8 +254,43 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
     return paladin_results
 
 
+@spaces.GPU(duration=60)
+def _run_inference_pipeline_free(
+    coords,
+    slide_path,
+    attrs,
+    site_type,
+    cancer_subtype,
+    cancer_subtype_name_map,
+    num_workers,
+    progress,
+):
+    """Run inference pipeline with 60s GPU limit (for free users)."""
+    return _run_inference_pipeline_impl(
+        coords, slide_path, attrs, site_type, cancer_subtype,
+        cancer_subtype_name_map, num_workers, progress
+    )
+
+
 @spaces.GPU(duration=300)
-def _run_inference_pipeline(
+def _run_inference_pipeline_pro(
+    coords,
+    slide_path,
+    attrs,
+    site_type,
+    cancer_subtype,
+    cancer_subtype_name_map,
+    num_workers,
+    progress,
+):
+    """Run inference pipeline with 300s GPU limit (for PRO users)."""
+    return _run_inference_pipeline_impl(
+        coords, slide_path, attrs, site_type, cancer_subtype,
+        cancer_subtype_name_map, num_workers, progress
+    )
+
+
+def _run_inference_pipeline_impl(
     coords,
     slide_path,
     attrs,
