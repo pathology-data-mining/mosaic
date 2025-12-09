@@ -384,6 +384,7 @@ def analyze_slide(
     ihc_subtype="",
     num_workers=4,
     progress=gr.Progress(track_tqdm=True),
+    request: gr.Request = None,
 ):
     """Analyze a whole slide image for cancer subtype and biomarker prediction.
 
