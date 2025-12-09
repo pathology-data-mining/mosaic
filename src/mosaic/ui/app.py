@@ -44,6 +44,7 @@ def analyze_slides(
     settings_input,
     user_dir,
     progress=gr.Progress(track_tqdm=True),
+    request: gr.Request = None,
 ):
     if slides is None or len(slides) == 0:
         raise gr.Error("Please upload at least one slide.")
