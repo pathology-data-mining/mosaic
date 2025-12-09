@@ -462,16 +462,40 @@ def analyze_slide(
     )
     logger.info("Slide mask drawn")
 
-    # Step 2-6: Run inference pipeline with separate GPU calls
-    aeon_results, paladin_results = _run_inference_pipeline(
-        coords,
-        slide_path,
-        attrs,
-        site_type,
-        cancer_subtype,
-        cancer_subtype_name_map,
-        num_workers,
-        progress,
-    )
+    # Step 2-6: Run inference pipeline with GPU
+    # Check if user is PRO for longer GPU duration
+    is_pro = False
+    if request is not None:
+        try:
+            # Check if user has logged in (PRO users are more likely to be logged in)
+            is_pro = request.username is not None and request.username != ""
+            logger.info(f"User: {request.username or 'anonymous'} | PRO: {is_pro}")
+        except:
+            pass
+    
+    if is_pro:
+        logger.info("Using 300s GPU allocation (logged-in user)")
+        aeon_results, paladin_results = _run_inference_pipeline_pro(
+            coords,
+            slide_path,
+            attrs,
+            site_type,
+            cancer_subtype,
+            cancer_subtype_name_map,
+            num_workers,
+            progress,
+        )
+    else:
+        logger.info("Using 60s GPU allocation (anonymous user)")
+        aeon_results, paladin_results = _run_inference_pipeline_free(
+            coords,
+            slide_path,
+            attrs,
+            site_type,
+            cancer_subtype,
+            cancer_subtype_name_map,
+            num_workers,
+            progress,
+        )
 
     return slide_mask, aeon_results, paladin_results
