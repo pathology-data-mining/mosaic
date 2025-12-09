@@ -464,17 +464,27 @@ def analyze_slide(
     logger.info("Slide mask drawn")
 
     # Step 2-6: Run inference pipeline with GPU
-    # Check if user is PRO for longer GPU duration
-    is_pro = False
+    # Check if user is logged in for longer GPU duration
+    is_logged_in = False
+    username = "anonymous"
     if request is not None:
         try:
-            # Check if user has logged in (PRO users are more likely to be logged in)
-            is_pro = request.username is not None and request.username != ""
-            logger.info(f"User: {request.username or 'anonymous'} | PRO: {is_pro}")
-        except:
-            pass
+            # Check if user is logged in
+            # In HF Spaces, request.username is None for anonymous users
+            if hasattr(request, 'username') and request.username:
+                username = request.username
+                is_logged_in = True
+            # Also check request headers for auth
+            elif hasattr(request, 'headers'):
+                auth_header = request.headers.get('authorization', '')
+                if auth_header and 'Bearer' in auth_header:
+                    is_logged_in = True
+                    username = "logged-in"
+            logger.info(f"User: {username} | Logged in: {is_logged_in}")
+        except Exception as e:
+            logger.warning(f"Failed to detect user: {e}")
     
-    if is_pro:
+    if is_logged_in:
         logger.info("Using 300s GPU allocation (logged-in user)")
         aeon_results, paladin_results = _run_inference_pipeline_pro(
             coords,
