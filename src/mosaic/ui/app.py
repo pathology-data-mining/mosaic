@@ -83,6 +83,7 @@ def analyze_slides(
             cancer_subtype_name_map,
             row["IHC Subtype"],
             progress=progress,
+            request=request,
         )
         if aeon_results is not None:
             if len(slides) > 1:
