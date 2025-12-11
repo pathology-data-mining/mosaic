@@ -469,31 +469,38 @@ def analyze_slide(
     username = "anonymous"
     if request is not None:
         try:
-            # Debug: Log all request attributes
-            logger.info(f"Request object type: {type(request)}")
-            logger.info(f"Request attributes: {dir(request)}")
-            if hasattr(request, '__dict__'):
-                logger.info(f"Request dict: {request.__dict__}")
-            
-            # Check if user is logged in
-            # In HF Spaces, request.username is None for anonymous users
-            if hasattr(request, 'username') and request.username:
-                username = request.username
-                is_logged_in = True
-                logger.info(f"Found username: {username}")
-            else:
-                logger.info(f"No username found. request.username = {getattr(request, 'username', 'ATTR_NOT_FOUND')}")
-            
-            # Also check request headers for auth
+            # Check if user is logged in via JWT token in referer
+            # HF Spaces doesn't populate request.username but includes JWT in URL
             if hasattr(request, 'headers'):
-                logger.info(f"Headers: {dict(request.headers)}")
-                auth_header = request.headers.get('authorization', '')
-                if auth_header and 'Bearer' in auth_header:
-                    is_logged_in = True
-                    username = "logged-in"
-            else:
-                logger.info("No headers attribute found")
-                
+                referer = request.headers.get('referer', '')
+                if '__sign=' in referer:
+                    # Extract and decode JWT token
+                    import re
+                    import json
+                    import base64
+                    
+                    match = re.search(r'__sign=([^&]+)', referer)
+                    if match:
+                        token = match.group(1)
+                        try:
+                            # JWT format: header.payload.signature
+                            # We only need the payload (middle part)
+                            parts = token.split('.')
+                            if len(parts) == 3:
+                                # Decode base64 payload (add padding if needed)
+                                payload = parts[1]
+                                payload += '=' * (4 - len(payload) % 4)
+                                decoded = base64.urlsafe_b64decode(payload)
+                                token_data = json.loads(decoded)
+                                
+                                # Check if user is in token
+                                if 'onBehalfOf' in token_data and 'user' in token_data['onBehalfOf']:
+                                    username = token_data['onBehalfOf']['user']
+                                    is_logged_in = True
+                                    logger.info(f"Found user in JWT token: {username}")
+                        except Exception as e:
+                            logger.warning(f"Failed to decode JWT: {e}")
+            
             logger.info(f"User: {username} | Logged in: {is_logged_in}")
         except Exception as e:
             logger.warning(f"Failed to detect user: {e}")
