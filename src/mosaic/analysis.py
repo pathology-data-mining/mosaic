@@ -469,20 +469,36 @@ def analyze_slide(
     username = "anonymous"
     if request is not None:
         try:
+            # Debug: Log all request attributes
+            logger.info(f"Request object type: {type(request)}")
+            logger.info(f"Request attributes: {dir(request)}")
+            if hasattr(request, '__dict__'):
+                logger.info(f"Request dict: {request.__dict__}")
+            
             # Check if user is logged in
             # In HF Spaces, request.username is None for anonymous users
             if hasattr(request, 'username') and request.username:
                 username = request.username
                 is_logged_in = True
+                logger.info(f"Found username: {username}")
+            else:
+                logger.info(f"No username found. request.username = {getattr(request, 'username', 'ATTR_NOT_FOUND')}")
+            
             # Also check request headers for auth
-            elif hasattr(request, 'headers'):
+            if hasattr(request, 'headers'):
+                logger.info(f"Headers: {dict(request.headers)}")
                 auth_header = request.headers.get('authorization', '')
                 if auth_header and 'Bearer' in auth_header:
                     is_logged_in = True
                     username = "logged-in"
+            else:
+                logger.info("No headers attribute found")
+                
             logger.info(f"User: {username} | Logged in: {is_logged_in}")
         except Exception as e:
             logger.warning(f"Failed to detect user: {e}")
+            import traceback
+            logger.warning(traceback.format_exc())
     
     if is_logged_in:
         logger.info("Using 300s GPU allocation (logged-in user)")
