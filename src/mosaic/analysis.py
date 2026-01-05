@@ -379,6 +379,8 @@ def analyze_slide(
     slide_path,
     seg_config,
     site_type,
+    sex,
+    tissue_site,
     cancer_subtype,
     cancer_subtype_name_map,
     ihc_subtype="",

@@ -201,6 +201,82 @@ CANCER_TYPE_TO_INT_MAP = {
 INT_TO_CANCER_TYPE_MAP = {v: k for k, v in CANCER_TYPE_TO_INT_MAP.items()}
 
 
+# Tissue site mapping (module-level cache)
+_TISSUE_SITE_MAP = None
+
+
+def get_tissue_site_map():
+    """Load tissue site name → index mapping from CSV.
+    
+    Returns:
+        dict: Mapping of tissue site names to indices (0-56)
+    """
+    global _TISSUE_SITE_MAP
+    if _TISSUE_SITE_MAP is None:
+        from pathlib import Path
+        import pandas as pd
+        
+        csv_path = Path(__file__).parent.parent.parent / "data" / "tissue_site_original_to_idx.csv"
+        df = pd.read_csv(csv_path)
+        
+        _TISSUE_SITE_MAP = {}
+        for _, row in df.iterrows():
+            _TISSUE_SITE_MAP[row['TISSUE_SITE']] = int(row['idx'])
+    
+    return _TISSUE_SITE_MAP
+
+
+def get_tissue_site_options():
+    """Get sorted unique tissue site names for UI dropdowns.
+    
+    Returns:
+        list: Sorted list of unique tissue site names
+    """
+    site_map = get_tissue_site_map()
+    return sorted(set(site_map.keys()))
+
+
+def encode_sex(sex):
+    """Convert sex to numeric encoding.
+    
+    Args:
+        sex: "Male" or "Female"
+        
+    Returns:
+        int: 0 for Male, 1 for Female
+    """
+    return 1 if sex == "Female" else 0
+
+
+def encode_tissue_site(site_name):
+    """Convert tissue site name to index (0-56).
+    
+    Args:
+        site_name: Tissue site name from CSV
+        
+    Returns:
+        int: Tissue site index, defaults to 8 ("Not Applicable")
+    """
+    site_map = get_tissue_site_map()
+    return site_map.get(site_name, 8)
+
+
+def tissue_site_to_one_hot(site_idx, num_classes=57):
+    """Convert tissue site index to one-hot vector.
+    
+    Args:
+        site_idx: Index value (0-56 for tissue site, 0-2 for sex)
+        num_classes: Number of classes (57 for tissue site, 3 for sex)
+        
+    Returns:
+        list: One-hot encoded vector
+    """
+    one_hot = [0] * num_classes
+    if 0 <= site_idx < num_classes:
+        one_hot[site_idx] = 1
+    return one_hot
+
+
 class SiteType(Enum):
     PRIMARY = "Primary"
     METASTASIS = "Metastasis"

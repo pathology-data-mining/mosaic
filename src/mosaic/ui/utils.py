@@ -21,6 +21,8 @@ IHC_SUBTYPES = ["", "HR+/HER2+", "HR+/HER2-", "HR-/HER2+", "HR-/HER2-"]
 SETTINGS_COLUMNS = [
     "Slide",
     "Site Type",
+    "Sex",
+    "Tissue Site",
     "Cancer Subtype",
     "IHC Subtype",
     "Segmentation Config",
