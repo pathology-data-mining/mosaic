@@ -287,6 +287,8 @@ class TileFeatureTensorDataset(Dataset):
         self,
         site_type: SiteType,
         tile_features: np.ndarray,
+        sex: int = None,
+        tissue_site_idx: int = None,
         n_max_tiles: int = 20000,
     ) -> None:
         """Initialize the dataset.
@@ -294,12 +296,16 @@ class TileFeatureTensorDataset(Dataset):
         Args:
             site_type: the site type as str, either "Primary" or "Metastasis"
             tile_features: the tile feature array
+            sex: patient sex (0=Male, 1=Female), optional for Aeon
+            tissue_site_idx: tissue site index (0-56), optional for Aeon
             n_max_tiles: the maximum number of tiles to use as int
 
         Returns:
             None
         """
         self.site_type = site_type
+        self.sex = sex
+        self.tissue_site_idx = tissue_site_idx
         self.n_max_tiles = n_max_tiles
         self.features = self._get_features(tile_features)
 
@@ -340,7 +346,22 @@ class TileFeatureTensorDataset(Dataset):
         Returns:
             dict: the item
         """
-        return {
+        result = {
             "site": self.site_type.value,
             "tile_tensor": self.features
         }
+        
+        # Add sex and tissue_site if provided (for Aeon)
+        if self.sex is not None:
+            result["SEX"] = torch.tensor(
+                tissue_site_to_one_hot(self.sex, num_classes=3),
+                dtype=torch.float32
+            )
+        
+        if self.tissue_site_idx is not None:
+            result["TISSUE_SITE"] = torch.tensor(
+                tissue_site_to_one_hot(self.tissue_site_idx, num_classes=57),
+                dtype=torch.float32
+            )
+        
+        return result

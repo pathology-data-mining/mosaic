@@ -53,7 +53,8 @@ NUM_WORKERS = 8
 
 
 def run(
-    features, model_path, metastatic=False, batch_size=8, num_workers=8, use_cpu=False
+    features, model_path, metastatic=False, batch_size=8, num_workers=8, use_cpu=False,
+    sex=None, tissue_site_idx=None
 ):
     """Run Aeon model inference for cancer subtype prediction.
     
@@ -64,6 +65,8 @@ def run(
         batch_size: Batch size for inference
         num_workers: Number of workers for data loading
         use_cpu: Force CPU usage instead of GPU
+        sex: Patient sex (0=Male, 1=Female), optional
+        tissue_site_idx: Tissue site index (0-56), optional
         
     Returns:
         tuple: (results_df, part_embedding)
@@ -85,6 +88,8 @@ def run(
     dataset = TileFeatureTensorDataset(
         site_type=site_type,
         tile_features=features,
+        sex=sex,
+        tissue_site_idx=tissue_site_idx,
         n_max_tiles=20000,
     )
     dataloader = DataLoader(
@@ -95,6 +100,10 @@ def run(
     batch = next(iter(dataloader))
     with torch.no_grad():
         batch["tile_tensor"] = batch["tile_tensor"].to(device)
+        if "SEX" in batch:
+            batch["SEX"] = batch["SEX"].to(device)
+        if "TISSUE_SITE" in batch:
+            batch["TISSUE_SITE"] = batch["TISSUE_SITE"].to(device)
         y = model(batch)
         y["logits"][:, col_indices_to_drop] = -1e6
 

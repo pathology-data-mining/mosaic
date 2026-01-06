@@ -154,13 +154,15 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
     return features
 
 
-def _run_aeon_inference(features, site_type, num_workers):
+def _run_aeon_inference(features, site_type, num_workers, sex=None, tissue_site_idx=None):
     """Run Aeon cancer subtype inference on GPU.
     
     Args:
         features: Optimus features
         site_type: Site type ("Primary" or "Metastatic")
         num_workers: Number of worker processes
+        sex: Patient sex (0=Male, 1=Female), optional
+        tissue_site_idx: Tissue site index (0-56), optional
         
     Returns:
         Aeon results DataFrame
@@ -183,6 +185,8 @@ def _run_aeon_inference(features, site_type, num_workers):
         metastatic=(site_type == "Metastatic"),
         batch_size=8,
         num_workers=num_workers,
+        sex=sex,
+        tissue_site_idx=tissue_site_idx,
         use_cpu=False,
     )
     end_time = pd.Timestamp.now()
@@ -260,6 +264,8 @@ def _run_inference_pipeline_free(
     slide_path,
     attrs,
     site_type,
+    sex,
+    tissue_site_idx,
     cancer_subtype,
     cancer_subtype_name_map,
     num_workers,
@@ -267,8 +273,8 @@ def _run_inference_pipeline_free(
 ):
     """Run inference pipeline with 60s GPU limit (for free users)."""
     return _run_inference_pipeline_impl(
-        coords, slide_path, attrs, site_type, cancer_subtype,
-        cancer_subtype_name_map, num_workers, progress
+        coords, slide_path, attrs, site_type, sex, tissue_site_idx,
+        cancer_subtype, cancer_subtype_name_map, num_workers, progress
     )
 
 
@@ -278,6 +284,8 @@ def _run_inference_pipeline_pro(
     slide_path,
     attrs,
     site_type,
+    sex,
+    tissue_site_idx,
     cancer_subtype,
     cancer_subtype_name_map,
     num_workers,
@@ -285,8 +293,8 @@ def _run_inference_pipeline_pro(
 ):
     """Run inference pipeline with 300s GPU limit (for PRO users)."""
     return _run_inference_pipeline_impl(
-        coords, slide_path, attrs, site_type, cancer_subtype,
-        cancer_subtype_name_map, num_workers, progress
+        coords, slide_path, attrs, site_type, sex, tissue_site_idx,
+        cancer_subtype, cancer_subtype_name_map, num_workers, progress
     )
 
 
@@ -295,6 +303,8 @@ def _run_inference_pipeline_impl(
     slide_path,
     attrs,
     site_type,
+    sex,
+    tissue_site_idx,
     cancer_subtype,
     cancer_subtype_name_map,
     num_workers,
@@ -351,7 +361,7 @@ def _run_inference_pipeline_impl(
     # Step 5: Run Aeon to predict histology if not supplied
     if cancer_subtype == "Unknown":
         progress(0.9, desc="Running Aeon for cancer subtype inference")
-        aeon_results = _run_aeon_inference(features, site_type, num_workers)
+        aeon_results = _run_aeon_inference(features, site_type, num_workers, sex, tissue_site_idx)
     else:
         cancer_subtype_code = cancer_subtype_name_map.get(cancer_subtype)
         aeon_results = pd.DataFrame(
@@ -509,6 +519,19 @@ def analyze_slide(
             import traceback
             logger.warning(traceback.format_exc())
     
+    # Convert sex and tissue_site to indices for Aeon model
+    sex_idx = None
+    if sex and sex != "Unknown":
+        sex_idx = 0 if sex == "Male" else 1
+    
+    tissue_site_idx = None
+    if tissue_site and tissue_site != "Unknown":
+        from mosaic.inference.data import get_tissue_site_map
+        tissue_site_map = get_tissue_site_map()
+        tissue_site_idx = tissue_site_map.get(tissue_site)
+        if tissue_site_idx is None:
+            logger.warning(f"Unknown tissue site: {tissue_site}")
+    
     if is_logged_in:
         logger.info("Using 300s GPU allocation (logged-in user)")
         aeon_results, paladin_results = _run_inference_pipeline_pro(
@@ -516,6 +539,8 @@ def analyze_slide(
             slide_path,
             attrs,
             site_type,
+            sex_idx,
+            tissue_site_idx,
             cancer_subtype,
             cancer_subtype_name_map,
             num_workers,
@@ -528,6 +553,8 @@ def analyze_slide(
             slide_path,
             attrs,
             site_type,
+            sex_idx,
+            tissue_site_idx,
             cancer_subtype,
             cancer_subtype_name_map,
             num_workers,

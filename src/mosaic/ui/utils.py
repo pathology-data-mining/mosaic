@@ -17,6 +17,7 @@ import requests
 TEMP_USER_DATA_DIR = Path(tempfile.gettempdir()) / "mosaic_user_data"
 
 IHC_SUBTYPES = ["", "HR+/HER2+", "HR+/HER2-", "HR-/HER2+", "HR-/HER2-"]
+SEX_OPTIONS = ["Unknown", "Male", "Female"]
 
 SETTINGS_COLUMNS = [
     "Slide",
@@ -29,6 +30,23 @@ SETTINGS_COLUMNS = [
 ]
 
 oncotree_code_map = {}
+tissue_site_list = None
+
+
+def get_tissue_sites():
+    """Get the list of tissue sites from the tissue site map file.
+    
+    Returns:
+        List of tissue site names
+    """
+    global tissue_site_list
+    if tissue_site_list is None:
+        current_dir = Path(__file__).parent.parent.parent
+        tissue_site_map_path = current_dir / "data" / "tissue_site_original_to_idx.csv"
+        df = pd.read_csv(tissue_site_map_path)
+        # Get unique tissue sites and sort them
+        tissue_site_list = ["Unknown"] + sorted(df["TISSUE_SITE"].unique().tolist())
+    return tissue_site_list
 
 
 def get_oncotree_code_name(code):
@@ -100,6 +118,10 @@ def load_settings(slide_csv_path):
         settings_df["Cancer Subtype"] = "Unknown"
     if "IHC Subtype" not in settings_df.columns:
         settings_df["IHC Subtype"] = ""
+    if "Sex" not in settings_df.columns:
+        settings_df["Sex"] = "Unknown"
+    if "Tissue Site" not in settings_df.columns:
+        settings_df["Tissue Site"] = "Unknown"
     if not set(SETTINGS_COLUMNS).issubset(settings_df.columns):
         raise ValueError("Missing required column in CSV file")
     settings_df = settings_df[SETTINGS_COLUMNS]
