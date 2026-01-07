@@ -4,6 +4,7 @@ This module provides functionality to run the Aeon deep learning model
 for predicting cancer subtypes from H&E whole slide image features.
 """
 
+import json
 import pickle  # nosec
 import sys
 from argparse import ArgumentParser
@@ -68,9 +69,6 @@ def run(
     model.eval()
 
     # Load the correct mapping from metadata for this model
-    from pathlib import Path
-    import json
-
     metadata_dir = Path("data/metadata")
     target_dict_path = metadata_dir / "target_dict.tsv"
     
@@ -104,7 +102,7 @@ def run(
             f"The file should contain a JSON dictionary with a 'histologies' key.\n"
             f"Example format: {{\"histologies\": [\"ACC\", \"BLCA\", ...]}}"
         )
-    except Exception as e:
+    except (OSError, UnicodeDecodeError, PermissionError) as e:
         raise IOError(
             f"Failed to read {target_dict_path}: {e}"
         )
