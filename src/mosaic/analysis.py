@@ -181,7 +181,7 @@ def _run_aeon_inference(features, site_type, num_workers, sex=None, tissue_site_
     logger.info("Running Aeon for cancer subtype inference")
     aeon_results, _ = run_aeon(
         features=features,
-        model_path="data/aeon_model_new.pkl",
+        model_path="data/aeon_model.pkl",
         metastatic=(site_type == "Metastatic"),
         batch_size=8,
         num_workers=num_workers,

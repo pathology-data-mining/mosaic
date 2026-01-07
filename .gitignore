@@ -17,3 +17,5 @@ data/
 htmlcov/
 flagged/
 gradio_cached_examples/
+*.svs
+*.png
