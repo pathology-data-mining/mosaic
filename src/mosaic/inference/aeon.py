@@ -16,8 +16,6 @@ from torch.utils.data import DataLoader
 from mosaic.inference.data import (
     SiteType,
     TileFeatureTensorDataset,
-    INT_TO_CANCER_TYPE_MAP,
-    CANCER_TYPE_TO_INT_MAP,
     encode_sex,
     encode_tissue_site,
 )
@@ -25,29 +23,14 @@ from mosaic.inference.data import (
 from loguru import logger
 
 # Cancer types excluded from prediction (too broad or ambiguous)
-cancer_types_to_drop = [
+# These are used to mask out predictions for overly general cancer types
+CANCER_TYPES_TO_DROP = [
     "UDMN",
     "ADNOS",
     "CUP",
     "CUPNOS",
-    "BRCNOS",
-    "GNOS",
-    "SCCNOS",
-    "PDC",
-    "NSCLC",
-    "BRCA",
-    "SARCNOS",
-    "NETNOS",
-    "MEL",
-    "RCC",
-    "BRCANOS",
-    "COADREAD",
-    "MUP",
-    "NECNOS",
-    "UCEC",
     "NOT",
 ]
-col_indices_to_drop = [CANCER_TYPE_TO_INT_MAP[x] for x in cancer_types_to_drop]
 
 
 BATCH_SIZE = 8
@@ -98,8 +81,7 @@ def run(
     CANCER_TYPE_TO_INT_MAP_LOCAL = {v: k for k, v in INT_TO_CANCER_TYPE_MAP_LOCAL.items()}
 
     # Calculate col_indices_to_drop using local mapping
-    cancer_types_to_drop = ["UDMN", "ADNOS", "CUP", "CUPNOS", "NOT"]
-    col_indices_to_drop_local = [CANCER_TYPE_TO_INT_MAP_LOCAL[x] for x in cancer_types_to_drop if x in CANCER_TYPE_TO_INT_MAP_LOCAL]
+    col_indices_to_drop_local = [CANCER_TYPE_TO_INT_MAP_LOCAL[x] for x in CANCER_TYPES_TO_DROP if x in CANCER_TYPE_TO_INT_MAP_LOCAL]
 
     site_type = SiteType.METASTASIS if metastatic else SiteType.PRIMARY
 
