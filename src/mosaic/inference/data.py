@@ -270,7 +270,8 @@ def encode_sex(sex):
         int: 0 for Male, 1 for Female, 2 for Unknown
     """
     sex_map = get_sex_map()
-    return sex_map.get(sex, 2)  # Default to 2 (Unknown) if not found
+    unknown_idx = sex_map.get("Unknown", 2)
+    return sex_map.get(sex, unknown_idx)
 
 
 def encode_tissue_site(site_name):
