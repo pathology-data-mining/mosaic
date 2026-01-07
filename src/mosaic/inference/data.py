@@ -204,6 +204,9 @@ INT_TO_CANCER_TYPE_MAP = {v: k for k, v in CANCER_TYPE_TO_INT_MAP.items()}
 # Tissue site mapping (module-level cache)
 _TISSUE_SITE_MAP = None
 
+# Default tissue site index for "Not Applicable"
+DEFAULT_TISSUE_SITE_IDX = 8
+
 
 def get_tissue_site_map():
     """Load tissue site name → index mapping from CSV.
@@ -299,10 +302,10 @@ def encode_tissue_site(site_name):
         site_name: Tissue site name from CSV
         
     Returns:
-        int: Tissue site index, defaults to 8 ("Not Applicable")
+        int: Tissue site index, defaults to DEFAULT_TISSUE_SITE_IDX ("Not Applicable")
     """
     site_map = get_tissue_site_map()
-    return site_map.get(site_name, 8)
+    return site_map.get(site_name, DEFAULT_TISSUE_SITE_IDX)
 
 
 def tissue_site_to_one_hot(site_idx, num_classes=57):
