@@ -1,0 +1,29 @@
+[
+  {
+    "sample_id": "P-0000034-T01-IM3",
+    "image_id": "881837",
+    "sex": "MALE",
+    "tissue_site": "Bladder",
+    "site_type": "Primary",
+    "cancer_type": "BLCA",
+    "confidence": 0.9412469863891602
+  },
+  {
+    "sample_id": "P-0000037-T01-IM3",
+    "image_id": "744547",
+    "sex": "Male",
+    "tissue_site": "Liver",
+    "site_type": "Metastasis",
+    "cancer_type": "HCC",
+    "confidence": 0.9471913576126099
+  },
+  {
+    "sample_id": "P-0000037-T02-IM3",
+    "image_id": "755246",
+    "sex": "Male",
+    "tissue_site": "Liver",
+    "site_type": "Primary",
+    "cancer_type": "HCC",
+    "confidence": 0.9306515455245972
+  }
+]

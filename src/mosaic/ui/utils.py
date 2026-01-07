@@ -17,16 +17,44 @@ import requests
 TEMP_USER_DATA_DIR = Path(tempfile.gettempdir()) / "mosaic_user_data"
 
 IHC_SUBTYPES = ["", "HR+/HER2+", "HR+/HER2-", "HR-/HER2+", "HR-/HER2-"]
+SEX_OPTIONS = ["Unknown", "Male", "Female"]
 
 SETTINGS_COLUMNS = [
     "Slide",
     "Site Type",
+    "Sex",
+    "Tissue Site",
     "Cancer Subtype",
     "IHC Subtype",
     "Segmentation Config",
 ]
 
 oncotree_code_map = {}
+tissue_site_list = None
+
+
+def get_tissue_sites():
+    """Get the list of tissue sites from the tissue site map file.
+
+    Returns:
+        List of tissue site names. Returns ["Unknown"] if the CSV file is not found.
+    """
+    global tissue_site_list
+    if tissue_site_list is None:
+        try:
+            current_dir = Path(__file__).parent.parent.parent.parent
+            tissue_site_map_path = current_dir / "data" / "tissue_site_original_to_idx.csv"
+            df = pd.read_csv(tissue_site_map_path)
+            # Get unique tissue sites and sort them
+            tissue_site_list = ["Unknown"] + sorted(df["TISSUE_SITE"].unique().tolist())
+        except FileNotFoundError:
+            gr.Warning(
+                f"Tissue site mapping file not found at {tissue_site_map_path}. "
+                "Only 'Unknown' option will be available for tissue site selection. "
+                "Please ensure the data files are downloaded from the model repository."
+            )
+            tissue_site_list = ["Unknown"]
+    return tissue_site_list
 
 
 def get_oncotree_code_name(code):
@@ -98,6 +126,10 @@ def load_settings(slide_csv_path):
         settings_df["Cancer Subtype"] = "Unknown"
     if "IHC Subtype" not in settings_df.columns:
         settings_df["IHC Subtype"] = ""
+    if "Sex" not in settings_df.columns:
+        settings_df["Sex"] = "Unknown"
+    if "Tissue Site" not in settings_df.columns:
+        settings_df["Tissue Site"] = "Unknown"
     if not set(SETTINGS_COLUMNS).issubset(settings_df.columns):
         raise ValueError("Missing required column in CSV file")
     settings_df = settings_df[SETTINGS_COLUMNS]
@@ -125,6 +157,8 @@ def validate_settings(settings_df, cancer_subtype_name_map, cancer_subtypes, rev
     """
     settings_df.columns = SETTINGS_COLUMNS
     warnings = []
+    tissue_sites = get_tissue_sites()
+
     for idx, row in settings_df.iterrows():
         slide_name = row["Slide"]
         subtype = row["Cancer Subtype"]
@@ -142,6 +176,16 @@ def validate_settings(settings_df, cancer_subtype_name_map, cancer_subtypes, rev
                 f"Slide {slide_name}: Unknown site type. Valid types are: Metastatic, Primary. "
             )
             settings_df.at[idx, "Site Type"] = "Primary"
+        if row["Sex"] not in SEX_OPTIONS:
+            warnings.append(
+                f"Slide {slide_name}: Unknown sex. Valid options are: {', '.join(SEX_OPTIONS)}. "
+            )
+            settings_df.at[idx, "Sex"] = "Unknown"
+        if row["Tissue Site"] not in tissue_sites:
+            warnings.append(
+                f"Slide {slide_name}: Unknown tissue site. Valid tissue sites are: {', '.join(tissue_sites)}. "
+            )
+            settings_df.at[idx, "Tissue Site"] = "Unknown"
         if (
             "Breast" not in settings_df.at[idx, "Cancer Subtype"]
             and row["IHC Subtype"] != ""

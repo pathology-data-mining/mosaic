@@ -1,0 +1,38 @@
+{
+  "total": 3,
+  "passed": 3,
+  "failed": 0,
+  "accuracy": 1.0,
+  "results": [
+    {
+      "slide_id": "881837",
+      "ground_truth": "BLCA",
+      "predicted": "BLCA",
+      "confidence": 0.9819191694259644,
+      "site_type": "Primary",
+      "sex": "MALE",
+      "tissue_site": "Bladder",
+      "status": "PASS"
+    },
+    {
+      "slide_id": "744547",
+      "ground_truth": "HCC",
+      "predicted": "HCC",
+      "confidence": 0.9949353337287904,
+      "site_type": "Metastasis",
+      "sex": "Male",
+      "tissue_site": "Liver",
+      "status": "PASS"
+    },
+    {
+      "slide_id": "755246",
+      "ground_truth": "HCC",
+      "predicted": "HCC",
+      "confidence": 0.9960950016975404,
+      "site_type": "Primary",
+      "sex": "Male",
+      "tissue_site": "Liver",
+      "status": "PASS"
+    }
+  ]
+}

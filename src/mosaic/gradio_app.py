@@ -21,6 +21,7 @@ from mosaic.ui.utils import (
     validate_settings,
     IHC_SUBTYPES,
     SETTINGS_COLUMNS,
+    SEX_OPTIONS,
 )
 from mosaic.analysis import analyze_slide
 
@@ -43,10 +44,10 @@ def download_and_process_models():
         "data/paladin_model_map.csv",
     )
     cancer_subtypes = model_map["cancer_subtype"].unique().tolist()
-    cancer_subtype_name_map = {
+    cancer_subtype_name_map = {"Unknown": "UNK"}
+    cancer_subtype_name_map.update({
         f"{get_oncotree_code_name(code)} ({code})": code for code in cancer_subtypes
-    }
-    cancer_subtype_name_map["Unknown"] = "UNK"
+    })
     reversed_cancer_subtype_name_map = {
         value: key for key, value in cancer_subtype_name_map.items()
     }
@@ -100,6 +101,19 @@ def main():
         help="Site type of the slide (for single slide processing)",
     )
     parser.add_argument(
+        "--sex",
+        type=str,
+        choices=SEX_OPTIONS,
+        default="Unknown",
+        help="Sex of the patient (for single slide processing)",
+    )
+    parser.add_argument(
+        "--tissue-site",
+        type=str,
+        default="Unknown",
+        help="Tissue site of the slide (for single slide processing)",
+    )
+    parser.add_argument(
         "--cancer-subtype",
         type=str,
         default="Unknown",
@@ -144,6 +158,8 @@ def main():
                 [
                     args.slide_path,
                     args.site_type,
+                    args.sex,
+                    args.tissue_site,
                     args.cancer_subtype,
                     args.ihc_subtype,
                     args.segmentation_config,
@@ -156,6 +172,8 @@ def main():
             args.slide_path,
             args.segmentation_config,
             args.site_type,
+            args.sex,
+            args.tissue_site,
             args.cancer_subtype,
             cancer_subtype_name_map,
             args.ihc_subtype,
@@ -191,6 +209,8 @@ def main():
             slide_path = row["Slide"]
             seg_config = row["Segmentation Config"]
             site_type = row["Site Type"]
+            sex = row.get("Sex", "Unknown")
+            tissue_site = row.get("Tissue Site", "Unknown")
             cancer_subtype = row["Cancer Subtype"]
             ihc_subtype = row.get("IHC Subtype", "")
             logger.info(
@@ -200,6 +220,8 @@ def main():
                 slide_path,
                 seg_config,
                 site_type,
+                sex,
+                tissue_site,
                 cancer_subtype,
                 cancer_subtype_name_map,
                 ihc_subtype,

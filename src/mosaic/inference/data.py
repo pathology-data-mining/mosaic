@@ -201,6 +201,129 @@ CANCER_TYPE_TO_INT_MAP = {
 INT_TO_CANCER_TYPE_MAP = {v: k for k, v in CANCER_TYPE_TO_INT_MAP.items()}
 
 
+# Tissue site mapping (module-level cache)
+_TISSUE_SITE_MAP = None
+
+# Default tissue site index for "Not Applicable"
+DEFAULT_TISSUE_SITE_IDX = 8
+
+
+def get_tissue_site_map():
+    """Load tissue site name → index mapping from CSV.
+    
+    Returns:
+        dict: Mapping of tissue site names to indices (0-56)
+    
+    Raises:
+        FileNotFoundError: If the tissue site CSV file is not found
+    """
+    global _TISSUE_SITE_MAP
+    if _TISSUE_SITE_MAP is None:
+        from pathlib import Path
+        import pandas as pd
+
+        csv_path = Path(__file__).parent.parent.parent.parent / "data" / "tissue_site_original_to_idx.csv"
+        try:
+            df = pd.read_csv(csv_path)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"Tissue site mapping file not found at {csv_path}. "
+                f"Please ensure the data directory contains 'tissue_site_original_to_idx.csv'."
+            ) from e
+        
+        _TISSUE_SITE_MAP = {}
+        for _, row in df.iterrows():
+            _TISSUE_SITE_MAP[row['TISSUE_SITE']] = int(row['idx'])
+    
+    return _TISSUE_SITE_MAP
+
+
+def get_tissue_site_options():
+    """Get sorted unique tissue site names for UI dropdowns.
+    
+    Returns:
+        list: Sorted list of unique tissue site names
+    """
+    site_map = get_tissue_site_map()
+    return sorted(set(site_map.keys()))
+
+
+_SEX_MAP = None
+
+
+def get_sex_map():
+    """Get the sex to index mapping from CSV file.
+
+    Returns:
+        dict: Mapping of sex values to indices (0-2)
+    
+    Raises:
+        FileNotFoundError: If the sex mapping CSV file is not found
+    """
+    global _SEX_MAP
+    if _SEX_MAP is None:
+        from pathlib import Path
+        import pandas as pd
+
+        csv_path = Path(__file__).parent.parent.parent.parent / "data" / "sex_original_to_idx.csv"
+        try:
+            df = pd.read_csv(csv_path)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"Sex mapping file not found at {csv_path}. "
+                f"Please ensure the data directory contains 'sex_original_to_idx.csv'."
+            ) from e
+
+        _SEX_MAP = {}
+        for _, row in df.iterrows():
+            _SEX_MAP[row['SEX']] = int(row['idx'])
+
+    return _SEX_MAP
+
+
+def encode_sex(sex):
+    """Convert sex to numeric encoding.
+
+    Args:
+        sex: "Male", "Female", or "Unknown" (case insensitive)
+
+    Returns:
+        int: 0 for Male, 1 for Female, 2 for Unknown
+    """
+    sex_map = get_sex_map()
+    unknown_idx = sex_map.get("Unknown", 2)
+    return sex_map.get(sex, unknown_idx)
+
+
+def encode_tissue_site(site_name):
+    """Convert tissue site name to index (0-56).
+    
+    Args:
+        site_name: Tissue site name from CSV
+        
+    Returns:
+        int: Tissue site index, defaults to DEFAULT_TISSUE_SITE_IDX ("Not Applicable")
+    """
+    site_map = get_tissue_site_map()
+    return site_map.get(site_name, DEFAULT_TISSUE_SITE_IDX)
+
+
+def tissue_site_to_one_hot(site_idx, num_classes=57):
+    """Convert tissue site index to one-hot vector.
+    
+    Args:
+        site_idx: Index value (0-56 for tissue site, 0-2 for sex)
+        num_classes: Number of classes (57 for tissue site, 3 for sex)
+        
+    Returns:
+        list: One-hot encoded vector
+    """
+    one_hot = [0] * num_classes
+    if 0 <= site_idx < num_classes:
+        one_hot[site_idx] = 1
+    return one_hot
+
+
 class SiteType(Enum):
     PRIMARY = "Primary"
     METASTASIS = "Metastasis"
@@ -211,6 +334,8 @@ class TileFeatureTensorDataset(Dataset):
         self,
         site_type: SiteType,
         tile_features: np.ndarray,
+        sex: int = None,
+        tissue_site_idx: int = None,
         n_max_tiles: int = 20000,
     ) -> None:
         """Initialize the dataset.
@@ -218,12 +343,16 @@ class TileFeatureTensorDataset(Dataset):
         Args:
             site_type: the site type as str, either "Primary" or "Metastasis"
             tile_features: the tile feature array
+            sex: patient sex (0=Male, 1=Female), optional for Aeon
+            tissue_site_idx: tissue site index (0-56), optional for Aeon
             n_max_tiles: the maximum number of tiles to use as int
 
         Returns:
             None
         """
         self.site_type = site_type
+        self.sex = sex
+        self.tissue_site_idx = tissue_site_idx
         self.n_max_tiles = n_max_tiles
         self.features = self._get_features(tile_features)
 
@@ -264,7 +393,22 @@ class TileFeatureTensorDataset(Dataset):
         Returns:
             dict: the item
         """
-        return {
+        result = {
             "site": self.site_type.value,
             "tile_tensor": self.features
         }
+        
+        # Add sex and tissue_site if provided (for Aeon)
+        if self.sex is not None:
+            result["SEX"] = torch.tensor(
+                tissue_site_to_one_hot(self.sex, num_classes=3),
+                dtype=torch.float32
+            )
+        
+        if self.tissue_site_idx is not None:
+            result["TISSUE_SITE"] = torch.tensor(
+                tissue_site_to_one_hot(self.tissue_site_idx, num_classes=57),
+                dtype=torch.float32
+            )
+        
+        return result

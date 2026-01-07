@@ -4,43 +4,43 @@ import numpy as np
 import pytest
 import torch
 
-from mosaic.inference.aeon import (
+from mosaic.inference.aeon import CANCER_TYPES_TO_DROP
+from mosaic.inference.data import (
     CANCER_TYPE_TO_INT_MAP,
     INT_TO_CANCER_TYPE_MAP,
-    col_indices_to_drop,
 )
 
 
 class TestAeonConstants:
     """Test constants defined in aeon module."""
 
-    def test_col_indices_to_drop_is_list(self):
-        """Test that col_indices_to_drop is a list."""
-        assert isinstance(col_indices_to_drop, list)
+    def test_cancer_types_to_drop_is_list(self):
+        """Test that CANCER_TYPES_TO_DROP is a list."""
+        assert isinstance(CANCER_TYPES_TO_DROP, list)
 
-    def test_col_indices_to_drop_has_entries(self):
-        """Test that col_indices_to_drop has entries."""
-        assert len(col_indices_to_drop) > 0
+    def test_cancer_types_to_drop_has_entries(self):
+        """Test that CANCER_TYPES_TO_DROP has entries."""
+        assert len(CANCER_TYPES_TO_DROP) > 0
 
-    def test_col_indices_to_drop_are_integers(self):
-        """Test that all indices are integers."""
-        for idx in col_indices_to_drop:
-            assert isinstance(idx, int)
+    def test_cancer_types_to_drop_are_strings(self):
+        """Test that all cancer types are strings."""
+        for cancer_type in CANCER_TYPES_TO_DROP:
+            assert isinstance(cancer_type, str)
 
-    def test_col_indices_to_drop_are_valid(self):
-        """Test that all indices are valid cancer type indices."""
-        max_idx = max(CANCER_TYPE_TO_INT_MAP.values())
-        for idx in col_indices_to_drop:
-            assert 0 <= idx <= max_idx
+    def test_cancer_types_to_drop_are_valid(self):
+        """Test that all cancer types to drop are valid cancer type codes."""
+        # They should all be uppercase alphanumeric codes
+        for cancer_type in CANCER_TYPES_TO_DROP:
+            assert cancer_type.isupper()
+            assert len(cancer_type) >= 2
+            assert len(cancer_type) <= 10
 
-    def test_col_indices_to_drop_contains_expected_types(self):
+    def test_cancer_types_to_drop_contains_expected_types(self):
         """Test that specific cancer types are in the drop list."""
         # Check that some known cancer types to drop are in the list
-        drop_types = ["UDMN", "CUP", "BRCA", "MEL"]
-        for cancer_type in drop_types:
-            if cancer_type in CANCER_TYPE_TO_INT_MAP:
-                idx = CANCER_TYPE_TO_INT_MAP[cancer_type]
-                assert idx in col_indices_to_drop
+        expected_types = ["UDMN", "CUP", "NOT"]
+        for cancer_type in expected_types:
+            assert cancer_type in CANCER_TYPES_TO_DROP
 
     def test_cancer_type_maps_available(self):
         """Test that cancer type maps are available."""

@@ -18,7 +18,9 @@ from mosaic.ui.utils import (
     create_user_directory,
     load_settings,
     validate_settings,
+    get_tissue_sites,
     IHC_SUBTYPES,
+    SEX_OPTIONS,
     SETTINGS_COLUMNS,
 )
 from mosaic.analysis import analyze_slide
@@ -80,6 +82,8 @@ def analyze_slides(
             slides[idx],
             row["Segmentation Config"],
             row["Site Type"],
+            row["Sex"],
+            row["Tissue Site"],
             row["Cancer Subtype"],
             cancer_subtype_name_map,
             row["IHC Subtype"],
@@ -177,6 +181,16 @@ def launch_gradio(server_name, server_port, share):
                     label="Site Type",
                     value="Primary",
                 )
+                sex_dropdown = gr.Dropdown(
+                    choices=SEX_OPTIONS,
+                    label="Sex",
+                    value="Unknown",
+                )
+                tissue_site_dropdown = gr.Dropdown(
+                    choices=get_tissue_sites(),
+                    label="Tissue Site",
+                    value="Unknown",
+                )
                 cancer_subtype_dropdown = gr.Dropdown(
                     choices=[name for name in cancer_subtype_name_map.keys()],
                     label="Cancer Subtype",
@@ -195,15 +209,9 @@ def launch_gradio(server_name, server_port, share):
                 )
                 with gr.Row():
                     settings_input = gr.Dataframe(
-                        headers=[
-                            "Slide",
-                            "Site Type",
-                            "Cancer Subtype",
-                            "IHC Subtype",
-                            "Segmentation Config",
-                        ],
+                        headers=SETTINGS_COLUMNS,
                         label="Current Settings",
-                        datatype=["str", "str", "str", "str", "str"],
+                        datatype=["str"] * len(SETTINGS_COLUMNS),
                         visible=False,
                         interactive=True,
                         static_columns="Slide",
@@ -270,7 +278,7 @@ def launch_gradio(server_name, server_port, share):
                 gr.File(visible=False),
             )
 
-        def get_settings(files, site_type, cancer_subtype, ihc_subtype, seg_config):
+        def get_settings(files, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config):
             if files is None:
                 return pd.DataFrame()
             settings = []
@@ -278,7 +286,7 @@ def launch_gradio(server_name, server_port, share):
                 filename = file.name if hasattr(file, "name") else file
                 slide_name = filename.split("/")[-1]
                 settings.append(
-                    [slide_name, site_type, cancer_subtype, ihc_subtype, seg_config]
+                    [slide_name, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config]
                 )
             df = pd.DataFrame(settings, columns=SETTINGS_COLUMNS)
             return df
@@ -288,6 +296,8 @@ def launch_gradio(server_name, server_port, share):
             [
                 input_slides.change,
                 site_dropdown.change,
+                sex_dropdown.change,
+                tissue_site_dropdown.change,
                 cancer_subtype_dropdown.change,
                 ihc_subtype_dropdown.change,
                 seg_config_dropdown.change,
@@ -295,18 +305,20 @@ def launch_gradio(server_name, server_port, share):
             inputs=[
                 input_slides,
                 site_dropdown,
+                sex_dropdown,
+                tissue_site_dropdown,
                 cancer_subtype_dropdown,
                 ihc_subtype_dropdown,
                 seg_config_dropdown,
             ],
             outputs=[settings_input, settings_csv, ihc_subtype_dropdown],
         )
-        def update_settings(files, site_type, cancer_subtype, ihc_subtype, seg_config):
+        def update_settings(files, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config):
             has_ihc = "Breast" in cancer_subtype
             if not files:
                 return None, None, gr.Dropdown(visible=has_ihc)
             settings_df = get_settings(
-                files, site_type, cancer_subtype, ihc_subtype, seg_config
+                files, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config
             )
             if settings_df is not None:
                 has_ihc = any("Breast" in cs for cs in settings_df["Cancer Subtype"])
