@@ -4,6 +4,7 @@ This module provides functionality to run the Aeon deep learning model
 for predicting cancer subtypes from H&E whole slide image features.
 """
 
+import json
 import pickle  # nosec
 import sys
 from argparse import ArgumentParser
@@ -68,15 +69,66 @@ def run(
     model.eval()
 
     # Load the correct mapping from metadata for this model
-    from pathlib import Path
-    import json
-
     metadata_dir = Path("data/metadata")
-    with open(metadata_dir / "target_dict.tsv") as f:
-        target_dict_str = f.read().strip().replace("'", '"')
-        target_dict = json.loads(target_dict_str)
-
+    target_dict_path = metadata_dir / "target_dict.tsv"
+    
+    # Check if metadata directory exists
+    if not metadata_dir.exists():
+        raise FileNotFoundError(
+            f"Metadata directory not found: {metadata_dir}\n"
+            f"Please ensure the metadata directory exists with required files:\n"
+            f"  - {metadata_dir}/target_dict.tsv\n"
+            f"  - {metadata_dir}/n_classes.txt\n"
+            f"  - {metadata_dir}/ontology_embedding_dim.txt\n"
+            f"See scripts/README.md for details on how to set up metadata files."
+        )
+    
+    # Check if target_dict.tsv exists
+    if not target_dict_path.exists():
+        raise FileNotFoundError(
+            f"Target dictionary file not found: {target_dict_path}\n"
+            f"This file is required for mapping model outputs to cancer types.\n"
+            f"See scripts/README.md for details on how to set up metadata files."
+        )
+    
+    # Load and parse target_dict.tsv
+    try:
+        with open(target_dict_path) as f:
+            target_dict_str = f.read().strip().replace("'", '"')
+            target_dict = json.loads(target_dict_str)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Failed to parse {target_dict_path} as JSON: {e}\n"
+            f"The file should contain a JSON dictionary with a 'histologies' key.\n"
+            f"Example format: {{\"histologies\": [\"ACC\", \"BLCA\", ...]}}"
+        )
+    except (OSError, UnicodeDecodeError, PermissionError) as e:
+        raise IOError(
+            f"Failed to read {target_dict_path}: {e}"
+        )
+    
+    # Validate target_dict structure
+    if 'histologies' not in target_dict:
+        raise ValueError(
+            f"Invalid format in {target_dict_path}: missing 'histologies' key.\n"
+            f"The file should contain a JSON dictionary with a 'histologies' key.\n"
+            f"Example format: {{\"histologies\": [\"ACC\", \"BLCA\", ...]}}"
+        )
+    
     histologies = target_dict['histologies']
+    
+    # Validate histologies is a list
+    if not isinstance(histologies, list):
+        raise ValueError(
+            f"Invalid format in {target_dict_path}: 'histologies' should be a list.\n"
+            f"Got: {type(histologies).__name__}"
+        )
+    
+    if len(histologies) == 0:
+        raise ValueError(
+            f"Invalid format in {target_dict_path}: 'histologies' list is empty."
+        )
+    
     INT_TO_CANCER_TYPE_MAP_LOCAL = {i: histology for i, histology in enumerate(histologies)}
     CANCER_TYPE_TO_INT_MAP_LOCAL = {v: k for k, v in INT_TO_CANCER_TYPE_MAP_LOCAL.items()}
 
