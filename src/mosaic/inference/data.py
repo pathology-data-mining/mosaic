@@ -210,6 +210,9 @@ def get_tissue_site_map():
     
     Returns:
         dict: Mapping of tissue site names to indices (0-56)
+    
+    Raises:
+        FileNotFoundError: If the tissue site CSV file is not found
     """
     global _TISSUE_SITE_MAP
     if _TISSUE_SITE_MAP is None:
@@ -217,7 +220,13 @@ def get_tissue_site_map():
         import pandas as pd
 
         csv_path = Path(__file__).parent.parent.parent.parent / "data" / "tissue_site_original_to_idx.csv"
-        df = pd.read_csv(csv_path)
+        try:
+            df = pd.read_csv(csv_path)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"Tissue site mapping file not found at {csv_path}. "
+                f"Please ensure the data directory contains 'tissue_site_original_to_idx.csv'."
+            ) from e
         
         _TISSUE_SITE_MAP = {}
         for _, row in df.iterrows():
@@ -244,6 +253,9 @@ def get_sex_map():
 
     Returns:
         dict: Mapping of sex values to indices (0-2)
+    
+    Raises:
+        FileNotFoundError: If the sex mapping CSV file is not found
     """
     global _SEX_MAP
     if _SEX_MAP is None:
@@ -251,7 +263,13 @@ def get_sex_map():
         import pandas as pd
 
         csv_path = Path(__file__).parent.parent.parent.parent / "data" / "sex_original_to_idx.csv"
-        df = pd.read_csv(csv_path)
+        try:
+            df = pd.read_csv(csv_path)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"Sex mapping file not found at {csv_path}. "
+                f"Please ensure the data directory contains 'sex_original_to_idx.csv'."
+            ) from e
 
         _SEX_MAP = {}
         for _, row in df.iterrows():
