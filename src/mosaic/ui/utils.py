@@ -41,9 +41,9 @@ def get_tissue_sites():
     """
     global tissue_site_list
     if tissue_site_list is None:
+        current_dir = Path(__file__).parent.parent.parent.parent
+        tissue_site_map_path = current_dir / "data" / "tissue_site_original_to_idx.csv"
         try:
-            current_dir = Path(__file__).parent.parent.parent.parent
-            tissue_site_map_path = current_dir / "data" / "tissue_site_original_to_idx.csv"
             df = pd.read_csv(tissue_site_map_path)
             # Get unique tissue sites and sort them
             tissue_site_list = ["Unknown"] + sorted(df["TISSUE_SITE"].unique().tolist())
