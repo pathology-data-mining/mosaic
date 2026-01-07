@@ -37,15 +37,23 @@ def get_tissue_sites():
     """Get the list of tissue sites from the tissue site map file.
 
     Returns:
-        List of tissue site names
+        List of tissue site names. Returns ["Unknown"] if the CSV file is not found.
     """
     global tissue_site_list
     if tissue_site_list is None:
-        current_dir = Path(__file__).parent.parent.parent.parent
-        tissue_site_map_path = current_dir / "data" / "tissue_site_original_to_idx.csv"
-        df = pd.read_csv(tissue_site_map_path)
-        # Get unique tissue sites and sort them
-        tissue_site_list = ["Unknown"] + sorted(df["TISSUE_SITE"].unique().tolist())
+        try:
+            current_dir = Path(__file__).parent.parent.parent.parent
+            tissue_site_map_path = current_dir / "data" / "tissue_site_original_to_idx.csv"
+            df = pd.read_csv(tissue_site_map_path)
+            # Get unique tissue sites and sort them
+            tissue_site_list = ["Unknown"] + sorted(df["TISSUE_SITE"].unique().tolist())
+        except FileNotFoundError:
+            gr.Warning(
+                f"Tissue site mapping file not found at {tissue_site_map_path}. "
+                "Only 'Unknown' option will be available for tissue site selection. "
+                "Please ensure the data files are downloaded from the model repository."
+            )
+            tissue_site_list = ["Unknown"]
     return tissue_site_list
 
 
