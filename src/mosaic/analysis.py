@@ -523,11 +523,11 @@ def analyze_slide(
     from mosaic.inference.data import encode_sex, encode_tissue_site
 
     sex_idx = None
-    if sex:
+    if sex is not None:
         sex_idx = encode_sex(sex)
 
     tissue_site_idx = None
-    if tissue_site:
+    if tissue_site is not None:
         tissue_site_idx = encode_tissue_site(tissue_site)
     
     if is_logged_in:
