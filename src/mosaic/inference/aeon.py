@@ -4,6 +4,7 @@ This module provides functionality to run the Aeon deep learning model
 for predicting cancer subtypes from H&E whole slide image features.
 """
 
+import json
 import pickle  # nosec
 import sys
 from argparse import ArgumentParser
@@ -68,11 +69,8 @@ def run(
     model.eval()
 
     # Load the correct mapping from metadata for this model
-    from pathlib import Path
-    import json
-
-    metadata_dir = Path("data/metadata")
-    with open(metadata_dir / "target_dict.tsv") as f:
+    metadata_path = Path(__file__).parent.parent.parent.parent / "data" / "metadata" / "target_dict.tsv"
+    with open(metadata_path) as f:
         target_dict_str = f.read().strip().replace("'", '"')
         target_dict = json.loads(target_dict_str)
 
