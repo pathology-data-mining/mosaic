@@ -215,8 +215,8 @@ def get_tissue_site_map():
     if _TISSUE_SITE_MAP is None:
         from pathlib import Path
         import pandas as pd
-        
-        csv_path = Path(__file__).parent.parent.parent / "data" / "tissue_site_original_to_idx.csv"
+
+        csv_path = Path(__file__).parent.parent.parent.parent / "data" / "tissue_site_original_to_idx.csv"
         df = pd.read_csv(csv_path)
         
         _TISSUE_SITE_MAP = {}
@@ -236,16 +236,41 @@ def get_tissue_site_options():
     return sorted(set(site_map.keys()))
 
 
+_SEX_MAP = None
+
+
+def get_sex_map():
+    """Get the sex to index mapping from CSV file.
+
+    Returns:
+        dict: Mapping of sex values to indices (0-2)
+    """
+    global _SEX_MAP
+    if _SEX_MAP is None:
+        from pathlib import Path
+        import pandas as pd
+
+        csv_path = Path(__file__).parent.parent.parent.parent / "data" / "sex_original_to_idx.csv"
+        df = pd.read_csv(csv_path)
+
+        _SEX_MAP = {}
+        for _, row in df.iterrows():
+            _SEX_MAP[row['SEX']] = int(row['idx'])
+
+    return _SEX_MAP
+
+
 def encode_sex(sex):
     """Convert sex to numeric encoding.
-    
+
     Args:
-        sex: "Male" or "Female"
-        
+        sex: "Male", "Female", or "Unknown" (case insensitive)
+
     Returns:
-        int: 0 for Male, 1 for Female
+        int: 0 for Male, 1 for Female, 2 for Unknown
     """
-    return 1 if sex == "Female" else 0
+    sex_map = get_sex_map()
+    return sex_map.get(sex, 2)  # Default to 2 (Unknown) if not found
 
 
 def encode_tissue_site(site_name):

@@ -181,7 +181,7 @@ def _run_aeon_inference(features, site_type, num_workers, sex=None, tissue_site_
     logger.info("Running Aeon for cancer subtype inference")
     aeon_results, _ = run_aeon(
         features=features,
-        model_path="data/aeon_model.pkl",
+        model_path="data/aeon_model_new.pkl",
         metastatic=(site_type == "Metastatic"),
         batch_size=8,
         num_workers=num_workers,
@@ -520,17 +520,15 @@ def analyze_slide(
             logger.warning(traceback.format_exc())
     
     # Convert sex and tissue_site to indices for Aeon model
+    from mosaic.inference.data import encode_sex, encode_tissue_site
+
     sex_idx = None
-    if sex and sex != "Unknown":
-        sex_idx = 0 if sex == "Male" else 1
-    
+    if sex:
+        sex_idx = encode_sex(sex)
+
     tissue_site_idx = None
-    if tissue_site and tissue_site != "Unknown":
-        from mosaic.inference.data import get_tissue_site_map
-        tissue_site_map = get_tissue_site_map()
-        tissue_site_idx = tissue_site_map.get(tissue_site)
-        if tissue_site_idx is None:
-            logger.warning(f"Unknown tissue site: {tissue_site}")
+    if tissue_site:
+        tissue_site_idx = encode_tissue_site(tissue_site)
     
     if is_logged_in:
         logger.info("Using 300s GPU allocation (logged-in user)")

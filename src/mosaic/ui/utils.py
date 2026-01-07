@@ -35,13 +35,13 @@ tissue_site_list = None
 
 def get_tissue_sites():
     """Get the list of tissue sites from the tissue site map file.
-    
+
     Returns:
         List of tissue site names
     """
     global tissue_site_list
     if tissue_site_list is None:
-        current_dir = Path(__file__).parent.parent.parent
+        current_dir = Path(__file__).parent.parent.parent.parent
         tissue_site_map_path = current_dir / "data" / "tissue_site_original_to_idx.csv"
         df = pd.read_csv(tissue_site_map_path)
         # Get unique tissue sites and sort them
@@ -149,6 +149,8 @@ def validate_settings(settings_df, cancer_subtype_name_map, cancer_subtypes, rev
     """
     settings_df.columns = SETTINGS_COLUMNS
     warnings = []
+    tissue_sites = get_tissue_sites()
+
     for idx, row in settings_df.iterrows():
         slide_name = row["Slide"]
         subtype = row["Cancer Subtype"]
@@ -166,6 +168,16 @@ def validate_settings(settings_df, cancer_subtype_name_map, cancer_subtypes, rev
                 f"Slide {slide_name}: Unknown site type. Valid types are: Metastatic, Primary. "
             )
             settings_df.at[idx, "Site Type"] = "Primary"
+        if row["Sex"] not in SEX_OPTIONS:
+            warnings.append(
+                f"Slide {slide_name}: Unknown sex. Valid options are: {', '.join(SEX_OPTIONS)}. "
+            )
+            settings_df.at[idx, "Sex"] = "Unknown"
+        if row["Tissue Site"] not in tissue_sites:
+            warnings.append(
+                f"Slide {slide_name}: Unknown tissue site. Valid tissue sites are: {', '.join(tissue_sites)}. "
+            )
+            settings_df.at[idx, "Tissue Site"] = "Unknown"
         if (
             "Breast" not in settings_df.at[idx, "Cancer Subtype"]
             and row["IHC Subtype"] != ""
