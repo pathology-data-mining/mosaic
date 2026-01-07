@@ -89,17 +89,17 @@ def get_oncotree_code_name(code):
 
 def create_user_directory(state, request: gr.Request):
     """Create a unique directory for each user session.
-    
+
     Args:
         state: Gradio state object (unused)
         request: Gradio request object containing session hash
-        
+
     Returns:
         Path to user's session directory, or None if no session hash available
     """
     session_hash = request.session_hash
     if session_hash is None:
-        return None, None
+        return None
 
     user_dir = TEMP_USER_DATA_DIR / session_hash
     user_dir.mkdir(parents=True, exist_ok=True)

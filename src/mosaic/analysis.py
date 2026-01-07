@@ -519,12 +519,13 @@ def analyze_slide(
                         except Exception as e:
                             logger.warning(f"Failed to decode JWT: {e}")
             
-            logger.info(f"User: {username} | Logged in: {is_logged_in}")
+            if IS_ZEROGPU:
+                logger.info(f"User: {username} | Logged in: {is_logged_in}")
         except Exception as e:
             logger.warning(f"Failed to detect user: {e}")
             import traceback
             logger.warning(traceback.format_exc())
-    
+
     # Convert sex and tissue_site to indices for Aeon model
     from mosaic.inference.data import encode_sex, encode_tissue_site
 
@@ -535,9 +536,10 @@ def analyze_slide(
     tissue_site_idx = None
     if tissue_site is not None:
         tissue_site_idx = encode_tissue_site(tissue_site)
-    
+
     if is_logged_in:
-        logger.info("Using 300s GPU allocation (logged-in user)")
+        if IS_ZEROGPU:
+            logger.info("Using 300s GPU allocation (logged-in user)")
         aeon_results, paladin_results = _run_inference_pipeline_pro(
             coords,
             slide_path,
@@ -551,7 +553,8 @@ def analyze_slide(
             progress,
         )
     else:
-        logger.info("Using 60s GPU allocation (anonymous user)")
+        if IS_ZEROGPU:
+            logger.info("Using 60s GPU allocation (anonymous user)")
         aeon_results, paladin_results = _run_inference_pipeline_free(
             coords,
             slide_path,
