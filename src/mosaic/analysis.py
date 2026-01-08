@@ -635,13 +635,42 @@ def analyze_slide_with_models(
     sex_idx = encode_sex(sex) if sex else None
     tissue_site_idx = encode_tissue_site(tissue_site) if tissue_site else None
 
-    # Step 1: Tissue segmentation (CPU operation, not affected by model caching)
+    # Step 1: Convert seg_config string to config object
+    if isinstance(seg_config, str):
+        if seg_config == "Biopsy":
+            seg_config = BiopsySegConfig()
+        elif seg_config == "Resection":
+            seg_config = ResectionSegConfig()
+        elif seg_config == "TCGA":
+            seg_config = TcgaSegConfig()
+        else:
+            raise ValueError(f"Unknown segmentation configuration: {seg_config}")
+
+    # Step 2: Tissue segmentation (CPU operation, not affected by model caching)
     progress(0.0, desc="Segmenting tissue")
     logger.info(f"Segmenting tissue for slide: {slide_path}")
     start_time = pd.Timestamp.now()
-    coords, attrs = segment_tissue(slide_path, seg_config)
+
+    if values := segment_tissue(
+        slide_path=slide_path,
+        patch_size=224,
+        mpp=0.5,
+        seg_level=-1,
+        segment_threshold=seg_config.segment_threshold,
+        median_blur_ksize=seg_config.median_blur_ksize,
+        morphology_ex_kernel=seg_config.morphology_ex_kernel,
+        tissue_area_threshold=seg_config.tissue_area_threshold,
+        hole_area_threshold=seg_config.hole_area_threshold,
+        max_num_holes=seg_config.max_num_holes,
+    ):
+        polygon, _, coords, attrs = values
+    else:
+        logger.warning("No tissue detected in slide")
+        return None, None, None
+
     end_time = pd.Timestamp.now()
     logger.info(f"Tissue segmentation took {end_time - start_time}")
+    logger.info(f"Found {len(coords)} tissue tiles")
 
     if len(coords) == 0:
         logger.warning("No tissue tiles found in slide")
@@ -649,7 +678,11 @@ def analyze_slide_with_models(
 
     # Step 2: Create slide mask visualization (CPU operation)
     progress(0.2, desc="Creating slide mask")
-    slide_mask = draw_slide_mask(slide_path, coords)
+    logger.info("Drawing slide mask")
+    slide_mask = draw_slide_mask(
+        slide_path, polygon, outline="black", fill=(255, 0, 0, 80), vis_level=-1
+    )
+    logger.info("Slide mask drawn")
 
     # Step 3: Run inference pipeline with pre-loaded models
     aeon_results, paladin_results = _run_inference_pipeline_with_models(
