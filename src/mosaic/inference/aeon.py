@@ -22,6 +22,7 @@ from mosaic.inference.data import (
 )
 
 from loguru import logger
+from mosaic.gradio_app import get_data_directory
 
 # Cancer types excluded from prediction (too broad or ambiguous)
 # These are used to mask out predictions for overly general cancer types
@@ -69,7 +70,8 @@ def run(
     model.eval()
 
     # Load the correct mapping from metadata for this model
-    metadata_path = Path(__file__).parent.parent.parent.parent / "data" / "metadata" / "target_dict.tsv"
+    data_dir = get_data_directory()
+    metadata_path = data_dir / "metadata" / "target_dict.tsv"
     with open(metadata_path) as f:
         target_dict_str = f.read().strip().replace("'", '"')
         target_dict = json.loads(target_dict_str)

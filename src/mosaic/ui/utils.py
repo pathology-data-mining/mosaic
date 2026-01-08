@@ -13,6 +13,8 @@ import pandas as pd
 import gradio as gr
 import requests
 
+from mosaic.gradio_app import get_data_directory
+
 # This path should be outside your project directory if running locally
 TEMP_USER_DATA_DIR = Path(tempfile.gettempdir()) / "mosaic_user_data"
 
@@ -42,8 +44,8 @@ def get_tissue_sites():
     global tissue_site_list
     if tissue_site_list is None:
         try:
-            current_dir = Path(__file__).parent.parent.parent.parent
-            tissue_site_map_path = current_dir / "data" / "tissue_site_original_to_idx.csv"
+            data_dir = get_data_directory()
+            tissue_site_map_path = data_dir / "tissue_site_original_to_idx.csv"
             df = pd.read_csv(tissue_site_map_path)
             # Get unique tissue sites and sort them
             tissue_site_list = ["Unknown"] + sorted(df["TISSUE_SITE"].unique().tolist())

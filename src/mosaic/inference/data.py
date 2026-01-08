@@ -13,6 +13,8 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 
+from mosaic.gradio_app import get_data_directory
+
 CANCER_TYPE_TO_INT_MAP = {
     "AASTR": 0,
     "ACC": 1,
@@ -219,10 +221,10 @@ def get_tissue_site_map():
     """
     global _TISSUE_SITE_MAP
     if _TISSUE_SITE_MAP is None:
-        from pathlib import Path
         import pandas as pd
 
-        csv_path = Path(__file__).parent.parent.parent.parent / "data" / "tissue_site_original_to_idx.csv"
+        data_dir = get_data_directory()
+        csv_path = data_dir / "tissue_site_original_to_idx.csv"
         try:
             df = pd.read_csv(csv_path)
         except FileNotFoundError as e:
@@ -262,10 +264,10 @@ def get_sex_map():
     """
     global _SEX_MAP
     if _SEX_MAP is None:
-        from pathlib import Path
         import pandas as pd
 
-        csv_path = Path(__file__).parent.parent.parent.parent / "data" / "sex_original_to_idx.csv"
+        data_dir = get_data_directory()
+        csv_path = data_dir / "sex_original_to_idx.csv"
         try:
             df = pd.read_csv(csv_path)
         except FileNotFoundError as e:
