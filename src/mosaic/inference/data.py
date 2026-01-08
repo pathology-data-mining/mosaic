@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 
-from mosaic.gradio_app import get_data_directory
+from mosaic.data_directory import get_data_directory
 
 CANCER_TYPE_TO_INT_MAP = {
     "AASTR": 0,

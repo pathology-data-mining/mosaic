@@ -13,7 +13,7 @@ import pandas as pd
 import gradio as gr
 import requests
 
-from mosaic.gradio_app import get_data_directory
+from mosaic.data_directory import get_data_directory
 
 # This path should be outside your project directory if running locally
 TEMP_USER_DATA_DIR = Path(tempfile.gettempdir()) / "mosaic_user_data"

@@ -61,7 +61,7 @@ from mussel.utils.segment import draw_slide_mask
 from mussel.cli.tessellate import BiopsySegConfig, ResectionSegConfig, TcgaSegConfig
 from loguru import logger
 from mosaic.inference import run_aeon, run_paladin
-from mosaic.gradio_app import get_data_directory
+from mosaic.data_directory import get_data_directory
 
 # Log hardware detection at module load
 logger.info(f"Hardware: {GPU_TYPE} | batch_size={DEFAULT_BATCH_SIZE}, num_workers={DEFAULT_NUM_WORKERS}")
