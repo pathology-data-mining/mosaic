@@ -22,7 +22,7 @@ from mosaic.inference.data import (
 )
 
 from loguru import logger
-from mosaic.gradio_app import get_data_directory
+from mosaic.data_directory import get_data_directory
 
 # Cancer types excluded from prediction (too broad or ambiguous)
 # These are used to mask out predictions for overly general cancer types
