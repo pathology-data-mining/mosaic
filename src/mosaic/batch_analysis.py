@@ -7,6 +7,7 @@ overhead compared to processing slides individually.
 
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
+import time
 from loguru import logger
 
 from mosaic.model_manager import load_all_models
@@ -77,24 +78,31 @@ def analyze_slides_batch(
         progress = lambda frac, desc: None  # No-op progress function
 
     num_slides = len(slides)
-    logger.info(f"Starting batch analysis of {num_slides} slides with models loaded once")
+    batch_start_time = time.time()
+
+    logger.info("=" * 80)
+    logger.info(f"BATCH PROCESSING: Starting analysis of {num_slides} slides")
+    logger.info("=" * 80)
 
     # Step 1: Load all models once
-    logger.info("Loading models for batch processing...")
     progress(0.0, desc="Loading models for batch processing")
+    model_load_start = time.time()
 
     try:
         model_cache = load_all_models(
             use_gpu=True,
             aggressive_memory_mgmt=aggressive_memory_mgmt,
         )
-        logger.info("Models loaded successfully")
+
+        model_load_time = time.time() - model_load_start
+        logger.info(f"Model loading completed in {model_load_time:.2f}s")
+        logger.info("")
 
         # Log memory strategy
         if model_cache.aggressive_memory_mgmt:
             logger.info(
-                "Using aggressive memory management (T4-style): "
-                "Paladin models will be loaded and freed per slide"
+                "Memory strategy: AGGRESSIVE (T4-style) - "
+                "Paladin models loaded/freed per slide"
             )
         else:
             logger.info(
@@ -110,6 +118,11 @@ def analyze_slides_batch(
     all_slide_masks = []
     all_aeon_results = []
     all_paladin_results = []
+    slide_times = []
+
+    logger.info("=" * 80)
+    logger.info("Processing slides with PRE-LOADED models (no model reloading!)")
+    logger.info("=" * 80)
 
     try:
         for idx, (slide_path, (_, row)) in enumerate(zip(slides, settings_df.iterrows())):
@@ -119,7 +132,10 @@ def analyze_slides_batch(
             progress_frac = (idx + 0.1) / num_slides
             progress(progress_frac, desc=f"Analyzing slide {idx + 1}/{num_slides}: {slide_name}")
 
-            logger.info(f"Processing slide {idx + 1}/{num_slides}: {slide_name}")
+            logger.info("")
+            logger.info(f"[{idx + 1}/{num_slides}] Processing: {slide_name}")
+            logger.info(f"         Using pre-loaded models (no disk I/O for core models)")
+            slide_start_time = time.time()
 
             try:
                 # Use batch-optimized analysis with pre-loaded models
@@ -136,6 +152,9 @@ def analyze_slides_batch(
                     num_workers=num_workers,
                     progress=progress,
                 )
+
+                slide_time = time.time() - slide_start_time
+                slide_times.append(slide_time)
 
                 # Collect results
                 if slide_mask is not None:
@@ -154,24 +173,66 @@ def analyze_slides_batch(
                     )
                     all_paladin_results.append(paladin_results)
 
-                logger.info(f"Successfully processed slide {idx + 1}/{num_slides}")
+                logger.info(f"[{idx + 1}/{num_slides}] ✓ Completed in {slide_time:.2f}s")
 
             except Exception as e:
-                logger.exception(f"Error processing slide {slide_name}: {e}")
+                slide_time = time.time() - slide_start_time
+                slide_times.append(slide_time)
+                logger.exception(f"[{idx + 1}/{num_slides}] ✗ Failed after {slide_time:.2f}s: {e}")
                 # Continue with next slide instead of failing entire batch
                 continue
 
     finally:
         # Step 3: Always cleanup models (even if there were errors)
+        logger.info("")
+        logger.info("=" * 80)
         logger.info("Cleaning up models...")
         progress(0.99, desc="Cleaning up models")
         model_cache.cleanup()
-        logger.info("Model cleanup complete")
+        logger.info("✓ Model cleanup complete")
 
-    progress(1.0, desc=f"Batch analysis complete ({num_slides} slides)")
-    logger.info(
-        f"Batch analysis complete: "
-        f"Processed {len(all_slide_masks)}/{num_slides} slides successfully"
-    )
+    # Calculate batch statistics
+    batch_total_time = time.time() - batch_start_time
+    num_successful = len(all_slide_masks)
+    num_failed = num_slides - num_successful
+
+    # Log comprehensive summary
+    logger.info("=" * 80)
+    logger.info("BATCH PROCESSING SUMMARY")
+    logger.info("=" * 80)
+    logger.info(f"Total slides:        {num_slides}")
+    logger.info(f"Successfully processed: {num_successful}")
+    logger.info(f"Failed:              {num_failed}")
+    logger.info("")
+    logger.info(f"Model loading time:  {model_load_time:.2f}s (done ONCE for entire batch)")
+    logger.info(f"Total batch time:    {batch_total_time:.2f}s")
+
+    if slide_times:
+        avg_slide_time = sum(slide_times) / len(slide_times)
+        min_slide_time = min(slide_times)
+        max_slide_time = max(slide_times)
+        total_slide_time = sum(slide_times)
+
+        logger.info("")
+        logger.info("Per-slide processing times:")
+        logger.info(f"  Average: {avg_slide_time:.2f}s")
+        logger.info(f"  Min:     {min_slide_time:.2f}s")
+        logger.info(f"  Max:     {max_slide_time:.2f}s")
+        logger.info(f"  Total:   {total_slide_time:.2f}s")
+
+        # Calculate efficiency
+        overhead_time = batch_total_time - total_slide_time
+        logger.info("")
+        logger.info(f"Batch overhead:      {overhead_time:.2f}s ({overhead_time/batch_total_time*100:.1f}%)")
+        logger.info(f"Slide processing:    {total_slide_time:.2f}s ({total_slide_time/batch_total_time*100:.1f}%)")
+
+    logger.info("")
+    logger.info("✓ Batch processing optimization benefits:")
+    logger.info("  - Models loaded ONCE (not once per slide)")
+    logger.info("  - Reduced disk I/O for model loading")
+    logger.info(f"  - Processed {num_slides} slides with shared model cache")
+    logger.info("=" * 80)
+
+    progress(1.0, desc=f"Batch analysis complete ({num_successful}/{num_slides} successful)")
 
     return all_slide_masks, all_aeon_results, all_paladin_results

@@ -540,7 +540,7 @@ def _run_inference_pipeline_with_models(
     # Step 2: Filter features using pre-loaded marker classifier
     start_time = pd.Timestamp.now()
     progress(0.35, desc="Filtering features with marker classifier")
-    logger.info("Filtering features with marker classifier")
+    logger.info("Filtering features with PRE-LOADED marker classifier")
     _, filtered_coords = filter_features(
         ctranspath_features,
         coords,
@@ -563,7 +563,7 @@ def _run_inference_pipeline_with_models(
 
     # Check if cancer subtype is unknown
     if cancer_subtype in ["Unknown", None]:
-        logger.info("Running Aeon inference (cancer subtype unknown)")
+        logger.info("Running Aeon inference with PRE-LOADED model (cancer subtype unknown)")
         aeon_results = _run_aeon_inference_with_model(
             features,
             model_cache.aeon_model,  # Use pre-loaded Aeon model

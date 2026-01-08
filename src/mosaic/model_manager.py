@@ -117,7 +117,9 @@ def load_all_models(
         FileNotFoundError: If model files are not found in data/ directory
         RuntimeError: If CUDA is requested but not available
     """
-    logger.info("Loading models for batch processing...")
+    logger.info("=" * 80)
+    logger.info("BATCH PROCESSING: Loading models (this happens ONCE per batch)")
+    logger.info("=" * 80)
 
     # Detect GPU type
     device = torch.device("cpu")
@@ -127,15 +129,23 @@ def load_all_models(
         device = torch.device("cuda")
         gpu_name = torch.cuda.get_device_name(0)
         is_t4_gpu = "T4" in gpu_name
-        logger.info(f"Detected GPU: {gpu_name}")
+        gpu_memory_total = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        logger.info(f"GPU detected: {gpu_name}")
+        logger.info(f"GPU total memory: {gpu_memory_total:.2f} GB")
+
+        # Log initial GPU memory
+        mem_before = torch.cuda.memory_allocated() / (1024**3)
+        logger.info(f"GPU memory before loading models: {mem_before:.2f} GB")
 
         # Auto-detect memory management strategy
         if aggressive_memory_mgmt is None:
             aggressive_memory_mgmt = is_t4_gpu
-            logger.info(
-                f"Auto-detected memory management: "
-                f"{'aggressive (T4)' if is_t4_gpu else 'caching (high-memory GPU)'}"
-            )
+            strategy = "AGGRESSIVE (T4)" if is_t4_gpu else "CACHING (High-Memory GPU)"
+            logger.info(f"Memory management strategy: {strategy}")
+            if is_t4_gpu:
+                logger.info("  → Paladin models will be loaded and freed per slide")
+            else:
+                logger.info("  → Paladin models will be cached and reused across slides")
     elif use_gpu and not torch.cuda.is_available():
         logger.warning("GPU requested but CUDA not available, falling back to CPU")
         use_gpu = False
@@ -173,7 +183,11 @@ def load_all_models(
 
     with open(marker_classifier_path, "rb") as f:
         marker_classifier = pickle.load(f)  # nosec
-    logger.info("Marker Classifier loaded successfully")
+    logger.info("✓ Marker Classifier loaded")
+
+    if use_gpu and torch.cuda.is_available():
+        mem = torch.cuda.memory_allocated() / (1024**3)
+        logger.info(f"  GPU memory: {mem:.2f} GB")
 
     # Load Aeon model
     logger.info("Loading Aeon model...")
@@ -185,12 +199,23 @@ def load_all_models(
         aeon_model = pickle.load(f)  # nosec
     aeon_model.to(device)
     aeon_model.eval()
-    logger.info("Aeon model loaded successfully")
+    logger.info("✓ Aeon model loaded")
 
-    # Log memory usage
+    if use_gpu and torch.cuda.is_available():
+        mem = torch.cuda.memory_allocated() / (1024**3)
+        logger.info(f"  GPU memory: {mem:.2f} GB")
+
+    # Log final memory usage
+    logger.info("-" * 80)
     if use_gpu and torch.cuda.is_available():
         mem_allocated = torch.cuda.memory_allocated() / (1024**3)
-        logger.info(f"GPU memory after loading core models: {mem_allocated:.2f} GB")
+        logger.info(f"✓ All core models loaded to GPU")
+        logger.info(f"  Total GPU memory used: {mem_allocated:.2f} GB")
+        logger.info(f"  These models will be REUSED for all slides in this batch")
+    else:
+        logger.info("✓ All core models loaded to CPU")
+        logger.info("  These models will be REUSED for all slides in this batch")
+    logger.info("-" * 80)
 
     # Create ModelCache
     cache = ModelCache(
@@ -203,7 +228,6 @@ def load_all_models(
         device=device,
     )
 
-    logger.info("All core models loaded successfully")
     return cache
 
 
@@ -232,11 +256,15 @@ def load_paladin_model_for_inference(
 
     # Check cache first (only used in non-aggressive mode)
     if not cache.aggressive_memory_mgmt and model_key in cache.paladin_models:
-        logger.debug(f"Using cached Paladin model: {model_path.name}")
+        logger.info(f"  ✓ Using CACHED Paladin model: {model_path.name} (no disk I/O!)")
         return cache.paladin_models[model_key]
 
     # Load model from disk
-    logger.debug(f"Loading Paladin model: {model_path.name}")
+    if cache.aggressive_memory_mgmt:
+        logger.info(f"  → Loading Paladin model: {model_path.name} (will free after use)")
+    else:
+        logger.info(f"  → Loading Paladin model: {model_path.name} (will cache for reuse)")
+
     with open(model_path, "rb") as f:
         model = pickle.load(f)  # nosec
 
@@ -246,6 +274,6 @@ def load_paladin_model_for_inference(
     # Cache if not in aggressive mode
     if not cache.aggressive_memory_mgmt:
         cache.paladin_models[model_key] = model
-        logger.debug(f"Cached Paladin model: {model_path.name}")
+        logger.info(f"  ✓ Cached Paladin model for future reuse")
 
     return model
