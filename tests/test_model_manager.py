@@ -161,10 +161,14 @@ class TestLoadAllModels:
 
     def test_load_models_missing_aeon_file(self):
         """Test load_all_models raises error when Aeon model file is missing."""
-        with patch.object(Path, 'exists') as mock_exists:
-            # marker_classifier exists, aeon_model doesn't
-            mock_exists.side_effect = lambda: mock_exists.call_count <= 1
+        def exists_side_effect(self):
+            # Return True for marker_classifier and optimus, False for aeon
+            filename = str(self)
+            if 'aeon_model.pkl' in filename:
+                return False
+            return True
 
+        with patch.object(Path, 'exists', exists_side_effect):
             with pytest.raises(FileNotFoundError, match="Aeon model not found"):
                 with patch('builtins.open', create=True):
                     with patch('pickle.load'):

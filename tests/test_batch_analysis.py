@@ -48,15 +48,19 @@ class TestAnalyzeSlidesBatch:
         mock_cache.cleanup = Mock()
         mock_load_models.return_value = mock_cache
 
-        # Mock analyze_slide_with_models results
-        mock_mask = Mock()
-        mock_aeon = pd.DataFrame({"Cancer Subtype": ["LUAD"], "Confidence": [0.95]})
-        mock_paladin = pd.DataFrame({
-            "Cancer Subtype": ["LUAD"],
-            "Biomarker": ["EGFR"],
-            "Score": [0.85]
-        })
-        mock_analyze_slide.return_value = (mock_mask, mock_aeon, mock_paladin)
+        # Mock analyze_slide_with_models to return NEW DataFrames each time
+        def mock_analyze_side_effect(*args, **kwargs):
+            mock_mask = Mock()
+            # Aeon results should have Cancer Subtype as index, not a column
+            mock_aeon = pd.DataFrame({"Confidence": [0.95]}, index=pd.Index(["LUAD"], name="Cancer Subtype"))
+            mock_paladin = pd.DataFrame({
+                "Cancer Subtype": ["LUAD"],
+                "Biomarker": ["EGFR"],
+                "Score": [0.85]
+            })
+            return (mock_mask, mock_aeon, mock_paladin)
+
+        mock_analyze_slide.side_effect = mock_analyze_side_effect
 
         slides = ["slide1.svs", "slide2.svs", "slide3.svs"]
 
@@ -93,19 +97,23 @@ class TestAnalyzeSlidesBatch:
         mock_load_models.return_value = mock_cache
 
         # First slide succeeds, second fails, third succeeds
-        mock_mask = Mock()
-        mock_aeon = pd.DataFrame({"Cancer Subtype": ["LUAD"], "Confidence": [0.95]})
-        mock_paladin = pd.DataFrame({
-            "Cancer Subtype": ["LUAD"],
-            "Biomarker": ["EGFR"],
-            "Score": [0.85]
-        })
+        def mock_analyze_side_effect(*args, **kwargs):
+            # Get the slide_path to determine which call this is
+            call_count = mock_analyze_slide.call_count
+            if call_count == 2:  # Second call (index 1)
+                raise RuntimeError("Slide processing failed")
 
-        mock_analyze_slide.side_effect = [
-            (mock_mask, mock_aeon, mock_paladin),  # Slide 1: success
-            Exception("Tissue segmentation failed"),  # Slide 2: failure
-            (mock_mask, mock_aeon, mock_paladin),  # Slide 3: success
-        ]
+            mock_mask = Mock()
+            # Aeon results should have Cancer Subtype as index, not a column
+            mock_aeon = pd.DataFrame({"Confidence": [0.95]}, index=pd.Index(["LUAD"], name="Cancer Subtype"))
+            mock_paladin = pd.DataFrame({
+                "Cancer Subtype": ["LUAD"],
+                "Biomarker": ["EGFR"],
+                "Score": [0.85]
+            })
+            return (mock_mask, mock_aeon, mock_paladin)
+
+        mock_analyze_slide.side_effect = mock_analyze_side_effect
 
         slides = ["slide1.svs", "slide2.svs", "slide3.svs"]
 
@@ -236,14 +244,19 @@ class TestAnalyzeSlidesBatch:
         mock_cache.cleanup = Mock()
         mock_load_models.return_value = mock_cache
 
-        mock_mask = Mock()
-        mock_aeon = pd.DataFrame({"Cancer Subtype": ["LUAD"], "Confidence": [0.95]})
-        mock_paladin = pd.DataFrame({
-            "Cancer Subtype": ["LUAD"],
-            "Biomarker": ["EGFR"],
-            "Score": [0.85]
-        })
-        mock_analyze_slide.return_value = (mock_mask, mock_aeon, mock_paladin)
+        # Return new DataFrames each time
+        def mock_analyze_side_effect(*args, **kwargs):
+            mock_mask = Mock()
+            # Aeon results should have Cancer Subtype as index, not a column
+            mock_aeon = pd.DataFrame({"Confidence": [0.95]}, index=pd.Index(["LUAD"], name="Cancer Subtype"))
+            mock_paladin = pd.DataFrame({
+                "Cancer Subtype": ["LUAD"],
+                "Biomarker": ["EGFR"],
+                "Score": [0.85]
+            })
+            return (mock_mask, mock_aeon, mock_paladin)
+
+        mock_analyze_slide.side_effect = mock_analyze_side_effect
 
         slides = ["slide1.svs", "slide2.svs"]
 
