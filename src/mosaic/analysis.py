@@ -465,7 +465,8 @@ def _run_paladin_inference_with_models(
     from mosaic.inference import paladin
 
     metastatic = site_type == "Metastatic"
-    model_map_path = "data/paladin_model_map.csv"
+    data_dir = get_data_directory()
+    model_map_path = str(data_dir / "paladin_model_map.csv")
 
     # Use appropriate batch size based on GPU type
     if IS_T4_GPU:

@@ -12,6 +12,8 @@ from typing import Dict, Optional
 import torch
 from loguru import logger
 
+from mosaic.data_directory import get_data_directory
+
 
 class ModelCache:
     """Container for pre-loaded models with T4-aware memory management.
@@ -153,8 +155,9 @@ def load_all_models(
     if aggressive_memory_mgmt is None:
         aggressive_memory_mgmt = False
 
-    # Define model paths (relative to repository root)
-    data_dir = Path(__file__).parent.parent.parent / "data"
+    # Get model data directory (HF cache or local data/)
+    data_dir = get_data_directory()
+    logger.info(f"Using model data directory: {data_dir}")
 
     # Load CTransPath model
     logger.info("Loading CTransPath model...")
