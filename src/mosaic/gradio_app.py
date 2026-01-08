@@ -25,6 +25,7 @@ from mosaic.ui.utils import (
     SEX_OPTIONS,
 )
 from mosaic.analysis import analyze_slide
+from mosaic.batch_analysis import analyze_slides_batch
 
 
 def download_and_process_models():
@@ -209,56 +210,52 @@ def main():
     elif args.slide_csv:
         if not args.output_dir:
             raise ValueError("Please provide --output-dir to save results")
-        # Batch processing mode
+        # Batch processing mode with optimized model loading
 
         output_dir = Path(args.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        all_paladin_results = []
-        all_aeon_results = []
+
+        # Load and validate settings
         settings_df = load_settings(args.slide_csv)
-        settings_df = validate_settings(settings_df, cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map)
-        for idx, row in settings_df.iterrows():
-            slide_path = row["Slide"]
-            seg_config = row["Segmentation Config"]
-            site_type = row["Site Type"]
-            sex = row.get("Sex", "Unknown")
-            tissue_site = row.get("Tissue Site", "Unknown")
-            cancer_subtype = row["Cancer Subtype"]
-            ihc_subtype = row.get("IHC Subtype", "")
-            logger.info(
-                f"Processing slide {slide_path} ({idx + 1} of {len(settings_df)})"
-            )
-            slide_mask, aeon_results, paladin_results = analyze_slide(
-                slide_path,
-                seg_config,
-                site_type,
-                sex,
-                tissue_site,
-                cancer_subtype,
-                cancer_subtype_name_map,
-                ihc_subtype,
-                num_workers=args.num_workers,
-            )
-            slide_name = Path(slide_path).stem
+        settings_df = validate_settings(
+            settings_df, cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map
+        )
+
+        # Extract slide paths
+        slides = settings_df["Slide"].tolist()
+
+        logger.info(f"Processing {len(slides)} slides in batch mode with models loaded once")
+
+        # Use batch processing (models loaded once)
+        all_slide_masks, all_aeon_results, all_paladin_results = analyze_slides_batch(
+            slides=slides,
+            settings_df=settings_df,
+            cancer_subtype_name_map=cancer_subtype_name_map,
+            num_workers=args.num_workers,
+            aggressive_memory_mgmt=None,  # Auto-detect GPU type
+            progress=None,
+        )
+
+        # Save individual slide results
+        for idx, (slide_mask, slide_name) in enumerate(all_slide_masks):
             mask_path = output_dir / f"{slide_name}_mask.png"
             slide_mask.save(mask_path)
             logger.info(f"Saved slide mask to {mask_path}")
-            if aeon_results is not None:
-                aeon_output_path = output_dir / f"{slide_name}_aeon_results.csv"
-                aeon_results.reset_index().to_csv(aeon_output_path, index=False)
-                logger.info(f"Saved Aeon results to {aeon_output_path}")
-            if paladin_results is not None and len(paladin_results) > 0:
+
+        for idx, aeon_results in enumerate(all_aeon_results):
+            slide_name = aeon_results.columns[0]  # Slide name is in column name
+            aeon_output_path = output_dir / f"{slide_name}_aeon_results.csv"
+            aeon_results.reset_index().to_csv(aeon_output_path, index=False)
+            logger.info(f"Saved Aeon results to {aeon_output_path}")
+
+        # Group Paladin results by slide
+        if all_paladin_results:
+            combined_paladin = pd.concat(all_paladin_results, ignore_index=True)
+            for slide_name in combined_paladin["Slide"].unique():
+                slide_paladin = combined_paladin[combined_paladin["Slide"] == slide_name]
                 paladin_output_path = output_dir / f"{slide_name}_paladin_results.csv"
-                paladin_results.to_csv(paladin_output_path, index=False)
+                slide_paladin.to_csv(paladin_output_path, index=False)
                 logger.info(f"Saved Paladin results to {paladin_output_path}")
-            if aeon_results is not None:
-                aeon_results.columns = [f"{slide_name}"]
-                all_aeon_results.append(aeon_results)
-            if paladin_results is not None and len(paladin_results) > 0:
-                paladin_results.insert(
-                    0, "Slide", pd.Series([slide_name] * len(paladin_results))
-                )
-                all_paladin_results.append(paladin_results)
         if all_aeon_results:
             combined_aeon_results = pd.concat(all_aeon_results, axis=1)
             combined_aeon_results.reset_index(inplace=True)

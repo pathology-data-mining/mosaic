@@ -106,16 +106,55 @@ def select_models(cancer_subtypes: list[str], model_map: dict[Any, Any]) -> list
     return models
 
 
+def run_model_with_preloaded(device, dataset, model, num_workers, batch_size) -> float:
+    """Run inference using a pre-loaded Paladin model (for batch processing).
+
+    This function is optimized for batch processing where models are loaded
+    once and reused instead of being reloaded for each slide.
+
+    Args:
+        device: Torch device (CPU or CUDA)
+        dataset: TileFeatureTensorDataset containing the features
+        model: Pre-loaded Paladin model (torch.nn.Module)
+        num_workers: Number of workers for data loading
+        batch_size: Batch size for inference
+
+    Returns:
+        Point estimate (predicted value) from the model
+    """
+    # Model is already loaded and on device, just set to eval mode
+    model.eval()
+
+    dataloader = DataLoader(
+        dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+    )
+
+    results_df = []
+    batch = next(iter(dataloader))
+    with torch.no_grad():
+        batch["tile_tensor"] = batch["tile_tensor"].to(device)
+        outputs = model(batch)
+
+        logits = outputs["logits"]
+        # Apply softplus to ensure positive values for beta-binomial parameters
+        logits = torch.nn.functional.softplus(logits) + 1.0  # enforce concavity
+        point_estimates = logits_to_point_estimates(logits)
+
+        # sample_id = batch['sample_id'][0]
+        class_assignment = point_estimates[0].item()
+    return class_assignment
+
+
 def run_model(device, dataset, model_path: str, num_workers, batch_size) -> float:
     """Run inference for the given dataset and Paladin model.
-    
+
     Args:
         device: Torch device (CPU or CUDA)
         dataset: TileFeatureTensorDataset containing the features
         model_path: Path to the pickled Paladin model
         num_workers: Number of workers for data loading
         batch_size: Batch size for inference
-        
+
     Returns:
         Point estimate (predicted value) from the model
     """
@@ -283,6 +322,138 @@ def run(
                     logger.error(
                         f"Unable to run model for {cancer_subtype} target {target}\n{exc}"
                     )
+    df = pd.DataFrame(results, columns=["Cancer Subtype", "Biomarker", "Score"])
+
+    return df
+
+
+def run_with_models(
+    features: np.ndarray,
+    aeon_results: Optional[pd.DataFrame] = None,
+    cancer_subtype_codes: List[str] = None,
+    model_cache=None,
+    model_map_path: str = None,
+    metastatic: bool = False,
+    batch_size: int = BATCH_SIZE,
+    num_workers: int = NUM_WORKERS,
+):
+    """Run Paladin inference using pre-loaded models from ModelCache (for batch processing).
+
+    This function is optimized for batch processing where models are managed by
+    a ModelCache instead of being loaded fresh for each slide.
+
+    Args:
+        features: NumPy array of tile features extracted from the WSI
+        aeon_results: DataFrame with Aeon predictions (Cancer Subtype, Confidence)
+        cancer_subtype_codes: List of OncoTree codes if cancer subtype is known
+        model_cache: ModelCache instance managing pre-loaded models
+        model_map_path: Path to CSV file mapping subtypes/targets to model paths
+        metastatic: Whether the slide is from a metastatic site
+        batch_size: Batch size for inference
+        num_workers: Number of workers for data loading
+
+    Returns:
+        DataFrame with columns: Cancer Subtype, Target, Score
+
+    Note:
+        Either aeon_results or cancer_subtype_codes must be provided.
+        model_cache and model_map_path are required.
+    """
+    # Import here to avoid circular dependency
+    from mosaic.model_manager import load_paladin_model_for_inference
+
+    if aeon_results is not None:
+        aeon_scores = load_aeon_scores(aeon_results)
+        target_cancer_subtypes = select_cancer_subtypes(aeon_scores)
+    else:
+        target_cancer_subtypes = cancer_subtype_codes
+
+    # Build a dataset to feed to the model
+    site = SiteType.METASTASIS if metastatic else SiteType.PRIMARY
+
+    dataset = TileFeatureTensorDataset(
+        tile_features=features,
+        site_type=site,
+        n_max_tiles=20000,
+    )
+
+    device = model_cache.device
+    results = []
+
+    if model_map_path:
+        model_map = load_model_map(model_map_path)
+        for cancer_subtype in target_cancer_subtypes:
+            if cancer_subtype not in model_map:
+                logger.warning(f"Warning: no models found for {cancer_subtype}")
+                continue
+
+            if "MSI_TYPE" in model_map[cancer_subtype]:
+                # Run MSI_TYPE model first, to determine if we should run other/MSS models
+                logger.info(f"Running MSI_TYPE model for {cancer_subtype} first")
+                try:
+                    model_path = Path(model_map[cancer_subtype]["MSI_TYPE"])
+                    model = load_paladin_model_for_inference(model_cache, model_path)
+
+                    msi_score = run_model_with_preloaded(
+                        device,
+                        dataset,
+                        model,
+                        num_workers,
+                        batch_size,
+                    )
+
+                    # On T4, aggressively clean up
+                    if model_cache.aggressive_memory_mgmt:
+                        del model
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+
+                    results.append((cancer_subtype, "MSI_TYPE", msi_score))
+                    logger.info(
+                        f"cancer_subtype: {cancer_subtype}  target: MSI score: {msi_score}"
+                    )
+                    # If MSI score is high, skip MSS models
+                    if msi_score >= 0.5:
+                        logger.info(
+                            f"Skipping MSS models for {cancer_subtype} due to high MSI score"
+                        )
+                        continue
+                    else:
+                        logger.info(
+                            f"Running MSS models for {cancer_subtype} due to low MSI score"
+                        )
+                except Exception as exc:
+                    logger.error(
+                        f"Unable to run model for {cancer_subtype} target MSI_TYPE\n{exc}"
+                    )
+
+            for target, model_path_str in sorted(model_map[cancer_subtype].items()):
+                # Skip MSI_TYPE model, already run above
+                if target == "MSI_TYPE":
+                    continue
+                try:
+                    model_path = Path(model_path_str)
+                    model = load_paladin_model_for_inference(model_cache, model_path)
+
+                    score = run_model_with_preloaded(
+                        device, dataset, model, num_workers, batch_size
+                    )
+
+                    # On T4, aggressively clean up
+                    if model_cache.aggressive_memory_mgmt:
+                        del model
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+
+                    results.append((cancer_subtype, target, score))
+                    logger.info(
+                        f"cancer_subtype: {cancer_subtype}  target: {target}  score: {score}"
+                    )
+                except Exception as exc:
+                    logger.error(
+                        f"Unable to run model for {cancer_subtype} target {target}\n{exc}"
+                    )
+
     df = pd.DataFrame(results, columns=["Cancer Subtype", "Biomarker", "Score"])
 
     return df

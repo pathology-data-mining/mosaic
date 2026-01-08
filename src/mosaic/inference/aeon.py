@@ -39,6 +39,107 @@ BATCH_SIZE = 8
 NUM_WORKERS = 8
 
 
+def run_with_model(
+    features,
+    model,
+    device,
+    metastatic=False,
+    batch_size=8,
+    num_workers=8,
+    sex=None,
+    tissue_site_idx=None,
+):
+    """Run Aeon model inference using a pre-loaded model (for batch processing).
+
+    This function is optimized for batch processing where the model is loaded
+    once and reused across multiple slides instead of being reloaded each time.
+
+    Args:
+        features: NumPy array of tile features extracted from the WSI
+        model: Pre-loaded Aeon model (torch.nn.Module)
+        device: torch.device for GPU/CPU placement
+        metastatic: Whether the slide is from a metastatic site
+        batch_size: Batch size for inference
+        num_workers: Number of workers for data loading
+        sex: Patient sex (0=Male, 1=Female), optional
+        tissue_site_idx: Tissue site index (0-56), optional
+
+    Returns:
+        tuple: (results_df, part_embedding)
+            - results_df: DataFrame with cancer subtypes and confidence scores
+            - part_embedding: Torch tensor of the learned part representation
+    """
+    # Model is already loaded and on device, just set to eval mode
+    model.eval()
+
+    # Load the correct mapping from metadata for this model
+    metadata_path = (
+        Path(__file__).parent.parent.parent.parent / "data" / "metadata" / "target_dict.tsv"
+    )
+    with open(metadata_path) as f:
+        target_dict_str = f.read().strip().replace("'", '"')
+        target_dict = json.loads(target_dict_str)
+
+    histologies = target_dict["histologies"]
+    INT_TO_CANCER_TYPE_MAP_LOCAL = {i: histology for i, histology in enumerate(histologies)}
+    CANCER_TYPE_TO_INT_MAP_LOCAL = {v: k for k, v in INT_TO_CANCER_TYPE_MAP_LOCAL.items()}
+
+    # Calculate col_indices_to_drop using local mapping
+    col_indices_to_drop_local = [
+        CANCER_TYPE_TO_INT_MAP_LOCAL[x]
+        for x in CANCER_TYPES_TO_DROP
+        if x in CANCER_TYPE_TO_INT_MAP_LOCAL
+    ]
+
+    site_type = SiteType.METASTASIS if metastatic else SiteType.PRIMARY
+
+    # For UI, InferenceDataset will just be a single slide.  Sample id is not relevant.
+    dataset = TileFeatureTensorDataset(
+        site_type=site_type,
+        tile_features=features,
+        sex=sex,
+        tissue_site_idx=tissue_site_idx,
+        n_max_tiles=20000,
+    )
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    results = []
+    batch = next(iter(dataloader))
+    with torch.no_grad():
+        batch["tile_tensor"] = batch["tile_tensor"].to(device)
+        if "SEX" in batch:
+            batch["SEX"] = batch["SEX"].to(device)
+        if "TISSUE_SITE" in batch:
+            batch["TISSUE_SITE"] = batch["TISSUE_SITE"].to(device)
+        y = model(batch)
+        y["logits"][:, col_indices_to_drop_local] = -1e6
+
+        batch_size = y["logits"].shape[0]
+        assert batch_size == 1
+
+        softmax = torch.nn.functional.softmax(y["logits"][0], dim=0)
+        argmax = torch.argmax(softmax, dim=0)
+        class_assignment = INT_TO_CANCER_TYPE_MAP_LOCAL[argmax.item()]
+        max_confidence = softmax[argmax].item()
+        mean_confidence = torch.mean(softmax).item()
+
+        logger.info(
+            f"class {class_assignment} :  confidence {max_confidence:8.5f} "
+            f"(mean {mean_confidence:8.5f})"
+        )
+
+        part_embedding = y["whole_part_representation"][0].cpu()
+
+        for cancer_subtype, j in sorted(CANCER_TYPE_TO_INT_MAP_LOCAL.items()):
+            confidence = softmax[j].item()
+            results.append((cancer_subtype, confidence))
+        results.sort(key=lambda row: row[1], reverse=True)
+
+    results_df = pd.DataFrame(results, columns=["Cancer Subtype", "Confidence"])
+
+    return results_df, part_embedding
+
+
 def run(
     features, model_path, metastatic=False, batch_size=8, num_workers=8, use_cpu=False,
     sex=None, tissue_site_idx=None

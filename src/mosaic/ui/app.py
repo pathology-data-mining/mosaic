@@ -24,6 +24,7 @@ from mosaic.ui.utils import (
     SETTINGS_COLUMNS,
 )
 from mosaic.analysis import analyze_slide
+from mosaic.batch_analysis import analyze_slides_batch
 
 current_dir = Path(__file__).parent.parent
 
@@ -58,28 +59,34 @@ def analyze_slides(
     if len(slides) != len(settings_input):
         raise gr.Error("Missing settings for uploaded slides")
 
-    all_slide_masks = []
-    all_aeon_results = []
-    all_paladin_results = []
+    # Use batch processing for multiple slides (models loaded once)
+    # Use single-slide processing for 1 slide (maintains exact same behavior)
+    if len(slides) > 1:
+        logger.info(f"Using batch processing for {len(slides)} slides")
+        progress(0.0, desc=f"Starting batch analysis ({len(slides)} slides)")
 
-    progress(0.0, desc="Starting analysis")
-    for idx, row in settings_input.iterrows():
-        slide_name = row["Slide"]
-        progress(
-            idx / len(settings_input),
-            desc=f"Analyzing {slide_name}, slide {idx + 1} of {len(settings_input)}",
+        all_slide_masks, all_aeon_results, all_paladin_results = analyze_slides_batch(
+            slides=slides,
+            settings_df=settings_input,
+            cancer_subtype_name_map=cancer_subtype_name_map,
+            num_workers=4,
+            aggressive_memory_mgmt=None,  # Auto-detect GPU type
+            progress=progress,
         )
-        for x in slides:
-            s = x.split("/")[-1]
-            if s == slide_name:
-                slide_mask = x
+    else:
+        # Single slide: use existing analyze_slide() for backward compatibility
+        logger.info("Using single-slide processing (1 slide)")
+        progress(0.0, desc="Starting single-slide analysis")
 
-        (
-            slide_mask,
-            aeon_results,
-            paladin_results,
-        ) = analyze_slide(
-            slides[idx],
+        all_slide_masks = []
+        all_aeon_results = []
+        all_paladin_results = []
+
+        row = settings_input.iloc[0]
+        slide_name = row["Slide"]
+
+        slide_mask, aeon_results, paladin_results = analyze_slide(
+            slides[0],
             row["Segmentation Config"],
             row["Site Type"],
             row["Sex"],
@@ -90,18 +97,17 @@ def analyze_slides(
             progress=progress,
             request=request,
         )
+
+        if slide_mask is not None:
+            all_slide_masks.append((slide_mask, slide_name))
         if aeon_results is not None:
-            if len(slides) > 1:
-                aeon_results.columns = [f"{slide_name}"]
-            if row["Cancer Subtype"] == "Unknown":
-                all_aeon_results.append(aeon_results)
+            all_aeon_results.append(aeon_results)
         if paladin_results is not None:
             paladin_results.insert(
                 0, "Slide", pd.Series([slide_name] * len(paladin_results))
             )
             all_paladin_results.append(paladin_results)
-        if slide_mask is not None:
-            all_slide_masks.append((slide_mask, slide_name))
+
     progress(0.99, desc="Analysis complete, wrapping up results")
 
     timestamp = pd.Timestamp.now().strftime("%Y%m%d-%H%M%S")
@@ -134,16 +140,15 @@ def analyze_slides(
         aeon_output = gr.DownloadButton(value=aeon_output_path, visible=True)
 
     # Convert Oncotree codes to names for display
-    cancer_subtype_names = [
-        f"{get_oncotree_code_name(code)} ({code})"
-        for code in combined_paladin_results["Cancer Subtype"]
-    ]
-    combined_paladin_results["Cancer Subtype"] = cancer_subtype_names
-    if len(combined_paladin_results) > 0:
-        combined_paladin_results["Score"] = combined_paladin_results["Score"].round(3)
-
     paladin_output = gr.DownloadButton(visible=False)
     if len(combined_paladin_results) > 0:
+        cancer_subtype_names = [
+            f"{get_oncotree_code_name(code)} ({code})"
+            for code in combined_paladin_results["Cancer Subtype"]
+        ]
+        combined_paladin_results["Cancer Subtype"] = cancer_subtype_names
+        combined_paladin_results["Score"] = combined_paladin_results["Score"].round(3)
+
         paladin_output_path = user_dir / f"paladin_results-{timestamp}.csv"
         combined_paladin_results.to_csv(paladin_output_path, index=False)
         paladin_output = gr.DownloadButton(value=paladin_output_path, visible=True)

@@ -391,6 +391,286 @@ def _run_inference_pipeline_impl(
     return aeon_results, paladin_results
 
 
+# ============================================================================
+# Batch-Optimized Pipeline Functions (use pre-loaded models)
+# ============================================================================
+
+
+def _run_aeon_inference_with_model(
+    features, model, device, site_type, num_workers, sex_idx=None, tissue_site_idx=None
+):
+    """Run Aeon inference using pre-loaded model (for batch processing).
+
+    Args:
+        features: CTransPath features
+        model: Pre-loaded Aeon model
+        device: torch.device for GPU/CPU placement
+        site_type: "Primary" or "Metastatic"
+        num_workers: Number of workers for data loading
+        sex_idx: Encoded sex index (0=Male, 1=Female), optional
+        tissue_site_idx: Encoded tissue site index (0-56), optional
+
+    Returns:
+        DataFrame with cancer subtype predictions and confidence scores
+    """
+    from mosaic.inference import aeon
+
+    metastatic = site_type == "Metastatic"
+
+    # Use appropriate batch size based on GPU type
+    if IS_T4_GPU:
+        batch_size = 4
+        logger.info(f"Running Aeon on T4 with num_workers={num_workers}")
+    else:
+        batch_size = 8
+        logger.info(f"Running Aeon with num_workers={num_workers}")
+
+    start_time = pd.Timestamp.now()
+    aeon_results, _ = aeon.run_with_model(
+        features=features,
+        model=model,
+        device=device,
+        metastatic=metastatic,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        sex=sex_idx,
+        tissue_site_idx=tissue_site_idx,
+    )
+    end_time = pd.Timestamp.now()
+
+    if torch.cuda.is_available():
+        max_gpu_memory = torch.cuda.max_memory_allocated() / (1024**3)
+        logger.info(
+            f"Aeon inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+        )
+
+    return aeon_results
+
+
+def _run_paladin_inference_with_models(
+    features, aeon_results, site_type, model_cache, num_workers
+):
+    """Run Paladin inference using pre-loaded models from cache (for batch processing).
+
+    Args:
+        features: Optimus features
+        aeon_results: DataFrame with Aeon predictions
+        site_type: "Primary" or "Metastatic"
+        model_cache: ModelCache instance with pre-loaded models
+        num_workers: Number of workers for data loading
+
+    Returns:
+        DataFrame with biomarker predictions (Cancer Subtype, Biomarker, Score)
+    """
+    from mosaic.inference import paladin
+
+    metastatic = site_type == "Metastatic"
+    model_map_path = "data/paladin_model_map.csv"
+
+    # Use appropriate batch size based on GPU type
+    if IS_T4_GPU:
+        batch_size = 4
+        logger.info(f"Running Paladin on T4 with num_workers={num_workers}")
+    else:
+        batch_size = 8
+        logger.info(f"Running Paladin with num_workers={num_workers}")
+
+    start_time = pd.Timestamp.now()
+    paladin_results = paladin.run_with_models(
+        features=features,
+        aeon_results=aeon_results,
+        model_cache=model_cache,
+        model_map_path=model_map_path,
+        metastatic=metastatic,
+        batch_size=batch_size,
+        num_workers=num_workers,
+    )
+    end_time = pd.Timestamp.now()
+
+    if torch.cuda.is_available():
+        max_gpu_memory = torch.cuda.max_memory_allocated() / (1024**3)
+        logger.info(
+            f"Paladin inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+        )
+
+    return paladin_results
+
+
+def _run_inference_pipeline_with_models(
+    coords,
+    slide_path,
+    attrs,
+    site_type,
+    sex_idx,
+    tissue_site_idx,
+    cancer_subtype,
+    cancer_subtype_name_map,
+    model_cache,
+    num_workers,
+    progress,
+):
+    """Run complete inference pipeline using pre-loaded models (for batch processing).
+
+    This function is optimized for batch processing where models are loaded once
+    and reused across multiple slides instead of being reloaded each time.
+
+    Args:
+        coords: Tile coordinates from tissue segmentation
+        slide_path: Path to the slide file
+        attrs: Attributes dictionary from tissue segmentation
+        site_type: "Primary" or "Metastatic"
+        sex_idx: Encoded sex index
+        tissue_site_idx: Encoded tissue site index
+        cancer_subtype: Known cancer subtype (or "Unknown")
+        cancer_subtype_name_map: Dict mapping display names to OncoTree codes
+        model_cache: ModelCache instance with pre-loaded models
+        num_workers: Number of workers for data loading
+        progress: Gradio progress tracker
+
+    Returns:
+        Tuple of (aeon_results, paladin_results)
+    """
+    # Step 1: Extract CTransPath features (still uses mussel's get_features)
+    # Note: Feature extraction optimization can be added later if needed
+    progress(0.3, desc="Extracting CTransPath features")
+    ctranspath_features, coords = _extract_ctranspath_features(
+        coords, slide_path, attrs, num_workers
+    )
+
+    # Step 2: Filter features using pre-loaded marker classifier
+    start_time = pd.Timestamp.now()
+    progress(0.35, desc="Filtering features with marker classifier")
+    logger.info("Filtering features with marker classifier")
+    _, filtered_coords = filter_features(
+        ctranspath_features,
+        coords,
+        model_cache.marker_classifier,  # Use pre-loaded classifier
+        threshold=0.25,
+    )
+    end_time = pd.Timestamp.now()
+    logger.info(f"Feature filtering took {end_time - start_time}")
+    logger.info(
+        f"Filtered from {len(coords)} to {len(filtered_coords)} tiles using marker classifier"
+    )
+
+    # Step 3: Extract Optimus features (still uses mussel's get_features)
+    progress(0.5, desc="Extracting Optimus features")
+    features = _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers)
+
+    # Step 4: Run Aeon inference with pre-loaded model (if cancer subtype unknown)
+    aeon_results = None
+    progress(0.7, desc="Running Aeon for cancer subtype inference")
+
+    # Check if cancer subtype is unknown
+    if cancer_subtype in ["Unknown", None]:
+        logger.info("Running Aeon inference (cancer subtype unknown)")
+        aeon_results = _run_aeon_inference_with_model(
+            features,
+            model_cache.aeon_model,  # Use pre-loaded Aeon model
+            model_cache.device,
+            site_type,
+            num_workers,
+            sex_idx,
+            tissue_site_idx,
+        )
+    else:
+        # Cancer subtype is known, create synthetic Aeon results
+        logger.info(f"Using known cancer subtype: {cancer_subtype}")
+        oncotree_code = cancer_subtype_name_map.get(cancer_subtype, cancer_subtype)
+        aeon_results = pd.DataFrame(
+            [(oncotree_code, 1.0)], columns=["Cancer Subtype", "Confidence"]
+        )
+
+    # Step 5: Run Paladin inference with pre-loaded models
+    progress(0.95, desc="Running Paladin for biomarker inference")
+    paladin_results = _run_paladin_inference_with_models(
+        features, aeon_results, site_type, model_cache, num_workers
+    )
+
+    aeon_results.set_index("Cancer Subtype", inplace=True)
+
+    return aeon_results, paladin_results
+
+
+def analyze_slide_with_models(
+    slide_path,
+    seg_config,
+    site_type,
+    sex,
+    tissue_site,
+    cancer_subtype,
+    cancer_subtype_name_map,
+    model_cache,
+    ihc_subtype="",
+    num_workers=4,
+    progress=None,
+):
+    """Analyze a slide using pre-loaded models (batch-optimized version).
+
+    This function is optimized for batch processing where models are loaded once
+    in a ModelCache and reused across multiple slides.
+
+    Args:
+        slide_path: Path to the slide file
+        seg_config: Segmentation configuration ("Biopsy", "Resection", or "TCGA")
+        site_type: "Primary" or "Metastatic"
+        sex: Patient sex ("Unknown", "Male", "Female")
+        tissue_site: Tissue site name
+        cancer_subtype: Known cancer subtype or "Unknown"
+        cancer_subtype_name_map: Dict mapping display names to OncoTree codes
+        model_cache: ModelCache instance with pre-loaded models
+        ihc_subtype: IHC subtype for breast cancer (optional)
+        num_workers: Number of workers for data loading
+        progress: Gradio progress tracker
+
+    Returns:
+        Tuple of (slide_mask, aeon_results, paladin_results)
+    """
+    from mosaic.inference.data import encode_sex, encode_tissue_site
+
+    if progress is None:
+        progress = lambda frac, desc: None  # No-op progress function
+
+    # Encode sex and tissue site
+    sex_idx = encode_sex(sex) if sex else None
+    tissue_site_idx = encode_tissue_site(tissue_site) if tissue_site else None
+
+    # Step 1: Tissue segmentation (CPU operation, not affected by model caching)
+    progress(0.0, desc="Segmenting tissue")
+    logger.info(f"Segmenting tissue for slide: {slide_path}")
+    start_time = pd.Timestamp.now()
+    coords, attrs = segment_tissue(slide_path, seg_config)
+    end_time = pd.Timestamp.now()
+    logger.info(f"Tissue segmentation took {end_time - start_time}")
+
+    if len(coords) == 0:
+        logger.warning("No tissue tiles found in slide")
+        return None, None, None
+
+    # Step 2: Create slide mask visualization (CPU operation)
+    progress(0.2, desc="Creating slide mask")
+    slide_mask = draw_slide_mask(slide_path, coords)
+
+    # Step 3: Run inference pipeline with pre-loaded models
+    aeon_results, paladin_results = _run_inference_pipeline_with_models(
+        coords,
+        slide_path,
+        attrs,
+        site_type,
+        sex_idx,
+        tissue_site_idx,
+        cancer_subtype,
+        cancer_subtype_name_map,
+        model_cache,
+        num_workers,
+        progress,
+    )
+
+    progress(1.0, desc="Analysis complete")
+
+    return slide_mask, aeon_results, paladin_results
+
+
 def analyze_slide(
     slide_path,
     seg_config,
