@@ -12,6 +12,7 @@ import pandas as pd
 from pathlib import Path
 from huggingface_hub import snapshot_download
 from loguru import logger
+import os
 
 from mosaic.ui import launch_gradio
 from mosaic.ui.app import set_cancer_subtype_maps
@@ -25,23 +26,69 @@ from mosaic.ui.utils import (
 )
 from mosaic.analysis import analyze_slide
 
+# Global variable to store the model data directory path
+_MODEL_DATA_DIR = None
+
+
+def get_data_directory():
+    """Get the directory containing model data files.
+
+    Returns the HuggingFace cache directory path for the model repository,
+    or falls back to local 'data/' directory if not yet downloaded.
+
+    Returns:
+        Path: Path to the model data directory
+    """
+    global _MODEL_DATA_DIR
+    if _MODEL_DATA_DIR is not None:
+        return _MODEL_DATA_DIR
+
+    # Check if environment variable is set
+    if "MOSAIC_DATA_DIR" in os.environ:
+        _MODEL_DATA_DIR = Path(os.environ["MOSAIC_DATA_DIR"])
+        return _MODEL_DATA_DIR
+
+    # Check if local data/ directory exists (for development/backward compat)
+    local_data = Path("data")
+    if local_data.exists() and (local_data / "paladin_model_map.csv").exists():
+        _MODEL_DATA_DIR = local_data
+        return _MODEL_DATA_DIR
+
+    # Fall back to repo root data/ directory
+    _MODEL_DATA_DIR = local_data
+    return _MODEL_DATA_DIR
+
 
 def download_and_process_models():
     """Download models from HuggingFace and initialize cancer subtype mappings.
-    
+
     Downloads the Paladin and Aeon models from the PDM-Group HuggingFace repository
-    and creates mappings between cancer subtype names and OncoTree codes.
-    
+    to the HuggingFace cache directory and creates mappings between cancer subtype
+    names and OncoTree codes.
+
     Returns:
         tuple: (cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes)
             - cancer_subtype_name_map: Dict mapping display names to OncoTree codes
             - reversed_cancer_subtype_name_map: Dict mapping OncoTree codes to display names
             - cancer_subtypes: List of all supported cancer subtype codes
     """
-    snapshot_download(repo_id="PDM-Group/paladin-aeon-models", local_dir="data")
+    global _MODEL_DATA_DIR
+
+    # Download to HF cache directory (not local_dir)
+    # This returns the path to the cached snapshot
+    logger.info("Downloading models from HuggingFace Hub to cache directory...")
+    cache_dir = snapshot_download(
+        repo_id="PDM-Group/paladin-aeon-models",
+        # No local_dir - use HF cache
+    )
+    _MODEL_DATA_DIR = Path(cache_dir)
+    logger.info(f"Models downloaded to: {_MODEL_DATA_DIR}")
+
+    # Also set environment variable for other modules to use
+    os.environ["MOSAIC_DATA_DIR"] = str(_MODEL_DATA_DIR)
 
     model_map = pd.read_csv(
-        "data/paladin_model_map.csv",
+        _MODEL_DATA_DIR / "paladin_model_map.csv",
     )
     cancer_subtypes = model_map["cancer_subtype"].unique().tolist()
     cancer_subtype_name_map = {"Unknown": "UNK"}

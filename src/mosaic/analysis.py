@@ -61,6 +61,7 @@ from mussel.utils.segment import draw_slide_mask
 from mussel.cli.tessellate import BiopsySegConfig, ResectionSegConfig, TcgaSegConfig
 from loguru import logger
 from mosaic.inference import run_aeon, run_paladin
+from mosaic.gradio_app import get_data_directory
 
 # Log hardware detection at module load
 logger.info(f"Hardware: {GPU_TYPE} | batch_size={DEFAULT_BATCH_SIZE}, num_workers={DEFAULT_NUM_WORKERS}")
@@ -92,13 +93,14 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
         logger.info(f"Running CTransPath with {num_workers} workers")
     
     start_time = pd.Timestamp.now()
-    
+
+    data_dir = get_data_directory()
     ctranspath_features, _ = get_features(
         coords,
         slide_path,
         attrs,
         model_type=ModelType.CTRANSPATH,
-        model_path="data/ctranspath.pth",
+        model_path=str(data_dir / "ctranspath.pth"),
         num_workers=num_workers,
         batch_size=batch_size,
         use_gpu=True,
@@ -136,13 +138,14 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
         logger.info(f"Running Optimus with {num_workers} workers")
     
     start_time = pd.Timestamp.now()
-    
+
+    data_dir = get_data_directory()
     features, _ = get_features(
         filtered_coords,
         slide_path,
         attrs,
         model_type=ModelType.OPTIMUS,
-        model_path="data/optimus.pkl",
+        model_path=str(data_dir / "optimus.pkl"),
         num_workers=num_workers,
         batch_size=batch_size,
         use_gpu=True,
@@ -179,9 +182,10 @@ def _run_aeon_inference(features, site_type, num_workers, sex=None, tissue_site_
     
     start_time = pd.Timestamp.now()
     logger.info("Running Aeon for cancer subtype inference")
+    data_dir = get_data_directory()
     aeon_results, _ = run_aeon(
         features=features,
-        model_path="data/aeon_model.pkl",
+        model_path=str(data_dir / "aeon_model.pkl"),
         metastatic=(site_type == "Metastatic"),
         batch_size=8,
         num_workers=num_workers,
@@ -231,9 +235,10 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
     
     start_time = pd.Timestamp.now()
     logger.info("Running Paladin for biomarker inference")
+    data_dir = get_data_directory()
     paladin_results = run_paladin(
         features=features,
-        model_map_path="data/paladin_model_map.csv",
+        model_map_path=str(data_dir / "paladin_model_map.csv"),
         aeon_results=aeon_results,
         metastatic=(site_type == "Metastatic"),
         batch_size=8,
@@ -339,7 +344,8 @@ def _run_inference_pipeline_impl(
 
     # Step 3: Filter features using marker classifier (CPU operation)
     start_time = pd.Timestamp.now()
-    marker_classifier = pickle.load(open("data/marker_classifier.pkl", "rb"))
+    data_dir = get_data_directory()
+    marker_classifier = pickle.load(open(data_dir / "marker_classifier.pkl", "rb"))
     progress(0.35, desc="Filtering features with marker classifier")
     logger.info("Filtering features with marker classifier")
     _, filtered_coords = filter_features(
