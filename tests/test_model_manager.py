@@ -131,8 +131,15 @@ class TestLoadAllModels:
 
     @patch("torch.cuda.is_available", return_value=True)
     @patch("torch.cuda.get_device_name", return_value="NVIDIA A100")
-    def test_load_models_a100_gpu(self, mock_get_device, mock_cuda_available):
+    @patch("torch.cuda.memory_allocated", return_value=0)
+    @patch("torch.cuda.get_device_properties")
+    def test_load_models_a100_gpu(self, mock_get_props, mock_mem, mock_get_device, mock_cuda_available):
         """Test loading models on A100 GPU (high memory)."""
+        # Mock device properties
+        mock_props = Mock()
+        mock_props.total_memory = 80 * 1024**3  # 80GB
+        mock_get_props.return_value = mock_props
+        
         with patch("builtins.open", create=True):
             with patch("pickle.load") as mock_pickle:
                 mock_model = Mock()
@@ -149,8 +156,15 @@ class TestLoadAllModels:
 
     @patch("torch.cuda.is_available", return_value=True)
     @patch("torch.cuda.get_device_name", return_value="Tesla T4")
-    def test_load_models_t4_gpu(self, mock_get_device, mock_cuda_available):
+    @patch("torch.cuda.memory_allocated", return_value=0)
+    @patch("torch.cuda.get_device_properties")
+    def test_load_models_t4_gpu(self, mock_get_props, mock_mem, mock_get_device, mock_cuda_available):
         """Test loading models on T4 GPU (low memory)."""
+        # Mock device properties
+        mock_props = Mock()
+        mock_props.total_memory = 16 * 1024**3  # 16GB
+        mock_get_props.return_value = mock_props
+        
         with patch("builtins.open", create=True):
             with patch("pickle.load") as mock_pickle:
                 mock_model = Mock()
@@ -182,8 +196,15 @@ class TestLoadAllModels:
                         load_all_models(use_gpu=False)
 
     @patch("torch.cuda.is_available", return_value=True)
-    def test_load_models_explicit_aggressive_mode(self, mock_cuda_available):
+    @patch("torch.cuda.memory_allocated", return_value=0)
+    @patch("torch.cuda.get_device_properties")
+    def test_load_models_explicit_aggressive_mode(self, mock_get_props, mock_mem, mock_cuda_available):
         """Test explicit aggressive memory management setting."""
+        # Mock device properties
+        mock_props = Mock()
+        mock_props.total_memory = 80 * 1024**3  # 80GB A100
+        mock_get_props.return_value = mock_props
+        
         with patch("torch.cuda.get_device_name", return_value="NVIDIA A100"):
             with patch("builtins.open", create=True):
                 with patch("pickle.load") as mock_pickle:

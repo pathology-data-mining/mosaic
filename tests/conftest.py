@@ -9,7 +9,12 @@ class GradioMock(MagicMock):
     """Mock for gradio that supports Error and Warning classes."""
 
     Error = Exception
-    Warning = lambda msg: None
+    
+    @staticmethod
+    def Warning(msg):
+        """Mock Warning that accepts a message."""
+        return None
+    
     Request = MagicMock
     Progress = MagicMock
 
