@@ -179,79 +179,17 @@ def run(
     with open(model_path, "rb") as f:
         model = pickle.load(f)  # nosec
     model.to(device)
-    model.eval()
 
-    # Load the correct mapping from metadata for this model
-    data_dir = get_data_directory()
-    metadata_path = data_dir / "metadata" / "target_dict.tsv"
-    with open(metadata_path) as f:
-        target_dict_str = f.read().strip().replace("'", '"')
-        target_dict = json.loads(target_dict_str)
-
-    histologies = target_dict["histologies"]
-    INT_TO_CANCER_TYPE_MAP_LOCAL = {
-        i: histology for i, histology in enumerate(histologies)
-    }
-    CANCER_TYPE_TO_INT_MAP_LOCAL = {
-        v: k for k, v in INT_TO_CANCER_TYPE_MAP_LOCAL.items()
-    }
-
-    # Calculate col_indices_to_drop using local mapping
-    col_indices_to_drop_local = [
-        CANCER_TYPE_TO_INT_MAP_LOCAL[x]
-        for x in CANCER_TYPES_TO_DROP
-        if x in CANCER_TYPE_TO_INT_MAP_LOCAL
-    ]
-
-    site_type = SiteType.METASTASIS if metastatic else SiteType.PRIMARY
-
-    # For UI, InferenceDataset will just be a single slide.  Sample id is not relevant.
-    dataset = TileFeatureTensorDataset(
-        site_type=site_type,
-        tile_features=features,
+    return run_with_model(
+        features=features,
+        model=model,
+        device=device,
+        metastatic=metastatic,
+        batch_size=batch_size,
+        num_workers=num_workers,
         sex=sex,
         tissue_site_idx=tissue_site_idx,
-        n_max_tiles=20000,
     )
-    dataloader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
-    )
-
-    results = []
-    batch = next(iter(dataloader))
-    with torch.no_grad():
-        batch["tile_tensor"] = batch["tile_tensor"].to(device)
-        if "SEX" in batch:
-            batch["SEX"] = batch["SEX"].to(device)
-        if "TISSUE_SITE" in batch:
-            batch["TISSUE_SITE"] = batch["TISSUE_SITE"].to(device)
-        y = model(batch)
-        y["logits"][:, col_indices_to_drop_local] = -1e6
-
-        batch_size = y["logits"].shape[0]
-        assert batch_size == 1
-
-        softmax = torch.nn.functional.softmax(y["logits"][0], dim=0)
-        argmax = torch.argmax(softmax, dim=0)
-        class_assignment = INT_TO_CANCER_TYPE_MAP_LOCAL[argmax.item()]
-        max_confidence = softmax[argmax].item()
-        mean_confidence = torch.mean(softmax).item()
-
-        logger.info(
-            f"class {class_assignment} :  confidence {max_confidence:8.5f} "
-            f"(mean {mean_confidence:8.5f})"
-        )
-
-        part_embedding = y["whole_part_representation"][0].cpu()
-
-        for cancer_subtype, j in sorted(CANCER_TYPE_TO_INT_MAP_LOCAL.items()):
-            confidence = softmax[j].item()
-            results.append((cancer_subtype, confidence))
-        results.sort(key=lambda row: row[1], reverse=True)
-
-    results_df = pd.DataFrame(results, columns=["Cancer Subtype", "Confidence"])
-
-    return results_df, part_embedding
 
 
 def parse_args():

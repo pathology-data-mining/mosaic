@@ -161,28 +161,9 @@ def run_model(device, dataset, model_path: str, num_workers, batch_size) -> floa
     logger.debug(f"[loading model {model_path}]")
     with Path(model_path).open("rb") as f:
         model = pickle.load(f)  # nosec
-        # model = CPU_Unpickler(f).load()  # nosec
     model.to(device)
-    model.eval()
 
-    dataloader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
-    )
-
-    results_df = []
-    batch = next(iter(dataloader))
-    with torch.no_grad():
-        batch["tile_tensor"] = batch["tile_tensor"].to(device)
-        outputs = model(batch)
-
-        logits = outputs["logits"]
-        # Apply softplus to ensure positive values for beta-binomial parameters
-        logits = torch.nn.functional.softplus(logits) + 1.0  # enforce concavity
-        point_estimates = logits_to_point_estimates(logits)
-
-        # sample_id = batch['sample_id'][0]
-        class_assignment = point_estimates[0].item()
-    return class_assignment
+    return run_model_with_preloaded(device, dataset, model, num_workers, batch_size)
 
 
 def logits_to_point_estimates(logits):
