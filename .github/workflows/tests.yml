@@ -39,10 +39,14 @@ jobs:
         cache-dependency-glob: "uv.lock"
 
     - name: Install dependencies
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
       run: |
         uv sync
 
     - name: Run tests with coverage
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
       run: |
         make test-coverage
 
