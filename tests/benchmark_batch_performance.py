@@ -21,7 +21,9 @@ from mosaic.batch_analysis import analyze_slides_batch
 from mosaic.ui.utils import load_settings, validate_settings
 
 
-def benchmark_sequential_processing(slides, settings_df, cancer_subtype_name_map, num_workers):
+def benchmark_sequential_processing(
+    slides, settings_df, cancer_subtype_name_map, num_workers
+):
     """Benchmark traditional sequential processing (models loaded per slide)."""
     logger.info("=" * 80)
     logger.info("BENCHMARKING: Sequential Processing (OLD METHOD)")
@@ -51,13 +53,15 @@ def benchmark_sequential_processing(slides, settings_df, cancer_subtype_name_map
         slide_time = time.time() - slide_start
         logger.info(f"Slide {idx + 1} completed in {slide_time:.2f}s")
 
-        results.append({
-            "slide": slide_path,
-            "time": slide_time,
-            "has_mask": slide_mask is not None,
-            "has_aeon": aeon_results is not None,
-            "has_paladin": paladin_results is not None,
-        })
+        results.append(
+            {
+                "slide": slide_path,
+                "time": slide_time,
+                "has_mask": slide_mask is not None,
+                "has_aeon": aeon_results is not None,
+                "has_paladin": paladin_results is not None,
+            }
+        )
 
     total_time = time.time() - start_time
     peak_memory = torch.cuda.max_memory_allocated() if torch.cuda.is_available() else 0
@@ -79,7 +83,9 @@ def benchmark_sequential_processing(slides, settings_df, cancer_subtype_name_map
     }
 
 
-def benchmark_batch_processing(slides, settings_df, cancer_subtype_name_map, num_workers):
+def benchmark_batch_processing(
+    slides, settings_df, cancer_subtype_name_map, num_workers
+):
     """Benchmark optimized batch processing (models loaded once)."""
     logger.info("=" * 80)
     logger.info("BENCHMARKING: Batch Processing (NEW METHOD)")
@@ -128,7 +134,9 @@ def compare_results(sequential_stats, batch_stats):
 
     speedup = sequential_stats["total_time"] / batch_stats["total_time"]
     time_saved = sequential_stats["total_time"] - batch_stats["total_time"]
-    percent_faster = (1 - (batch_stats["total_time"] / sequential_stats["total_time"])) * 100
+    percent_faster = (
+        1 - (batch_stats["total_time"] / sequential_stats["total_time"])
+    ) * 100
 
     logger.info(f"Number of slides: {sequential_stats['num_slides']}")
     logger.info(f"")
@@ -141,9 +149,11 @@ def compare_results(sequential_stats, batch_stats):
 
     if torch.cuda.is_available():
         logger.info(f"")
-        logger.info(f"Sequential peak memory: {sequential_stats['peak_memory_gb']:.2f} GB")
+        logger.info(
+            f"Sequential peak memory: {sequential_stats['peak_memory_gb']:.2f} GB"
+        )
         logger.info(f"Batch peak memory:      {batch_stats['peak_memory_gb']:.2f} GB")
-        memory_diff = batch_stats['peak_memory_gb'] - sequential_stats['peak_memory_gb']
+        memory_diff = batch_stats["peak_memory_gb"] - sequential_stats["peak_memory_gb"]
         logger.info(f"Memory difference:      {memory_diff:+.2f} GB")
 
     logger.info("=" * 80)
@@ -161,31 +171,20 @@ def main():
     parser = argparse.ArgumentParser(
         description="Benchmark batch processing performance"
     )
+    parser.add_argument("--slides", nargs="+", help="List of slide paths to process")
     parser.add_argument(
-        "--slides",
-        nargs="+",
-        help="List of slide paths to process"
+        "--slide-csv", type=str, help="CSV file with slide paths and settings"
     )
     parser.add_argument(
-        "--slide-csv",
-        type=str,
-        help="CSV file with slide paths and settings"
-    )
-    parser.add_argument(
-        "--num-workers",
-        type=int,
-        default=4,
-        help="Number of workers for data loading"
+        "--num-workers", type=int, default=4, help="Number of workers for data loading"
     )
     parser.add_argument(
         "--skip-sequential",
         action="store_true",
-        help="Skip sequential benchmark (faster, only test batch mode)"
+        help="Skip sequential benchmark (faster, only test batch mode)",
     )
     parser.add_argument(
-        "--output",
-        type=str,
-        help="Save benchmark results to JSON file"
+        "--output", type=str, help="Save benchmark results to JSON file"
     )
 
     args = parser.parse_args()
@@ -195,27 +194,35 @@ def main():
 
     # Load cancer subtype mappings
     from mosaic.gradio_app import download_and_process_models
-    cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map = download_and_process_models()
+
+    cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map = (
+        download_and_process_models()
+    )
 
     # Prepare slides and settings
     if args.slide_csv:
         settings_df = load_settings(args.slide_csv)
         settings_df = validate_settings(
-            settings_df, cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map
+            settings_df,
+            cancer_subtype_name_map,
+            cancer_subtypes,
+            reversed_cancer_subtype_name_map,
         )
         slides = settings_df["Slide"].tolist()
     else:
         slides = args.slides
         # Create default settings
-        settings_df = pd.DataFrame({
-            "Slide": slides,
-            "Site Type": ["Primary"] * len(slides),
-            "Sex": ["Unknown"] * len(slides),
-            "Tissue Site": ["Unknown"] * len(slides),
-            "Cancer Subtype": ["Unknown"] * len(slides),
-            "IHC Subtype": [""] * len(slides),
-            "Segmentation Config": ["Biopsy"] * len(slides),
-        })
+        settings_df = pd.DataFrame(
+            {
+                "Slide": slides,
+                "Site Type": ["Primary"] * len(slides),
+                "Sex": ["Unknown"] * len(slides),
+                "Tissue Site": ["Unknown"] * len(slides),
+                "Cancer Subtype": ["Unknown"] * len(slides),
+                "IHC Subtype": [""] * len(slides),
+                "Segmentation Config": ["Biopsy"] * len(slides),
+            }
+        )
 
     logger.info(f"Benchmarking with {len(slides)} slides")
     logger.info(f"GPU available: {torch.cuda.is_available()}")
@@ -239,8 +246,9 @@ def main():
         # Save results if requested
         if args.output:
             import json
+
             output_path = Path(args.output)
-            with open(output_path, 'w') as f:
+            with open(output_path, "w") as f:
                 json.dump(comparison, f, indent=2, default=str)
             logger.info(f"Benchmark results saved to {output_path}")
 

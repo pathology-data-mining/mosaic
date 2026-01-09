@@ -80,8 +80,12 @@ def run_with_model(
         target_dict = json.loads(target_dict_str)
 
     histologies = target_dict["histologies"]
-    INT_TO_CANCER_TYPE_MAP_LOCAL = {i: histology for i, histology in enumerate(histologies)}
-    CANCER_TYPE_TO_INT_MAP_LOCAL = {v: k for k, v in INT_TO_CANCER_TYPE_MAP_LOCAL.items()}
+    INT_TO_CANCER_TYPE_MAP_LOCAL = {
+        i: histology for i, histology in enumerate(histologies)
+    }
+    CANCER_TYPE_TO_INT_MAP_LOCAL = {
+        v: k for k, v in INT_TO_CANCER_TYPE_MAP_LOCAL.items()
+    }
 
     # Calculate col_indices_to_drop using local mapping
     col_indices_to_drop_local = [
@@ -100,7 +104,9 @@ def run_with_model(
         tissue_site_idx=tissue_site_idx,
         n_max_tiles=20000,
     )
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    dataloader = DataLoader(
+        dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+    )
 
     results = []
     batch = next(iter(dataloader))
@@ -140,8 +146,14 @@ def run_with_model(
 
 
 def run(
-    features, model_path, metastatic=False, batch_size=8, num_workers=8, use_cpu=False,
-    sex=None, tissue_site_idx=None
+    features,
+    model_path,
+    metastatic=False,
+    batch_size=8,
+    num_workers=8,
+    use_cpu=False,
+    sex=None,
+    tissue_site_idx=None,
 ):
     """Run Aeon model inference for cancer subtype prediction.
 
@@ -176,12 +188,20 @@ def run(
         target_dict_str = f.read().strip().replace("'", '"')
         target_dict = json.loads(target_dict_str)
 
-    histologies = target_dict['histologies']
-    INT_TO_CANCER_TYPE_MAP_LOCAL = {i: histology for i, histology in enumerate(histologies)}
-    CANCER_TYPE_TO_INT_MAP_LOCAL = {v: k for k, v in INT_TO_CANCER_TYPE_MAP_LOCAL.items()}
+    histologies = target_dict["histologies"]
+    INT_TO_CANCER_TYPE_MAP_LOCAL = {
+        i: histology for i, histology in enumerate(histologies)
+    }
+    CANCER_TYPE_TO_INT_MAP_LOCAL = {
+        v: k for k, v in INT_TO_CANCER_TYPE_MAP_LOCAL.items()
+    }
 
     # Calculate col_indices_to_drop using local mapping
-    col_indices_to_drop_local = [CANCER_TYPE_TO_INT_MAP_LOCAL[x] for x in CANCER_TYPES_TO_DROP if x in CANCER_TYPE_TO_INT_MAP_LOCAL]
+    col_indices_to_drop_local = [
+        CANCER_TYPE_TO_INT_MAP_LOCAL[x]
+        for x in CANCER_TYPES_TO_DROP
+        if x in CANCER_TYPE_TO_INT_MAP_LOCAL
+    ]
 
     site_type = SiteType.METASTASIS if metastatic else SiteType.PRIMARY
 
@@ -306,7 +326,9 @@ def main():
     tissue_site_idx = None
     if opt.tissue_site:
         tissue_site_idx = encode_tissue_site(opt.tissue_site)
-        logger.info(f"Using tissue site: {opt.tissue_site} (encoded as {tissue_site_idx})")
+        logger.info(
+            f"Using tissue site: {opt.tissue_site} (encoded as {tissue_site_idx})"
+        )
 
     results_df, part_embedding = run(
         features=features,

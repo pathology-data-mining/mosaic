@@ -212,10 +212,10 @@ DEFAULT_TISSUE_SITE_IDX = 8
 
 def get_tissue_site_map():
     """Load tissue site name → index mapping from CSV.
-    
+
     Returns:
         dict: Mapping of tissue site names to indices (0-56)
-    
+
     Raises:
         FileNotFoundError: If the tissue site CSV file is not found
     """
@@ -232,17 +232,17 @@ def get_tissue_site_map():
                 f"Tissue site mapping file not found at {csv_path}. "
                 f"Please ensure the data directory contains 'tissue_site_original_to_idx.csv'."
             ) from e
-        
+
         _TISSUE_SITE_MAP = {}
         for _, row in df.iterrows():
-            _TISSUE_SITE_MAP[row['TISSUE_SITE']] = int(row['idx'])
-    
+            _TISSUE_SITE_MAP[row["TISSUE_SITE"]] = int(row["idx"])
+
     return _TISSUE_SITE_MAP
 
 
 def get_tissue_site_options():
     """Get sorted unique tissue site names for UI dropdowns.
-    
+
     Returns:
         list: Sorted list of unique tissue site names
     """
@@ -258,7 +258,7 @@ def get_sex_map():
 
     Returns:
         dict: Mapping of sex values to indices (0-2)
-    
+
     Raises:
         FileNotFoundError: If the sex mapping CSV file is not found
     """
@@ -278,7 +278,7 @@ def get_sex_map():
 
         _SEX_MAP = {}
         for _, row in df.iterrows():
-            _SEX_MAP[row['SEX']] = int(row['idx'])
+            _SEX_MAP[row["SEX"]] = int(row["idx"])
 
     return _SEX_MAP
 
@@ -299,10 +299,10 @@ def encode_sex(sex):
 
 def encode_tissue_site(site_name):
     """Convert tissue site name to index (0-56).
-    
+
     Args:
         site_name: Tissue site name from CSV
-        
+
     Returns:
         int: Tissue site index, defaults to DEFAULT_TISSUE_SITE_IDX ("Not Applicable")
     """
@@ -312,11 +312,11 @@ def encode_tissue_site(site_name):
 
 def tissue_site_to_one_hot(site_idx, num_classes=57):
     """Convert tissue site index to one-hot vector.
-    
+
     Args:
         site_idx: Index value (0-56 for tissue site, 0-2 for sex)
         num_classes: Number of classes (57 for tissue site, 3 for sex)
-        
+
     Returns:
         list: One-hot encoded vector
     """
@@ -395,22 +395,18 @@ class TileFeatureTensorDataset(Dataset):
         Returns:
             dict: the item
         """
-        result = {
-            "site": self.site_type.value,
-            "tile_tensor": self.features
-        }
-        
+        result = {"site": self.site_type.value, "tile_tensor": self.features}
+
         # Add sex and tissue_site if provided (for Aeon)
         if self.sex is not None:
             result["SEX"] = torch.tensor(
-                tissue_site_to_one_hot(self.sex, num_classes=3),
-                dtype=torch.float32
+                tissue_site_to_one_hot(self.sex, num_classes=3), dtype=torch.float32
             )
-        
+
         if self.tissue_site_idx is not None:
             result["TISSUE_SITE"] = torch.tensor(
                 tissue_site_to_one_hot(self.tissue_site_idx, num_classes=57),
-                dtype=torch.float32
+                dtype=torch.float32,
             )
-        
+
         return result

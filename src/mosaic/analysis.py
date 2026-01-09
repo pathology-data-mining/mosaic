@@ -26,8 +26,10 @@ except ImportError:
                 return lambda f: f
             return fn
 
+
 # Detect T4 hardware by checking actual GPU
 import torch
+
 IS_T4_GPU = False
 GPU_NAME = "Unknown"
 if not IS_ZEROGPU and torch.cuda.is_available():
@@ -64,18 +66,21 @@ from mosaic.inference import run_aeon, run_paladin
 from mosaic.data_directory import get_data_directory
 
 # Log hardware detection at module load
-logger.info(f"Hardware: {GPU_TYPE} | batch_size={DEFAULT_BATCH_SIZE}, num_workers={DEFAULT_NUM_WORKERS}")
+logger.info(
+    f"Hardware: {GPU_TYPE} | batch_size={DEFAULT_BATCH_SIZE}, num_workers={DEFAULT_NUM_WORKERS}"
+)
 
 
-def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
-    """Extract CTransPath features on GPU.
-    
+def _extract_ctranspath_features(coords, slide_path, attrs, num_workers, model):
+    """Extract CTransPath features on GPU using pre-loaded model.
+
     Args:
         coords: Tissue tile coordinates
         slide_path: Path to the whole slide image file
         attrs: Slide attributes
         num_workers: Number of worker processes
-        
+        model: Pre-loaded CTransPath model from ModelCache
+
     Returns:
         tuple: (ctranspath_features, coords)
     """
@@ -86,87 +91,92 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers):
     elif IS_T4_GPU:
         num_workers = DEFAULT_NUM_WORKERS
         batch_size = DEFAULT_BATCH_SIZE
-        logger.info(f"Running CTransPath on T4: processing {len(coords)} tiles with batch_size={batch_size}")
+        logger.info(
+            f"Running CTransPath on T4: processing {len(coords)} tiles with batch_size={batch_size}"
+        )
     else:
         num_workers = max(num_workers, 8)
         batch_size = 64
         logger.info(f"Running CTransPath with {num_workers} workers")
-    
+
     start_time = pd.Timestamp.now()
 
-    data_dir = get_data_directory()
     ctranspath_features, _ = get_features(
         coords,
         slide_path,
         attrs,
-        model_type=ModelType.CTRANSPATH,
-        model_path=str(data_dir / "ctranspath.pth"),
+        model=model,
         num_workers=num_workers,
         batch_size=batch_size,
         use_gpu=True,
     )
-    
+
     end_time = pd.Timestamp.now()
     logger.info(f"CTransPath extraction took {end_time - start_time}")
-    
+
     return ctranspath_features, coords
 
 
-def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers):
-    """Extract Optimus features on GPU.
-    
+def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers, model):
+    """Extract Optimus features on GPU using pre-loaded model.
+
     Args:
         filtered_coords: Filtered tissue tile coordinates
         slide_path: Path to the whole slide image file
         attrs: Slide attributes
         num_workers: Number of worker processes
-        
+        model: Pre-loaded Optimus model from ModelCache
+
     Returns:
         Optimus features
     """
     if IS_ZEROGPU:
         num_workers = 0
         batch_size = 128
-        logger.info(f"Running Optimus on ZeroGPU: processing {len(filtered_coords)} tiles")
+        logger.info(
+            f"Running Optimus on ZeroGPU: processing {len(filtered_coords)} tiles"
+        )
     elif IS_T4_GPU:
         num_workers = DEFAULT_NUM_WORKERS
         batch_size = DEFAULT_BATCH_SIZE
-        logger.info(f"Running Optimus on T4: processing {len(filtered_coords)} tiles with batch_size={batch_size}")
+        logger.info(
+            f"Running Optimus on T4: processing {len(filtered_coords)} tiles with batch_size={batch_size}"
+        )
     else:
         num_workers = max(num_workers, 8)
         batch_size = 64
         logger.info(f"Running Optimus with {num_workers} workers")
-    
+
     start_time = pd.Timestamp.now()
 
-    data_dir = get_data_directory()
     features, _ = get_features(
         filtered_coords,
         slide_path,
         attrs,
-        model_type=ModelType.OPTIMUS,
-        model_path=str(data_dir / "optimus.pkl"),
+        model=model,
         num_workers=num_workers,
         batch_size=batch_size,
         use_gpu=True,
     )
-    
+
     end_time = pd.Timestamp.now()
     logger.info(f"Optimus extraction took {end_time - start_time}")
-    
+
     return features
 
 
-def _run_aeon_inference(features, site_type, num_workers, sex=None, tissue_site_idx=None):
+def _run_aeon_inference(
+    features, site_type, num_workers, sex=None, tissue_site_idx=None
+):
     """Run Aeon cancer subtype inference on GPU.
-    
+
     Args:
         features: Optimus features
         site_type: Site type ("Primary" or "Metastatic")
         num_workers: Number of worker processes
         sex: Patient sex (0=Male, 1=Female), optional
         tissue_site_idx: Tissue site index (0-56), optional
-        
+
     Returns:
         Aeon results DataFrame
     """
@@ -179,7 +189,7 @@ def _run_aeon_inference(features, site_type, num_workers, sex=None, tissue_site_
     else:
         num_workers = max(num_workers, 8)
         logger.info(f"Running Aeon with num_workers={num_workers}")
-    
+
     start_time = pd.Timestamp.now()
     logger.info("Running Aeon for cancer subtype inference")
     data_dir = get_data_directory()
@@ -194,7 +204,7 @@ def _run_aeon_inference(features, site_type, num_workers, sex=None, tissue_site_
         use_cpu=False,
     )
     end_time = pd.Timestamp.now()
-    
+
     # Log memory stats if CUDA is available
     if torch.cuda.is_available():
         try:
@@ -207,19 +217,19 @@ def _run_aeon_inference(features, site_type, num_workers, sex=None, tissue_site_
             logger.info(f"Aeon inference took {end_time - start_time}")
     else:
         logger.info(f"Aeon inference took {end_time - start_time}")
-    
+
     return aeon_results
 
 
 def _run_paladin_inference(features, aeon_results, site_type, num_workers):
     """Run Paladin biomarker inference on GPU.
-    
+
     Args:
         features: Optimus features
         aeon_results: Aeon results DataFrame
         site_type: Site type ("Primary" or "Metastatic")
         num_workers: Number of worker processes
-        
+
     Returns:
         Paladin results DataFrame
     """
@@ -232,7 +242,7 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
     else:
         num_workers = max(num_workers, 8)
         logger.info(f"Running Paladin with num_workers={num_workers}")
-    
+
     start_time = pd.Timestamp.now()
     logger.info("Running Paladin for biomarker inference")
     data_dir = get_data_directory()
@@ -246,7 +256,7 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
         use_cpu=False,
     )
     end_time = pd.Timestamp.now()
-    
+
     # Log memory stats if CUDA is available
     if torch.cuda.is_available():
         try:
@@ -259,7 +269,7 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
             logger.info(f"Paladin inference took {end_time - start_time}")
     else:
         logger.info(f"Paladin inference took {end_time - start_time}")
-    
+
     return paladin_results
 
 
@@ -278,8 +288,16 @@ def _run_inference_pipeline_free(
 ):
     """Run inference pipeline with 60s GPU limit (for free users)."""
     return _run_inference_pipeline_impl(
-        coords, slide_path, attrs, site_type, sex, tissue_site_idx,
-        cancer_subtype, cancer_subtype_name_map, num_workers, progress
+        coords,
+        slide_path,
+        attrs,
+        site_type,
+        sex,
+        tissue_site_idx,
+        cancer_subtype,
+        cancer_subtype_name_map,
+        num_workers,
+        progress,
     )
 
 
@@ -298,8 +316,16 @@ def _run_inference_pipeline_pro(
 ):
     """Run inference pipeline with 300s GPU limit (for PRO users)."""
     return _run_inference_pipeline_impl(
-        coords, slide_path, attrs, site_type, sex, tissue_site_idx,
-        cancer_subtype, cancer_subtype_name_map, num_workers, progress
+        coords,
+        slide_path,
+        attrs,
+        site_type,
+        sex,
+        tissue_site_idx,
+        cancer_subtype,
+        cancer_subtype_name_map,
+        num_workers,
+        progress,
     )
 
 
@@ -315,11 +341,10 @@ def _run_inference_pipeline_impl(
     num_workers,
     progress,
 ):
-    """Run complete inference pipeline with separate GPU calls.
+    """Run complete inference pipeline using model cache.
 
-    This function orchestrates the GPU operations by calling separate functions
-    for each GPU-intensive task, allowing HF Spaces to allocate GPU resources
-    independently for each operation.
+    This function loads models once and reuses them throughout the pipeline,
+    orchestrating GPU operations for feature extraction and inference.
 
     Args:
         coords: Tissue tile coordinates
@@ -336,59 +361,84 @@ def _run_inference_pipeline_impl(
             - aeon_results: DataFrame with cancer subtype predictions and confidence scores
             - paladin_results: DataFrame with biomarker predictions
     """
-    # Step 2: Extract CTransPath features
-    progress(0.3, desc="Extracting CTransPath features")
-    ctranspath_features, coords = _extract_ctranspath_features(
-        coords, slide_path, attrs, num_workers
-    )
+    # Load all models once for the entire pipeline
+    from mosaic.model_manager import load_all_models
 
-    # Step 3: Filter features using marker classifier (CPU operation)
-    start_time = pd.Timestamp.now()
-    data_dir = get_data_directory()
-    marker_classifier = pickle.load(open(data_dir / "marker_classifier.pkl", "rb"))
-    progress(0.35, desc="Filtering features with marker classifier")
-    logger.info("Filtering features with marker classifier")
-    _, filtered_coords = filter_features(
-        ctranspath_features,
-        coords,
-        marker_classifier,
-        threshold=0.25,
-    )
-    end_time = pd.Timestamp.now()
-    logger.info(f"Feature filtering took {end_time - start_time}")
-    logger.info(
-        f"Filtered from {len(coords)} to {len(filtered_coords)} tiles using marker classifier"
-    )
+    progress(0.1, desc="Loading models")
+    logger.info("Loading models for inference pipeline")
+    model_cache = load_all_models(use_gpu=True)
 
-    # Step 4: Extract Optimus features
-    progress(0.4, desc="Extracting Optimus features")
-    features = _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers)
-
-    # Step 5: Run Aeon to predict histology if not supplied
-    if cancer_subtype == "Unknown":
-        progress(0.9, desc="Running Aeon for cancer subtype inference")
-        aeon_results = _run_aeon_inference(features, site_type, num_workers, sex, tissue_site_idx)
-    else:
-        cancer_subtype_code = cancer_subtype_name_map.get(cancer_subtype)
-        aeon_results = pd.DataFrame(
-            {
-                "Cancer Subtype": [cancer_subtype_code],
-                "Confidence": [1.0],
-            }
+    try:
+        # Step 2: Extract CTransPath features using cached model
+        progress(0.3, desc="Extracting CTransPath features")
+        ctranspath_features, coords = _extract_ctranspath_features(
+            coords, slide_path, attrs, num_workers, model=model_cache.ctranspath_model
         )
-        logger.info(f"Using user-supplied cancer subtype: {cancer_subtype}")
 
-    # Step 6: Run Paladin to predict biomarkers
-    if len(aeon_results) == 0:
-        logger.warning("No Aeon results, skipping Paladin inference")
-        return None, None
-    
-    progress(0.95, desc="Running Paladin for biomarker inference")
-    paladin_results = _run_paladin_inference(features, aeon_results, site_type, num_workers)
+        # Step 3: Filter features using cached marker classifier
+        start_time = pd.Timestamp.now()
+        progress(0.35, desc="Filtering features with marker classifier")
+        logger.info("Filtering features with marker classifier")
+        _, filtered_coords = filter_features(
+            ctranspath_features,
+            coords,
+            model_cache.marker_classifier,
+            threshold=0.25,
+        )
+        end_time = pd.Timestamp.now()
+        logger.info(f"Feature filtering took {end_time - start_time}")
+        logger.info(
+            f"Filtered from {len(coords)} to {len(filtered_coords)} tiles using marker classifier"
+        )
 
-    aeon_results.set_index("Cancer Subtype", inplace=True)
+        # Step 4: Extract Optimus features using cached model
+        progress(0.4, desc="Extracting Optimus features")
+        features = _extract_optimus_features(
+            filtered_coords,
+            slide_path,
+            attrs,
+            num_workers,
+            model=model_cache.optimus_model,
+        )
 
-    return aeon_results, paladin_results
+        # Step 5: Run Aeon to predict histology if not supplied
+        if cancer_subtype == "Unknown":
+            progress(0.9, desc="Running Aeon for cancer subtype inference")
+            aeon_results = _run_aeon_inference_with_model(
+                features,
+                model_cache.aeon_model,
+                model_cache.device,
+                site_type,
+                num_workers,
+                sex,
+                tissue_site_idx,
+            )
+        else:
+            cancer_subtype_code = cancer_subtype_name_map.get(cancer_subtype)
+            aeon_results = pd.DataFrame(
+                {
+                    "Cancer Subtype": [cancer_subtype_code],
+                    "Confidence": [1.0],
+                }
+            )
+            logger.info(f"Using user-supplied cancer subtype: {cancer_subtype}")
+
+        # Step 6: Run Paladin to predict biomarkers
+        if len(aeon_results) == 0:
+            logger.warning("No Aeon results, skipping Paladin inference")
+            return None, None
+
+        progress(0.95, desc="Running Paladin for biomarker inference")
+        paladin_results = _run_paladin_inference_with_models(
+            features, aeon_results, site_type, model_cache, num_workers
+        )
+
+        aeon_results.set_index("Cancer Subtype", inplace=True)
+
+        return aeon_results, paladin_results
+    finally:
+        # Clean up models to free GPU memory
+        model_cache.cleanup()
 
 
 # ============================================================================
@@ -531,11 +581,10 @@ def _run_inference_pipeline_with_models(
     Returns:
         Tuple of (aeon_results, paladin_results)
     """
-    # Step 1: Extract CTransPath features (still uses mussel's get_features)
-    # Note: Feature extraction optimization can be added later if needed
+    # Step 1: Extract CTransPath features with PRE-LOADED model
     progress(0.3, desc="Extracting CTransPath features")
     ctranspath_features, coords = _extract_ctranspath_features(
-        coords, slide_path, attrs, num_workers
+        coords, slide_path, attrs, num_workers, model=model_cache.ctranspath_model
     )
 
     # Step 2: Filter features using pre-loaded marker classifier
@@ -554,9 +603,11 @@ def _run_inference_pipeline_with_models(
         f"Filtered from {len(coords)} to {len(filtered_coords)} tiles using marker classifier"
     )
 
-    # Step 3: Extract Optimus features (still uses mussel's get_features)
+    # Step 3: Extract Optimus features with PRE-LOADED model
     progress(0.5, desc="Extracting Optimus features")
-    features = _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers)
+    features = _extract_optimus_features(
+        filtered_coords, slide_path, attrs, num_workers, model=model_cache.optimus_model
+    )
 
     # Step 4: Run Aeon inference with pre-loaded model (if cancer subtype unknown)
     aeon_results = None
@@ -564,7 +615,9 @@ def _run_inference_pipeline_with_models(
 
     # Check if cancer subtype is unknown
     if cancer_subtype in ["Unknown", None]:
-        logger.info("Running Aeon inference with PRE-LOADED model (cancer subtype unknown)")
+        logger.info(
+            "Running Aeon inference with PRE-LOADED model (cancer subtype unknown)"
+        )
         aeon_results = _run_aeon_inference_with_model(
             features,
             model_cache.aeon_model,  # Use pre-loaded Aeon model
@@ -593,116 +646,7 @@ def _run_inference_pipeline_with_models(
     return aeon_results, paladin_results
 
 
-def analyze_slide_with_models(
-    slide_path,
-    seg_config,
-    site_type,
-    sex,
-    tissue_site,
-    cancer_subtype,
-    cancer_subtype_name_map,
-    model_cache,
-    ihc_subtype="",
-    num_workers=4,
-    progress=None,
-):
-    """Analyze a slide using pre-loaded models (batch-optimized version).
-
-    This function is optimized for batch processing where models are loaded once
-    in a ModelCache and reused across multiple slides.
-
-    Args:
-        slide_path: Path to the slide file
-        seg_config: Segmentation configuration ("Biopsy", "Resection", or "TCGA")
-        site_type: "Primary" or "Metastatic"
-        sex: Patient sex ("Unknown", "Male", "Female")
-        tissue_site: Tissue site name
-        cancer_subtype: Known cancer subtype or "Unknown"
-        cancer_subtype_name_map: Dict mapping display names to OncoTree codes
-        model_cache: ModelCache instance with pre-loaded models
-        ihc_subtype: IHC subtype for breast cancer (optional)
-        num_workers: Number of workers for data loading
-        progress: Gradio progress tracker
-
-    Returns:
-        Tuple of (slide_mask, aeon_results, paladin_results)
-    """
-    from mosaic.inference.data import encode_sex, encode_tissue_site
-
-    if progress is None:
-        progress = lambda frac, desc: None  # No-op progress function
-
-    # Encode sex and tissue site
-    sex_idx = encode_sex(sex) if sex else None
-    tissue_site_idx = encode_tissue_site(tissue_site) if tissue_site else None
-
-    # Step 1: Convert seg_config string to config object
-    if isinstance(seg_config, str):
-        if seg_config == "Biopsy":
-            seg_config = BiopsySegConfig()
-        elif seg_config == "Resection":
-            seg_config = ResectionSegConfig()
-        elif seg_config == "TCGA":
-            seg_config = TcgaSegConfig()
-        else:
-            raise ValueError(f"Unknown segmentation configuration: {seg_config}")
-
-    # Step 2: Tissue segmentation (CPU operation, not affected by model caching)
-    progress(0.0, desc="Segmenting tissue")
-    logger.info(f"Segmenting tissue for slide: {slide_path}")
-    start_time = pd.Timestamp.now()
-
-    if values := segment_tissue(
-        slide_path=slide_path,
-        patch_size=224,
-        mpp=0.5,
-        seg_level=-1,
-        segment_threshold=seg_config.segment_threshold,
-        median_blur_ksize=seg_config.median_blur_ksize,
-        morphology_ex_kernel=seg_config.morphology_ex_kernel,
-        tissue_area_threshold=seg_config.tissue_area_threshold,
-        hole_area_threshold=seg_config.hole_area_threshold,
-        max_num_holes=seg_config.max_num_holes,
-    ):
-        polygon, _, coords, attrs = values
-    else:
-        logger.warning("No tissue detected in slide")
-        return None, None, None
-
-    end_time = pd.Timestamp.now()
-    logger.info(f"Tissue segmentation took {end_time - start_time}")
-    logger.info(f"Found {len(coords)} tissue tiles")
-
-    if len(coords) == 0:
-        logger.warning("No tissue tiles found in slide")
-        return None, None, None
-
-    # Step 2: Create slide mask visualization (CPU operation)
-    progress(0.2, desc="Creating slide mask")
-    logger.info("Drawing slide mask")
-    slide_mask = draw_slide_mask(
-        slide_path, polygon, outline="black", fill=(255, 0, 0, 80), vis_level=-1
-    )
-    logger.info("Slide mask drawn")
-
-    # Step 3: Run inference pipeline with pre-loaded models
-    aeon_results, paladin_results = _run_inference_pipeline_with_models(
-        coords,
-        slide_path,
-        attrs,
-        site_type,
-        sex_idx,
-        tissue_site_idx,
-        cancer_subtype,
-        cancer_subtype_name_map,
-        model_cache,
-        num_workers,
-        progress,
-    )
-
-    progress(1.0, desc="Analysis complete")
-
-    return slide_mask, aeon_results, paladin_results
+# Removed: analyze_slide_with_models merged into analyze_slide below
 
 
 def analyze_slide(
@@ -717,26 +661,27 @@ def analyze_slide(
     num_workers=4,
     progress=gr.Progress(track_tqdm=True),
     request: gr.Request = None,
+    model_cache=None,
 ):
     """Analyze a whole slide image for cancer subtype and biomarker prediction.
 
-    This function performs a complete analysis pipeline including:
-    1. Tissue segmentation (CPU-only, no GPU required)
-    2. GPU-intensive feature extraction and model inference
-
-    The GPU-intensive operations are handled by a separate function decorated
-    with @spaces.GPU to efficiently manage GPU resources on Hugging Face Spaces.
-    Tissue segmentation runs on CPU and is not included in the GPU allocation.
+    This function works in two modes:
+    1. **Single-slide mode** (model_cache=None): Loads models, analyzes one slide, cleans up
+    2. **Batch mode** (model_cache provided): Uses pre-loaded models for efficiency
 
     Args:
         slide_path: Path to the whole slide image file
         seg_config: Segmentation configuration, one of "Biopsy", "Resection", or "TCGA"
         site_type: Site type, either "Primary" or "Metastatic"
+        sex: Patient sex ("Unknown", "Male", "Female")
+        tissue_site: Tissue site name
         cancer_subtype: Cancer subtype (OncoTree code or "Unknown" for inference)
         cancer_subtype_name_map: Dictionary mapping cancer subtype names to codes
         ihc_subtype: IHC subtype for breast cancer (optional)
         num_workers: Number of worker processes for feature extraction
         progress: Gradio progress tracker for UI updates
+        request: Gradio request object (for HF Spaces authentication)
+        model_cache: Optional ModelCache with pre-loaded models (for batch processing)
 
     Returns:
         tuple: (slide_mask, aeon_results, paladin_results)
@@ -795,51 +740,6 @@ def analyze_slide(
     )
     logger.info("Slide mask drawn")
 
-    # Step 2-6: Run inference pipeline with GPU
-    # Check if user is logged in for longer GPU duration
-    is_logged_in = False
-    username = "anonymous"
-    if request is not None:
-        try:
-            # Check if user is logged in via JWT token in referer
-            # HF Spaces doesn't populate request.username but includes JWT in URL
-            if hasattr(request, 'headers'):
-                referer = request.headers.get('referer', '')
-                if '__sign=' in referer:
-                    # Extract and decode JWT token
-                    import re
-                    import json
-                    import base64
-                    
-                    match = re.search(r'__sign=([^&]+)', referer)
-                    if match:
-                        token = match.group(1)
-                        try:
-                            # JWT format: header.payload.signature
-                            # We only need the payload (middle part)
-                            parts = token.split('.')
-                            if len(parts) == 3:
-                                # Decode base64 payload (add padding if needed)
-                                payload = parts[1]
-                                payload += '=' * (4 - len(payload) % 4)
-                                decoded = base64.urlsafe_b64decode(payload)
-                                token_data = json.loads(decoded)
-                                
-                                # Check if user is in token
-                                if 'onBehalfOf' in token_data and 'user' in token_data['onBehalfOf']:
-                                    username = token_data['onBehalfOf']['user']
-                                    is_logged_in = True
-                                    logger.info(f"Found user in JWT token: {username}")
-                        except Exception as e:
-                            logger.warning(f"Failed to decode JWT: {e}")
-            
-            if IS_ZEROGPU:
-                logger.info(f"User: {username} | Logged in: {is_logged_in}")
-        except Exception as e:
-            logger.warning(f"Failed to detect user: {e}")
-            import traceback
-            logger.warning(traceback.format_exc())
-
     # Convert sex and tissue_site to indices for Aeon model
     from mosaic.inference.data import encode_sex, encode_tissue_site
 
@@ -851,10 +751,11 @@ def analyze_slide(
     if tissue_site is not None:
         tissue_site_idx = encode_tissue_site(tissue_site)
 
-    if is_logged_in:
-        if IS_ZEROGPU:
-            logger.info("Using 300s GPU allocation (logged-in user)")
-        aeon_results, paladin_results = _run_inference_pipeline_pro(
+    # Run inference pipeline - two modes based on model_cache
+    if model_cache is not None:
+        # Batch mode: use pre-loaded models
+        logger.info("Using pre-loaded models from ModelCache (batch mode)")
+        aeon_results, paladin_results = _run_inference_pipeline_with_models(
             coords,
             slide_path,
             attrs,
@@ -863,23 +764,91 @@ def analyze_slide(
             tissue_site_idx,
             cancer_subtype,
             cancer_subtype_name_map,
+            model_cache,
             num_workers,
             progress,
         )
     else:
-        if IS_ZEROGPU:
-            logger.info("Using 60s GPU allocation (anonymous user)")
-        aeon_results, paladin_results = _run_inference_pipeline_free(
-            coords,
-            slide_path,
-            attrs,
-            site_type,
-            sex_idx,
-            tissue_site_idx,
-            cancer_subtype,
-            cancer_subtype_name_map,
-            num_workers,
-            progress,
-        )
+        # Single-slide mode: load models on-demand
+        # Check if user is logged in for longer GPU duration (HF Spaces only)
+        is_logged_in = False
+        username = "anonymous"
+        if request is not None:
+            try:
+                # Check if user is logged in via JWT token in referer
+                # HF Spaces doesn't populate request.username but includes JWT in URL
+                if hasattr(request, "headers"):
+                    referer = request.headers.get("referer", "")
+                    if "__sign=" in referer:
+                        # Extract and decode JWT token
+                        import re
+                        import json
+                        import base64
+
+                        match = re.search(r"__sign=([^&]+)", referer)
+                        if match:
+                            token = match.group(1)
+                            try:
+                                # JWT format: header.payload.signature
+                                # We only need the payload (middle part)
+                                parts = token.split(".")
+                                if len(parts) == 3:
+                                    # Decode base64 payload (add padding if needed)
+                                    payload = parts[1]
+                                    payload += "=" * (4 - len(payload) % 4)
+                                    decoded = base64.urlsafe_b64decode(payload)
+                                    token_data = json.loads(decoded)
+
+                                    # Check if user is in token
+                                    if (
+                                        "onBehalfOf" in token_data
+                                        and "user" in token_data["onBehalfOf"]
+                                    ):
+                                        username = token_data["onBehalfOf"]["user"]
+                                        is_logged_in = True
+                                        logger.info(
+                                            f"Found user in JWT token: {username}"
+                                        )
+                            except Exception as e:
+                                logger.warning(f"Failed to decode JWT: {e}")
+
+                if IS_ZEROGPU:
+                    logger.info(f"User: {username} | Logged in: {is_logged_in}")
+            except Exception as e:
+                logger.warning(f"Failed to detect user: {e}")
+                import traceback
+
+                logger.warning(traceback.format_exc())
+
+        if is_logged_in:
+            if IS_ZEROGPU:
+                logger.info("Using 300s GPU allocation (logged-in user)")
+            aeon_results, paladin_results = _run_inference_pipeline_pro(
+                coords,
+                slide_path,
+                attrs,
+                site_type,
+                sex_idx,
+                tissue_site_idx,
+                cancer_subtype,
+                cancer_subtype_name_map,
+                num_workers,
+                progress,
+            )
+        else:
+            if IS_ZEROGPU:
+                logger.info("Using 60s GPU allocation (anonymous user)")
+            aeon_results, paladin_results = _run_inference_pipeline_free(
+                coords,
+                slide_path,
+                attrs,
+                site_type,
+                sex_idx,
+                tissue_site_idx,
+                cancer_subtype,
+                cancer_subtype_name_map,
+                num_workers,
+                progress,
+            )
 
     return slide_mask, aeon_results, paladin_results

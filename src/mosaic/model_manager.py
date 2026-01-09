@@ -13,6 +13,7 @@ import torch
 from loguru import logger
 
 from mosaic.data_directory import get_data_directory
+from mussel.models import ModelType, get_model_factory
 
 
 class ModelCache:
@@ -50,7 +51,9 @@ class ModelCache:
         self.paladin_models: Dict[tuple, torch.nn.Module] = {}
         self.is_t4_gpu = is_t4_gpu
         self.aggressive_memory_mgmt = aggressive_memory_mgmt
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
 
     def cleanup_paladin(self):
         """Aggressively free all Paladin models from memory.
@@ -78,15 +81,18 @@ class ModelCache:
         self.cleanup_paladin()
 
         # Clean up core models
-        del self.ctranspath_model
-        del self.optimus_model
-        del self.marker_classifier
-        del self.aeon_model
-
-        self.ctranspath_model = None
-        self.optimus_model = None
-        self.marker_classifier = None
-        self.aeon_model = None
+        if self.ctranspath_model is not None:
+            del self.ctranspath_model
+            self.ctranspath_model = None
+        if self.optimus_model is not None:
+            del self.optimus_model
+            self.optimus_model = None
+        if self.marker_classifier is not None:
+            del self.marker_classifier
+            self.marker_classifier = None
+        if self.aeon_model is not None:
+            del self.aeon_model
+            self.aeon_model = None
 
         # Force garbage collection and GPU cache clearing
         gc.collect()
@@ -147,7 +153,9 @@ def load_all_models(
             if is_t4_gpu:
                 logger.info("  → Paladin models will be loaded and freed per slide")
             else:
-                logger.info("  → Paladin models will be cached and reused across slides")
+                logger.info(
+                    "  → Paladin models will be cached and reused across slides"
+                )
     elif use_gpu and not torch.cuda.is_available():
         logger.warning("GPU requested but CUDA not available, falling back to CPU")
         use_gpu = False
@@ -165,24 +173,37 @@ def load_all_models(
     if not ctranspath_path.exists():
         raise FileNotFoundError(f"CTransPath model not found at {ctranspath_path}")
 
-    # Note: CTransPath loading is handled by mussel, so we just store the path for now
-    # We'll integrate with mussel's model factory in the feature extraction wrappers
-    ctranspath_model = ctranspath_path
+    ctranspath_factory = get_model_factory(ModelType.CTRANSPATH)
+    ctranspath_model = ctranspath_factory.get_model(
+        str(ctranspath_path), use_gpu=use_gpu, gpu_device_id=0 if use_gpu else None
+    )
+    logger.info("✓ CTransPath model loaded")
 
-    # Load Optimus model
-    logger.info("Loading Optimus model...")
-    optimus_path = data_dir / "optimus.pkl"
-    if not optimus_path.exists():
-        raise FileNotFoundError(f"Optimus model not found at {optimus_path}")
+    if use_gpu and torch.cuda.is_available():
+        mem = torch.cuda.memory_allocated() / (1024**3)
+        logger.info(f"  GPU memory: {mem:.2f} GB")
 
-    # Note: Same as CTransPath, Optimus loading is handled by mussel
-    optimus_model = optimus_path
+    # Load Optimus model from Hugging Face Hub
+    logger.info("Loading Optimus model from bioptimus/H-optimus-0...")
+    optimus_factory = get_model_factory(ModelType.OPTIMUS)
+    optimus_model = optimus_factory.get_model(
+        model_path="hf-hub:bioptimus/H-optimus-0",
+        use_gpu=use_gpu,
+        gpu_device_id=0 if use_gpu else None,
+    )
+    logger.info("✓ Optimus model loaded")
+
+    if use_gpu and torch.cuda.is_available():
+        mem = torch.cuda.memory_allocated() / (1024**3)
+        logger.info(f"  GPU memory: {mem:.2f} GB")
 
     # Load Marker Classifier
     logger.info("Loading Marker Classifier...")
     marker_classifier_path = data_dir / "marker_classifier.pkl"
     if not marker_classifier_path.exists():
-        raise FileNotFoundError(f"Marker classifier not found at {marker_classifier_path}")
+        raise FileNotFoundError(
+            f"Marker classifier not found at {marker_classifier_path}"
+        )
 
     with open(marker_classifier_path, "rb") as f:
         marker_classifier = pickle.load(f)  # nosec
@@ -238,11 +259,13 @@ def load_paladin_model_for_inference(
     cache: ModelCache,
     model_path: Path,
 ) -> torch.nn.Module:
-    """Load a single Paladin model for inference.
+    """Load a single Paladin model for inference, downloading on-demand if needed.
 
     Implements adaptive loading strategy:
     - T4 GPU (aggressive mode): Load model fresh, caller must delete after use
     - A100 GPU (caching mode): Check cache, load if needed, return cached model
+
+    If the model file doesn't exist locally, downloads it from HuggingFace Hub.
 
     Args:
         cache: ModelCache instance managing loaded models
@@ -255,6 +278,8 @@ def load_paladin_model_for_inference(
         On T4 GPUs, caller MUST delete the model and call torch.cuda.empty_cache()
         after inference to avoid OOM errors.
     """
+    from huggingface_hub import hf_hub_download
+
     model_key = str(model_path)
 
     # Check cache first (only used in non-aggressive mode)
@@ -262,11 +287,32 @@ def load_paladin_model_for_inference(
         logger.info(f"  ✓ Using CACHED Paladin model: {model_path.name} (no disk I/O!)")
         return cache.paladin_models[model_key]
 
+    # Download model from HF Hub if it doesn't exist locally
+    if not model_path.exists():
+        logger.info(
+            f"  ⬇ Downloading Paladin model from HuggingFace Hub: {model_path.name}"
+        )
+        # Extract the relative path from the data directory
+        data_dir = get_data_directory()
+        relative_path = model_path.relative_to(data_dir)
+
+        downloaded_path = hf_hub_download(
+            repo_id="PDM-Group/paladin-aeon-models",
+            filename=str(relative_path),
+            cache_dir=data_dir.parent.parent,  # Use HF cache directory
+        )
+        model_path = Path(downloaded_path)
+        logger.info(f"  ✓ Downloaded to: {model_path}")
+
     # Load model from disk
     if cache.aggressive_memory_mgmt:
-        logger.info(f"  → Loading Paladin model: {model_path.name} (will free after use)")
+        logger.info(
+            f"  → Loading Paladin model: {model_path.name} (will free after use)"
+        )
     else:
-        logger.info(f"  → Loading Paladin model: {model_path.name} (will cache for reuse)")
+        logger.info(
+            f"  → Loading Paladin model: {model_path.name} (will cache for reuse)"
+        )
 
     with open(model_path, "rb") as f:
         model = pickle.load(f)  # nosec

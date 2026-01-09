@@ -38,10 +38,10 @@ def load_model_map(model_map_path: str) -> dict[Any, Any]:
 
     A dict is returned, mapping each cancer_subtype to a table mapping a
     target to the pathname for the model that predicts it.
-    
+
     Args:
         model_map_path: Path to the CSV file containing the model map
-        
+
     Returns:
         Dictionary mapping cancer subtypes to their target-specific models
     """
@@ -58,10 +58,10 @@ def load_model_map(model_map_path: str) -> dict[Any, Any]:
 
 def load_aeon_scores(df: pd.DataFrame) -> dict[str, float]:
     """Load Aeon output table with cancer subtypes and confidence values.
-    
+
     Args:
         df: DataFrame with columns 'Cancer Subtype' and 'Confidence'
-    
+
     Returns:
         Dictionary mapping cancer subtypes to their confidence scores
     """
@@ -75,11 +75,11 @@ def load_aeon_scores(df: pd.DataFrame) -> dict[str, float]:
 
 def select_cancer_subtypes(aeon_scores: dict[str, float], k=1) -> list[str]:
     """Select the top k cancer subtypes based on Aeon confidence scores.
-    
+
     Args:
         aeon_scores: Dictionary mapping cancer subtypes to confidence scores
         k: Number of top subtypes to select (default: 1)
-        
+
     Returns:
         List of cancer subtype codes sorted by confidence (highest first)
     """
@@ -91,11 +91,11 @@ def select_cancer_subtypes(aeon_scores: dict[str, float], k=1) -> list[str]:
 
 def select_models(cancer_subtypes: list[str], model_map: dict[Any, Any]) -> list[Any]:
     """Select Paladin models for the given cancer subtypes.
-    
+
     Args:
         cancer_subtypes: List of cancer subtype codes
         model_map: Dictionary mapping cancer subtypes to their models
-        
+
     Returns:
         List of tuples (cancer_subtype, target, model_path)
     """
@@ -188,13 +188,13 @@ def run_model(device, dataset, model_path: str, num_workers, batch_size) -> floa
 
 def logits_to_point_estimates(logits):
     """Convert model logits to point estimates for beta-binomial distribution.
-    
+
     The logits tensor contains alpha and beta parameters interleaved.
     This function computes the mean of the beta-binomial distribution: alpha/(alpha+beta).
-    
+
     Args:
         logits: Tensor of shape (batch_size, 2*(n_tasks)) with alpha/beta parameters
-        
+
     Returns:
         Tensor of shape (batch_size, n_tasks) with point estimates
     """
@@ -215,10 +215,10 @@ def run(
     use_cpu: bool = False,
 ):
     """Run Paladin inference for biomarker prediction on a single slide.
-    
+
     Uses either Aeon predictions or user-provided cancer subtype codes to select
     the appropriate Paladin models for biomarker prediction.
-    
+
     Args:
         features: NumPy array of tile features extracted from the WSI
         aeon_results: DataFrame with Aeon predictions (Cancer Subtype, Confidence)
@@ -229,10 +229,10 @@ def run(
         batch_size: Batch size for inference
         num_workers: Number of workers for data loading
         use_cpu: Force CPU usage instead of GPU
-        
+
     Returns:
         DataFrame with columns: Cancer Subtype, Target, Score
-        
+
     Note:
         Either aeon_results or cancer_subtype_codes must be provided, but not both.
         Either model_map_path or model_path must be provided, but not both.
