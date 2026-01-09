@@ -177,14 +177,50 @@ def main():
         default=4,
         help="Number of workers for feature extraction",
     )
+    parser.add_argument(
+        "--skip-model-download",
+        action="store_true",
+        help="Skip downloading models from HuggingFace (assumes models are already cached)",
+    )
+    parser.add_argument(
+        "--download-models-only",
+        action="store_true",
+        help="Download models from HuggingFace and exit without running analysis",
+    )
     args = parser.parse_args()
     if args.debug:
         logger.add("debug.log", level="DEBUG")
         logger.debug("Debug logging enabled")
 
-    cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = (
+    # Handle model download options
+    if getattr(args, 'download_models_only', False):
+        logger.info("Downloading models from HuggingFace...")
         download_and_process_models()
-    )
+        logger.info("✓ Model download complete. Exiting.")
+        return
+    
+    if not getattr(args, 'skip_model_download', False):
+        cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = (
+            download_and_process_models()
+        )
+    else:
+        logger.info("Skipping model download, using cached models...")
+        # Load cancer subtype mappings from cached data
+        from mosaic.data_directory import get_data_directory
+        cache_dir = get_data_directory()
+        model_map = pd.read_csv(Path(cache_dir) / "paladin_model_map.csv")
+        cancer_subtypes = model_map["cancer_subtype"].unique().tolist()
+        cancer_subtype_name_map = {"Unknown": "UNK"}
+        cancer_subtype_name_map.update(
+            {f"{get_oncotree_code_name(code)} ({code})": code for code in cancer_subtypes}
+        )
+        reversed_cancer_subtype_name_map = {
+            value: key for key, value in cancer_subtype_name_map.items()
+        }
+        # Set the global maps in the UI module
+        set_cancer_subtype_maps(
+            cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes
+        )
 
     if args.slide_path and not args.slide_csv:
         # Single slide processing mode

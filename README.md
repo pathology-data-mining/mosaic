@@ -227,6 +227,32 @@ mosaic --slide-csv slides.csv --output-dir /data/results
 
 ## Advanced Usage
 
+### Model Management
+
+#### Download Models Before Processing
+
+To download models from HuggingFace without running any analysis:
+
+```bash
+mosaic --download-models-only
+```
+
+Or using the Makefile:
+
+```bash
+make download-models
+```
+
+#### Skip Model Download
+
+If models are already cached and you want to skip the download check:
+
+```bash
+mosaic --skip-model-download --slide-path /path/to/slide.svs --output-dir /path/to/output
+```
+
+This is useful for offline processing or when you know models are already cached.
+
 ### Adjusting Performance
 
 You can control the number of workers for feature extraction to balance between speed and memory usage:

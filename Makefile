@@ -159,8 +159,8 @@ clean-all: clean docker-clean ## Remove all build artifacts, cache, and Docker i
 ##@ Model Management
 
 download-models: ## Download required models from HuggingFace
-	@echo "Models will be downloaded automatically on first run"
-	$(PYTHON) -c "from mosaic.gradio_app import download_and_process_models; download_and_process_models()"
+	@echo "Downloading models from HuggingFace Hub..."
+	$(PYTHON) -m mosaic.gradio_app --download-models-only
 
 ##@ Documentation
 
