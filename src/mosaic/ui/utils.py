@@ -61,13 +61,13 @@ def get_tissue_sites():
 
 def get_oncotree_code_name(code):
     """Retrieve the human-readable name for an OncoTree code.
-    
+
     Queries the OncoTree API to get the cancer subtype name corresponding
     to the given code. Results are cached to avoid repeated API calls.
-    
+
     Args:
         code: OncoTree code (e.g., "LUAD", "BRCA")
-        
+
     Returns:
         Human-readable cancer subtype name, or "Unknown" if not found
     """
@@ -89,17 +89,17 @@ def get_oncotree_code_name(code):
 
 def create_user_directory(state, request: gr.Request):
     """Create a unique directory for each user session.
-    
+
     Args:
         state: Gradio state object (unused)
         request: Gradio request object containing session hash
-        
+
     Returns:
         Path to user's session directory, or None if no session hash available
     """
     session_hash = request.session_hash
     if session_hash is None:
-        return None, None
+        return None
 
     user_dir = TEMP_USER_DATA_DIR / session_hash
     user_dir.mkdir(parents=True, exist_ok=True)
@@ -108,16 +108,16 @@ def create_user_directory(state, request: gr.Request):
 
 def load_settings(slide_csv_path):
     """Load slide analysis settings from CSV file.
-    
+
     Loads the CSV and ensures all required columns are present, adding defaults
     for optional columns if they are missing.
-    
+
     Args:
         slide_csv_path: Path to the CSV file containing slide settings
-        
+
     Returns:
         DataFrame with columns: Slide, Site Type, Cancer Subtype, IHC Subtype, Segmentation Config
-        
+
     Raises:
         ValueError: If required columns are missing from the CSV
     """
@@ -138,21 +138,26 @@ def load_settings(slide_csv_path):
     return settings_df
 
 
-def validate_settings(settings_df, cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map):
+def validate_settings(
+    settings_df,
+    cancer_subtype_name_map,
+    cancer_subtypes,
+    reversed_cancer_subtype_name_map,
+):
     """Validate and normalize slide analysis settings.
-    
+
     Checks each row for valid values and normalizes cancer subtype names.
     Generates warnings for invalid entries and replaces them with defaults.
-    
+
     Args:
         settings_df: DataFrame with slide settings to validate
         cancer_subtype_name_map: Dict mapping subtype display names to codes
         cancer_subtypes: List of valid cancer subtype codes
         reversed_cancer_subtype_name_map: Dict mapping codes to display names
-        
+
     Returns:
         Validated DataFrame with normalized values
-        
+
     Note:
         Invalid entries are replaced with defaults and warnings are displayed
         to the user via Gradio warnings.
@@ -215,13 +220,13 @@ def validate_settings(settings_df, cancer_subtype_name_map, cancer_subtypes, rev
 
 def export_to_csv(df):
     """Export a DataFrame to CSV file for download.
-    
+
     Args:
         df: DataFrame to export
-        
+
     Returns:
         Path to the exported CSV file
-        
+
     Raises:
         gr.Error: If the DataFrame is None or empty
     """

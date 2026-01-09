@@ -71,14 +71,16 @@ class TestLoadSettings:
         reversed_cancer_subtype_name_map = {
             value: key for key, value in cancer_subtype_name_map.items()
         }
-        return cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map
+        return (
+            cancer_subtype_name_map,
+            cancer_subtypes,
+            reversed_cancer_subtype_name_map,
+        )
 
     @pytest.fixture
     def temp_settings_csv(self):
         """Create a temporary settings CSV file with all columns."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             f.write("Slide,Site Type,Cancer Subtype,IHC Subtype,Segmentation Config\n")
             f.write("slide1.svs,Primary,Unknown,,Biopsy\n")
             f.write("slide2.svs,Metastatic,Unknown,,Resection\n")
@@ -89,9 +91,7 @@ class TestLoadSettings:
     @pytest.fixture
     def temp_minimal_settings_csv(self):
         """Create a temporary settings CSV file with minimal columns."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             f.write("Slide,Site Type\n")
             f.write("slide1.svs,Primary\n")
             f.write("slide2.svs,Metastatic\n")
@@ -129,9 +129,7 @@ class TestLoadSettings:
 
     def test_load_settings_missing_required_column_raises_error(self):
         """Test that missing required column raises ValueError."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             f.write("RandomColumn\n")
             f.write("value\n")
             temp_path = f.name

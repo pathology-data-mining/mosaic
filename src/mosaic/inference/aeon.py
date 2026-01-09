@@ -39,19 +39,28 @@ BATCH_SIZE = 8
 NUM_WORKERS = 8
 
 
-def run(
-    features, model_path, metastatic=False, batch_size=8, num_workers=8, use_cpu=False,
-    sex=None, tissue_site_idx=None
+def run_with_model(
+    features,
+    model,
+    device,
+    metastatic=False,
+    batch_size=8,
+    num_workers=8,
+    sex=None,
+    tissue_site_idx=None,
 ):
-    """Run Aeon model inference for cancer subtype prediction.
+    """Run Aeon model inference using a pre-loaded model (for batch processing).
+
+    This function is optimized for batch processing where the model is loaded
+    once and reused across multiple slides instead of being reloaded each time.
 
     Args:
         features: NumPy array of tile features extracted from the WSI
-        model_path: Path to the pickled Aeon model file
+        model: Pre-loaded Aeon model (torch.nn.Module)
+        device: torch.device for GPU/CPU placement
         metastatic: Whether the slide is from a metastatic site
         batch_size: Batch size for inference
         num_workers: Number of workers for data loading
-        use_cpu: Force CPU usage instead of GPU
         sex: Patient sex (0=Male, 1=Female), optional
         tissue_site_idx: Tissue site index (0-56), optional
 
@@ -60,13 +69,7 @@ def run(
             - results_df: DataFrame with cancer subtypes and confidence scores
             - part_embedding: Torch tensor of the learned part representation
     """
-    device = torch.device(
-        "cuda" if not use_cpu and torch.cuda.is_available() else "cpu"
-    )
-
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)  # nosec
-    model.to(device)
+    # Model is already loaded and on device, just set to eval mode
     model.eval()
 
     # Load the correct mapping from metadata for this model
@@ -76,12 +79,20 @@ def run(
         target_dict_str = f.read().strip().replace("'", '"')
         target_dict = json.loads(target_dict_str)
 
-    histologies = target_dict['histologies']
-    INT_TO_CANCER_TYPE_MAP_LOCAL = {i: histology for i, histology in enumerate(histologies)}
-    CANCER_TYPE_TO_INT_MAP_LOCAL = {v: k for k, v in INT_TO_CANCER_TYPE_MAP_LOCAL.items()}
+    histologies = target_dict["histologies"]
+    INT_TO_CANCER_TYPE_MAP_LOCAL = {
+        i: histology for i, histology in enumerate(histologies)
+    }
+    CANCER_TYPE_TO_INT_MAP_LOCAL = {
+        v: k for k, v in INT_TO_CANCER_TYPE_MAP_LOCAL.items()
+    }
 
     # Calculate col_indices_to_drop using local mapping
-    col_indices_to_drop_local = [CANCER_TYPE_TO_INT_MAP_LOCAL[x] for x in CANCER_TYPES_TO_DROP if x in CANCER_TYPE_TO_INT_MAP_LOCAL]
+    col_indices_to_drop_local = [
+        CANCER_TYPE_TO_INT_MAP_LOCAL[x]
+        for x in CANCER_TYPES_TO_DROP
+        if x in CANCER_TYPE_TO_INT_MAP_LOCAL
+    ]
 
     site_type = SiteType.METASTASIS if metastatic else SiteType.PRIMARY
 
@@ -132,6 +143,53 @@ def run(
     results_df = pd.DataFrame(results, columns=["Cancer Subtype", "Confidence"])
 
     return results_df, part_embedding
+
+
+def run(
+    features,
+    model_path,
+    metastatic=False,
+    batch_size=8,
+    num_workers=8,
+    use_cpu=False,
+    sex=None,
+    tissue_site_idx=None,
+):
+    """Run Aeon model inference for cancer subtype prediction.
+
+    Args:
+        features: NumPy array of tile features extracted from the WSI
+        model_path: Path to the pickled Aeon model file
+        metastatic: Whether the slide is from a metastatic site
+        batch_size: Batch size for inference
+        num_workers: Number of workers for data loading
+        use_cpu: Force CPU usage instead of GPU
+        sex: Patient sex (0=Male, 1=Female), optional
+        tissue_site_idx: Tissue site index (0-56), optional
+
+    Returns:
+        tuple: (results_df, part_embedding)
+            - results_df: DataFrame with cancer subtypes and confidence scores
+            - part_embedding: Torch tensor of the learned part representation
+    """
+    device = torch.device(
+        "cuda" if not use_cpu and torch.cuda.is_available() else "cpu"
+    )
+
+    with open(model_path, "rb") as f:
+        model = pickle.load(f)  # nosec
+    model.to(device)
+
+    return run_with_model(
+        features=features,
+        model=model,
+        device=device,
+        metastatic=metastatic,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        sex=sex,
+        tissue_site_idx=tissue_site_idx,
+    )
 
 
 def parse_args():
@@ -206,7 +264,9 @@ def main():
     tissue_site_idx = None
     if opt.tissue_site:
         tissue_site_idx = encode_tissue_site(opt.tissue_site)
-        logger.info(f"Using tissue site: {opt.tissue_site} (encoded as {tissue_site_idx})")
+        logger.info(
+            f"Using tissue site: {opt.tissue_site} (encoded as {tissue_site_idx})"
+        )
 
     results_df, part_embedding = run(
         features=features,

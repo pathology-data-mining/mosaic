@@ -1,0 +1,74 @@
+idx,TISSUE_SITE
+0,Lung
+1,Liver
+2,Lymph Node
+2,Lymph node
+2,"Lymph Node, Regional"
+3,Breast
+4,Colon
+4,Sigmoid Colon
+4,Ascending Colon
+4,Cecum
+4,Rectosigmoid Colon
+4,Transverse Colon
+4,Descending Colon
+5,Brain
+6,Bone
+6,Iliac Bone
+6,Spine
+6,Femur
+6,Rib
+7,Pancreas
+8,Not Applicable
+8,Not available
+9,Uterus
+10,Prostate
+11,Bladder
+12,Soft Tissue
+13,Ovary
+14,Rectum
+15,Kidney
+16,Skin
+17,Stomach
+18,Pleura
+19,Esophagus
+20,Peritoneum
+21,Omentum
+22,Retroperitoneum
+23,Pelvis
+24,Adrenal Gland
+24,Adrenal
+25,Endometrium
+26,Thyroid
+27,Chest Wall
+28,Abdomen
+29,Small Bowel
+29,Small Intestine
+30,GE Junction
+30,Gastroesophageal Junction
+31,Cervix
+32,Bile Duct
+33,Neck
+34,Mediastinum
+35,Testis
+36,Bowel
+37,Eye
+38,Thigh
+39,Vagina
+40,Pleural Fluid
+41,Upper Tract
+42,Axilla
+43,Diaphragm
+44,Gallbladder
+45,Abdominal Wall
+46,Appendix
+47,Anus
+48,Duodenum
+49,Renal Pelvis
+50,Tongue
+51,Mesentery
+52,Vulva
+53,Oral Cavity
+54,Fallopian tube
+55,Epidural
+56,Leg

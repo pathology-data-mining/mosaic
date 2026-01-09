@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.cover
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Data and outputs
+data/
+output/
+*.svs
+*.tiff
+*.tif
+*.png
+*.jpg
+*.jpeg
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+tests/
+*.csv
+profile.stats
+benchmark_output/
+profile_output/
+
+# Lock files (we use uv.lock)
+poetry.lock
+Pipfile.lock
+requirements*.txt
+
+# Makefile and CI configs
+Makefile
+.dockerignore
+Dockerfile*

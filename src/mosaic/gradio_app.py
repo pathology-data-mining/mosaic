@@ -25,14 +25,15 @@ from mosaic.ui.utils import (
     SEX_OPTIONS,
 )
 from mosaic.analysis import analyze_slide
+from mosaic.model_manager import load_all_models
 
 
 def download_and_process_models():
-    """Download models from HuggingFace and initialize cancer subtype mappings.
+    """Download essential models from HuggingFace and initialize cancer subtype mappings.
 
-    Downloads the Paladin and Aeon models from the PDM-Group HuggingFace repository
-    to the HuggingFace cache directory and creates mappings between cancer subtype
-    names and OncoTree codes.
+    Downloads only the core models (CTransPath, Optimus, Aeon, marker classifier) and
+    metadata files from the PDM-Group HuggingFace repository. Paladin models are
+    downloaded on-demand when needed for inference.
 
     Returns:
         tuple: (cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes)
@@ -40,47 +41,69 @@ def download_and_process_models():
             - reversed_cancer_subtype_name_map: Dict mapping OncoTree codes to display names
             - cancer_subtypes: List of all supported cancer subtype codes
     """
-    # Download to HF cache directory (not local_dir)
-    # This returns the path to the cached snapshot
-    logger.info("Downloading models from HuggingFace Hub to cache directory...")
+    # Download only essential files to HF cache directory
+    # Paladin models will be downloaded on-demand
+    logger.info(
+        "Downloading essential models from HuggingFace Hub (Paladin models loaded on-demand)..."
+    )
     cache_dir = snapshot_download(
         repo_id="PDM-Group/paladin-aeon-models",
+        allow_patterns=[
+            "*.csv",  # Model maps and metadata
+            "ctranspath.pth",  # CTransPath model
+            "aeon_model.pkl",  # Aeon model
+            "marker_classifier.pkl",  # Marker classifier
+            "tissue_site_*",  # Tissue site mappings
+        ],
         # No local_dir - use HF cache
     )
-    logger.info(f"Models downloaded to: {cache_dir}")
+    logger.info(f"Essential models downloaded to: {cache_dir}")
 
     # Set the data directory for other modules to use
     set_data_directory(cache_dir)
+
+    # Pre-download Optimus model from bioptimus/H-optimus-0
+    # This ensures it's cached at startup since it's needed for every slide
+    logger.info("Pre-downloading Optimus model from bioptimus/H-optimus-0...")
+    from mussel.models import ModelType, get_model_factory
+
+    optimus_factory = get_model_factory(ModelType.OPTIMUS)
+    # This will trigger the download and cache the model
+    _ = optimus_factory.get_model(
+        model_path="hf-hub:bioptimus/H-optimus-0",
+        use_gpu=False,  # Just download, don't load to GPU yet
+        gpu_device_id=None,
+    )
+    logger.info("✓ Optimus model cached")
 
     model_map = pd.read_csv(
         Path(cache_dir) / "paladin_model_map.csv",
     )
     cancer_subtypes = model_map["cancer_subtype"].unique().tolist()
     cancer_subtype_name_map = {"Unknown": "UNK"}
-    cancer_subtype_name_map.update({
-        f"{get_oncotree_code_name(code)} ({code})": code for code in cancer_subtypes
-    })
+    cancer_subtype_name_map.update(
+        {f"{get_oncotree_code_name(code)} ({code})": code for code in cancer_subtypes}
+    )
     reversed_cancer_subtype_name_map = {
         value: key for key, value in cancer_subtype_name_map.items()
     }
-    
+
     # Set the global maps in the UI module
-    set_cancer_subtype_maps(cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes)
-    
+    set_cancer_subtype_maps(
+        cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes
+    )
+
     return cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes
-
-
-
 
 
 def main():
     """Main entry point for the Mosaic application.
-    
+
     Parses command-line arguments and routes to the appropriate mode:
     - Single slide processing (--slide-path)
     - Batch processing (--slide-csv)
     - Web interface (default, no slide arguments)
-    
+
     Command-line arguments control analysis parameters like site type,
     cancer subtype, segmentation configuration, and output directory.
     """
@@ -154,12 +177,54 @@ def main():
         default=4,
         help="Number of workers for feature extraction",
     )
+    parser.add_argument(
+        "--skip-model-download",
+        action="store_true",
+        help="Skip downloading models from HuggingFace (assumes models are already cached)",
+    )
+    parser.add_argument(
+        "--download-models-only",
+        action="store_true",
+        help="Download models from HuggingFace and exit without running analysis",
+    )
     args = parser.parse_args()
     if args.debug:
         logger.add("debug.log", level="DEBUG")
         logger.debug("Debug logging enabled")
 
-    cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = download_and_process_models()
+    # Handle model download options
+    if getattr(args, "download_models_only", False):
+        logger.info("Downloading models from HuggingFace...")
+        download_and_process_models()
+        logger.info("✓ Model download complete. Exiting.")
+        return
+
+    if not getattr(args, "skip_model_download", False):
+        cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = (
+            download_and_process_models()
+        )
+    else:
+        logger.info("Skipping model download, using cached models...")
+        # Load cancer subtype mappings from cached data
+        from mosaic.data_directory import get_data_directory
+
+        cache_dir = get_data_directory()
+        model_map = pd.read_csv(Path(cache_dir) / "paladin_model_map.csv")
+        cancer_subtypes = model_map["cancer_subtype"].unique().tolist()
+        cancer_subtype_name_map = {"Unknown": "UNK"}
+        cancer_subtype_name_map.update(
+            {
+                f"{get_oncotree_code_name(code)} ({code})": code
+                for code in cancer_subtypes
+            }
+        )
+        reversed_cancer_subtype_name_map = {
+            value: key for key, value in cancer_subtype_name_map.items()
+        }
+        # Set the global maps in the UI module
+        set_cancer_subtype_maps(
+            cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes
+        )
 
     if args.slide_path and not args.slide_csv:
         # Single slide processing mode
@@ -179,7 +244,12 @@ def main():
             ],
             columns=SETTINGS_COLUMNS,
         )
-        settings_df = validate_settings(settings_df, cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map)
+        settings_df = validate_settings(
+            settings_df,
+            cancer_subtype_name_map,
+            cancer_subtypes,
+            reversed_cancer_subtype_name_map,
+        )
         slide_mask, aeon_results, paladin_results = analyze_slide(
             args.slide_path,
             args.segmentation_config,
@@ -209,56 +279,92 @@ def main():
     elif args.slide_csv:
         if not args.output_dir:
             raise ValueError("Please provide --output-dir to save results")
-        # Batch processing mode
+        # Batch processing mode with optimized model loading
 
         output_dir = Path(args.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        all_paladin_results = []
-        all_aeon_results = []
+
+        # Load and validate settings
         settings_df = load_settings(args.slide_csv)
-        settings_df = validate_settings(settings_df, cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map)
-        for idx, row in settings_df.iterrows():
-            slide_path = row["Slide"]
-            seg_config = row["Segmentation Config"]
-            site_type = row["Site Type"]
-            sex = row.get("Sex", "Unknown")
-            tissue_site = row.get("Tissue Site", "Unknown")
-            cancer_subtype = row["Cancer Subtype"]
-            ihc_subtype = row.get("IHC Subtype", "")
-            logger.info(
-                f"Processing slide {slide_path} ({idx + 1} of {len(settings_df)})"
-            )
-            slide_mask, aeon_results, paladin_results = analyze_slide(
-                slide_path,
-                seg_config,
-                site_type,
-                sex,
-                tissue_site,
-                cancer_subtype,
-                cancer_subtype_name_map,
-                ihc_subtype,
-                num_workers=args.num_workers,
-            )
-            slide_name = Path(slide_path).stem
+        settings_df = validate_settings(
+            settings_df,
+            cancer_subtype_name_map,
+            cancer_subtypes,
+            reversed_cancer_subtype_name_map,
+        )
+
+        # Extract slide paths
+        slides = settings_df["Slide"].tolist()
+
+        logger.info(
+            f"Processing {len(slides)} slides in batch mode with models loaded once"
+        )
+
+        # Load models once for batch processing
+        model_cache = load_all_models(use_gpu=True, aggressive_memory_mgmt=None)
+
+        all_slide_masks = []
+        all_aeon_results = []
+        all_paladin_results = []
+
+        try:
+            # Process each slide with pre-loaded models
+            for idx, slide_path in enumerate(slides):
+                row = settings_df.iloc[idx]
+                slide_name = row["Slide"]
+
+                logger.info(f"[{idx + 1}/{len(slides)}] Processing: {slide_name}")
+
+                slide_mask, aeon_results, paladin_results = analyze_slide(
+                    slide_path=slide_path,
+                    seg_config=row["Segmentation Config"],
+                    site_type=row["Site Type"],
+                    sex=row.get("Sex", "Unknown"),
+                    tissue_site=row.get("Tissue Site", "Unknown"),
+                    cancer_subtype=row["Cancer Subtype"],
+                    cancer_subtype_name_map=cancer_subtype_name_map,
+                    ihc_subtype=row.get("IHC Subtype", ""),
+                    num_workers=args.num_workers,
+                    progress=lambda frac, desc: None,  # No-op progress for CLI
+                    request=None,
+                    model_cache=model_cache,
+                )
+
+                if slide_mask is not None:
+                    all_slide_masks.append((slide_mask, slide_name))
+                if aeon_results is not None:
+                    all_aeon_results.append(aeon_results)
+                if paladin_results is not None:
+                    paladin_results.insert(
+                        0, "Slide", pd.Series([slide_name] * len(paladin_results))
+                    )
+                    all_paladin_results.append(paladin_results)
+        finally:
+            logger.info("Cleaning up model cache")
+            model_cache.cleanup()
+
+        # Save individual slide results
+        for idx, (slide_mask, slide_name) in enumerate(all_slide_masks):
             mask_path = output_dir / f"{slide_name}_mask.png"
             slide_mask.save(mask_path)
             logger.info(f"Saved slide mask to {mask_path}")
-            if aeon_results is not None:
-                aeon_output_path = output_dir / f"{slide_name}_aeon_results.csv"
-                aeon_results.reset_index().to_csv(aeon_output_path, index=False)
-                logger.info(f"Saved Aeon results to {aeon_output_path}")
-            if paladin_results is not None and len(paladin_results) > 0:
+
+        for idx, aeon_results in enumerate(all_aeon_results):
+            slide_name = aeon_results.columns[0]  # Slide name is in column name
+            aeon_output_path = output_dir / f"{slide_name}_aeon_results.csv"
+            aeon_results.reset_index().to_csv(aeon_output_path, index=False)
+            logger.info(f"Saved Aeon results to {aeon_output_path}")
+
+        # Group Paladin results by slide
+        if all_paladin_results:
+            combined_paladin = pd.concat(all_paladin_results, ignore_index=True)
+            for slide_name in combined_paladin["Slide"].unique():
+                slide_paladin = combined_paladin[
+                    combined_paladin["Slide"] == slide_name
+                ]
                 paladin_output_path = output_dir / f"{slide_name}_paladin_results.csv"
-                paladin_results.to_csv(paladin_output_path, index=False)
+                slide_paladin.to_csv(paladin_output_path, index=False)
                 logger.info(f"Saved Paladin results to {paladin_output_path}")
-            if aeon_results is not None:
-                aeon_results.columns = [f"{slide_name}"]
-                all_aeon_results.append(aeon_results)
-            if paladin_results is not None and len(paladin_results) > 0:
-                paladin_results.insert(
-                    0, "Slide", pd.Series([slide_name] * len(paladin_results))
-                )
-                all_paladin_results.append(paladin_results)
         if all_aeon_results:
             combined_aeon_results = pd.concat(all_aeon_results, axis=1)
             combined_aeon_results.reset_index(inplace=True)

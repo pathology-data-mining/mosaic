@@ -24,6 +24,7 @@ from mosaic.ui.utils import (
     SETTINGS_COLUMNS,
 )
 from mosaic.analysis import analyze_slide
+from mosaic.model_manager import load_all_models
 
 current_dir = Path(__file__).parent.parent
 
@@ -44,6 +45,12 @@ def set_cancer_subtype_maps(csn_map, rcsn_map, cs):
 def analyze_slides(
     slides,
     settings_input,
+    site_type,
+    sex,
+    tissue_site,
+    cancer_subtype,
+    ihc_subtype,
+    seg_config,
     user_dir,
     progress=gr.Progress(track_tqdm=True),
     request: gr.Request = None,
@@ -51,9 +58,40 @@ def analyze_slides(
     if slides is None or len(slides) == 0:
         raise gr.Error("Please upload at least one slide.")
     if user_dir is None:
-        user_dir = create_user_directory(None, gr.Request())
+        if request is not None:
+            user_dir = create_user_directory(None, request)
+        if user_dir is None:
+            # Fallback to temp directory if session hash not available
+            import tempfile
+
+            user_dir = Path(tempfile.mkdtemp(prefix="mosaic_"))
+
+    # Handle empty settings_input (e.g., when dataframe is hidden for single slide)
+    # Regenerate settings from dropdowns if settings_input is empty
+    if settings_input is None or len(settings_input) == 0:
+        logger.info("Settings dataframe is empty, regenerating from dropdown values")
+        settings = []
+        for file in slides:
+            filename = file.name if hasattr(file, "name") else file
+            slide_name = filename.split("/")[-1]
+            settings.append(
+                [
+                    slide_name,
+                    site_type,
+                    sex,
+                    tissue_site,
+                    cancer_subtype,
+                    ihc_subtype,
+                    seg_config,
+                ]
+            )
+        settings_input = pd.DataFrame(settings, columns=SETTINGS_COLUMNS)
+
     settings_input = validate_settings(
-        settings_input, cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map
+        settings_input,
+        cancer_subtype_name_map,
+        cancer_subtypes,
+        reversed_cancer_subtype_name_map,
     )
     if len(slides) != len(settings_input):
         raise gr.Error("Missing settings for uploaded slides")
@@ -62,46 +100,71 @@ def analyze_slides(
     all_aeon_results = []
     all_paladin_results = []
 
-    progress(0.0, desc="Starting analysis")
-    for idx, row in settings_input.iterrows():
-        slide_name = row["Slide"]
-        progress(
-            idx / len(settings_input),
-            desc=f"Analyzing {slide_name}, slide {idx + 1} of {len(settings_input)}",
-        )
-        for x in slides:
-            s = x.split("/")[-1]
-            if s == slide_name:
-                slide_mask = x
+    # Load models once (for batch) or per-slide (for single)
+    model_cache = None
+    if len(slides) > 1:
+        logger.info(f"Batch mode: Loading models once for {len(slides)} slides")
+        progress(0.0, desc=f"Loading models for batch processing")
+        model_cache = load_all_models(use_gpu=True, aggressive_memory_mgmt=None)
+    else:
+        logger.info("Single-slide mode: models loaded within analyze_slide")
 
-        (
-            slide_mask,
-            aeon_results,
-            paladin_results,
-        ) = analyze_slide(
-            slides[idx],
-            row["Segmentation Config"],
-            row["Site Type"],
-            row["Sex"],
-            row["Tissue Site"],
-            row["Cancer Subtype"],
-            cancer_subtype_name_map,
-            row["IHC Subtype"],
-            progress=progress,
-            request=request,
-        )
-        if aeon_results is not None:
-            if len(slides) > 1:
-                aeon_results.columns = [f"{slide_name}"]
-            if row["Cancer Subtype"] == "Unknown":
-                all_aeon_results.append(aeon_results)
-        if paladin_results is not None:
-            paladin_results.insert(
-                0, "Slide", pd.Series([slide_name] * len(paladin_results))
+    try:
+        # Process all slides with unified analyze_slide function
+        for idx, slide_path in enumerate(slides):
+            row = settings_input.iloc[idx]
+            slide_name = row["Slide"]
+
+            logger.info(f"[{idx + 1}/{len(slides)}] Processing: {slide_name}")
+            slide_progress = idx / len(slides)
+            progress(slide_progress, desc=f"Analyzing slide {idx + 1}/{len(slides)}")
+
+            slide_mask, aeon_results, paladin_results = analyze_slide(
+                slide_path=slide_path,
+                seg_config=row["Segmentation Config"],
+                site_type=row["Site Type"],
+                sex=row.get("Sex", "Unknown"),
+                tissue_site=row.get("Tissue Site", "Unknown"),
+                cancer_subtype=row["Cancer Subtype"],
+                cancer_subtype_name_map=cancer_subtype_name_map,
+                ihc_subtype=row.get("IHC Subtype", ""),
+                num_workers=4,
+                progress=progress,
+                request=request,
+                model_cache=model_cache,  # Pre-loaded for batch, None for single
             )
-            all_paladin_results.append(paladin_results)
-        if slide_mask is not None:
-            all_slide_masks.append((slide_mask, slide_name))
+
+            if slide_mask is not None:
+                all_slide_masks.append((slide_mask, slide_name))
+            if aeon_results is not None:
+                all_aeon_results.append(aeon_results)
+            if paladin_results is not None:
+                paladin_results.insert(
+                    0, "Slide", pd.Series([slide_name] * len(paladin_results))
+                )
+                all_paladin_results.append(paladin_results)
+
+            # Yield intermediate update to show slide masks as they're generated
+            # This allows the UI to update incrementally during processing
+            yield (
+                all_slide_masks.copy(),  # Current slide masks
+                gr.DataFrame(visible=False),  # aeon_output_table (not ready yet)
+                gr.DownloadButton(
+                    visible=False
+                ),  # aeon_download_button (not ready yet)
+                None,  # paladin_output_table (not ready yet)
+                gr.DownloadButton(
+                    visible=False
+                ),  # paladin_download_button (not ready yet)
+                user_dir,  # user_dir_state
+            )
+
+    finally:
+        # Clean up model cache if it was loaded for batch processing
+        if model_cache is not None:
+            logger.info("Cleaning up model cache")
+            model_cache.cleanup()
+
     progress(0.99, desc="Analysis complete, wrapping up results")
 
     timestamp = pd.Timestamp.now().strftime("%Y%m%d-%H%M%S")
@@ -134,23 +197,23 @@ def analyze_slides(
         aeon_output = gr.DownloadButton(value=aeon_output_path, visible=True)
 
     # Convert Oncotree codes to names for display
-    cancer_subtype_names = [
-        f"{get_oncotree_code_name(code)} ({code})"
-        for code in combined_paladin_results["Cancer Subtype"]
-    ]
-    combined_paladin_results["Cancer Subtype"] = cancer_subtype_names
-    if len(combined_paladin_results) > 0:
-        combined_paladin_results["Score"] = combined_paladin_results["Score"].round(3)
-
     paladin_output = gr.DownloadButton(visible=False)
     if len(combined_paladin_results) > 0:
+        cancer_subtype_names = [
+            f"{get_oncotree_code_name(code)} ({code})"
+            for code in combined_paladin_results["Cancer Subtype"]
+        ]
+        combined_paladin_results["Cancer Subtype"] = cancer_subtype_names
+        combined_paladin_results["Score"] = combined_paladin_results["Score"].round(3)
+
         paladin_output_path = user_dir / f"paladin_results-{timestamp}.csv"
         combined_paladin_results.to_csv(paladin_output_path, index=False)
         paladin_output = gr.DownloadButton(value=paladin_output_path, visible=True)
 
     progress(1.0, desc="All done!")
 
-    return (
+    # Final yield with complete results
+    yield (
         all_slide_masks,
         combined_aeon_results,
         aeon_output,
@@ -268,17 +331,20 @@ def launch_gradio(server_name, server_port, share):
         )
         def clear_fn():
             return (
-                None,
-                None,
-                None,
-                None,
-                gr.Dataframe(visible=False),
-                gr.DownloadButton(visible=False),
-                gr.Dataframe(visible=False),
-                gr.File(visible=False),
+                None,  # input_slides
+                None,  # slide_masks
+                None,  # paladin_output_table
+                gr.DownloadButton(visible=False),  # paladin_download_button
+                gr.Dataframe(visible=False),  # aeon_output_table
+                gr.DownloadButton(visible=False),  # aeon_download_button
+                gr.Dataframe(visible=False),  # settings_input
+                gr.File(visible=False),  # settings_csv
             )
 
-        def get_settings(files, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config):
+        def get_settings(
+            files, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config
+        ):
+            """Generate initial settings DataFrame from uploaded files and dropdown values."""
             if files is None:
                 return pd.DataFrame()
             settings = []
@@ -286,22 +352,30 @@ def launch_gradio(server_name, server_port, share):
                 filename = file.name if hasattr(file, "name") else file
                 slide_name = filename.split("/")[-1]
                 settings.append(
-                    [slide_name, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config]
+                    [
+                        slide_name,
+                        site_type,
+                        sex,
+                        tissue_site,
+                        cancer_subtype,
+                        ihc_subtype,
+                        seg_config,
+                    ]
                 )
             df = pd.DataFrame(settings, columns=SETTINGS_COLUMNS)
             return df
 
-        # Only display settings table and upload button if multiple slides are uploaded
-        @gr.on(
-            [
-                input_slides.change,
-                site_dropdown.change,
-                sex_dropdown.change,
-                tissue_site_dropdown.change,
-                cancer_subtype_dropdown.change,
-                ihc_subtype_dropdown.change,
-                seg_config_dropdown.change,
-            ],
+        def update_settings_column(settings_df, column_name, new_value):
+            """Update a specific column in the settings DataFrame."""
+            if settings_df is None or len(settings_df) == 0:
+                return settings_df
+            # Create a copy to avoid modifying the original
+            updated_df = settings_df.copy()
+            updated_df[column_name] = new_value
+            return updated_df
+
+        # Handle file uploads - regenerate entire settings table
+        @input_slides.change(
             inputs=[
                 input_slides,
                 site_dropdown,
@@ -313,21 +387,102 @@ def launch_gradio(server_name, server_port, share):
             ],
             outputs=[settings_input, settings_csv, ihc_subtype_dropdown],
         )
-        def update_settings(files, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config):
+        def update_files(
+            files, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config
+        ):
+            """Handle file upload - regenerate settings table from scratch."""
             has_ihc = "Breast" in cancer_subtype
             if not files:
                 return None, None, gr.Dropdown(visible=has_ihc)
             settings_df = get_settings(
-                files, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config
+                files,
+                site_type,
+                sex,
+                tissue_site,
+                cancer_subtype,
+                ihc_subtype,
+                seg_config,
             )
             if settings_df is not None:
                 has_ihc = any("Breast" in cs for cs in settings_df["Cancer Subtype"])
             visible = files and len(files) > 1
             return (
-                gr.Dataframe(settings_df, visible=visible),
+                gr.Dataframe(value=settings_df, visible=visible),
                 gr.File(visible=visible),
                 gr.Dropdown(visible=has_ihc),
             )
+
+        # Handle individual dropdown changes - only update the relevant column
+        @site_dropdown.change(
+            inputs=[settings_input, site_dropdown],
+            outputs=[settings_input],
+        )
+        def update_site_type(settings_df, site_type):
+            """Update Site Type column when dropdown changes."""
+            if settings_df is None or len(settings_df) == 0:
+                return settings_df
+            updated_df = update_settings_column(settings_df, "Site Type", site_type)
+            return gr.Dataframe(value=updated_df)
+
+        @sex_dropdown.change(
+            inputs=[settings_input, sex_dropdown],
+            outputs=[settings_input],
+        )
+        def update_sex(settings_df, sex):
+            """Update Sex column when dropdown changes."""
+            if settings_df is None or len(settings_df) == 0:
+                return settings_df
+            updated_df = update_settings_column(settings_df, "Sex", sex)
+            return gr.Dataframe(value=updated_df)
+
+        @tissue_site_dropdown.change(
+            inputs=[settings_input, tissue_site_dropdown],
+            outputs=[settings_input],
+        )
+        def update_tissue_site(settings_df, tissue_site):
+            """Update Tissue Site column when dropdown changes."""
+            if settings_df is None or len(settings_df) == 0:
+                return settings_df
+            updated_df = update_settings_column(settings_df, "Tissue Site", tissue_site)
+            return gr.Dataframe(value=updated_df)
+
+        @cancer_subtype_dropdown.change(
+            inputs=[settings_input, cancer_subtype_dropdown],
+            outputs=[settings_input, ihc_subtype_dropdown],
+        )
+        def update_cancer_subtype(settings_df, cancer_subtype):
+            """Update Cancer Subtype column when dropdown changes."""
+            has_ihc = "Breast" in cancer_subtype
+            if settings_df is None or len(settings_df) == 0:
+                return settings_df, gr.Dropdown(visible=has_ihc)
+            updated_df = update_settings_column(
+                settings_df, "Cancer Subtype", cancer_subtype
+            )
+            return gr.Dataframe(value=updated_df), gr.Dropdown(visible=has_ihc)
+
+        @ihc_subtype_dropdown.change(
+            inputs=[settings_input, ihc_subtype_dropdown],
+            outputs=[settings_input],
+        )
+        def update_ihc_subtype(settings_df, ihc_subtype):
+            """Update IHC Subtype column when dropdown changes."""
+            if settings_df is None or len(settings_df) == 0:
+                return settings_df
+            updated_df = update_settings_column(settings_df, "IHC Subtype", ihc_subtype)
+            return gr.Dataframe(value=updated_df)
+
+        @seg_config_dropdown.change(
+            inputs=[settings_input, seg_config_dropdown],
+            outputs=[settings_input],
+        )
+        def update_seg_config(settings_df, seg_config):
+            """Update Segmentation Config column when dropdown changes."""
+            if settings_df is None or len(settings_df) == 0:
+                return settings_df
+            updated_df = update_settings_column(
+                settings_df, "Segmentation Config", seg_config
+            )
+            return gr.Dataframe(value=updated_df)
 
         @settings_csv.upload(
             inputs=[settings_csv],
@@ -344,6 +499,12 @@ def launch_gradio(server_name, server_port, share):
             inputs=[
                 input_slides,
                 settings_input,
+                site_dropdown,
+                sex_dropdown,
+                tissue_site_dropdown,
+                cancer_subtype_dropdown,
+                ihc_subtype_dropdown,
+                seg_config_dropdown,
                 user_dir_state,
             ],
             outputs=[
@@ -358,9 +519,14 @@ def launch_gradio(server_name, server_port, share):
             show_progress_on=paladin_output_table,
         )
         settings_input.change(
-            lambda df: validate_settings(df, cancer_subtype_name_map, cancer_subtypes, reversed_cancer_subtype_name_map),
+            lambda df: validate_settings(
+                df,
+                cancer_subtype_name_map,
+                cancer_subtypes,
+                reversed_cancer_subtype_name_map,
+            ),
             inputs=[settings_input],
-            outputs=[settings_input]
+            outputs=[settings_input],
         )
         demo.load(
             create_user_directory,

@@ -141,13 +141,15 @@ mosaic --slide-csv /path/to/your/wsi_list.csv --output-dir /path/to/output/direc
 ```
 
 The CSV file should at least contain columns `Slide`, and `Site Type`.
-Optionally, it can also contain `Cancer Subtype`, `Segmentation Config`, and `IHC Subtype`.
+Optionally, it can also contain `Cancer Subtype`, `Segmentation Config`, `IHC Subtype`, `Sex`, and `Tissue Site`.
 
 - `Slide` should contain the full path to the WSI file.
 - `Site Type` should be one of `Primary`, or `Metastatic`.
 - `Cancer Subtype` should be the oncotree code for the cancer subtype.
 - `Segmentation Config` should be one of `Biopsy`, `Resection`, or `TCGA`.
 - `IHC Subtype` should be one of `HR+/HER2+`, `HR+/HER2-`, `HR-/HER2+`, or `HR-/HER2-`.
+- `Sex` (optional): Patient sex for improved Aeon inference - one of `Male`, `Female`, or `Unknown`.
+- `Tissue Site` (optional): Primary tissue site for improved Aeon inference (e.g., `Lung`, `Breast`, `Colon`, `Liver`, `Brain`).
 
 See additional options with the help command. This command may take a few seconds to run:
 
@@ -188,7 +190,9 @@ mosaic --slide-path /data/slides/sample.svs \
        --output-dir /data/results \
        --site-type Primary \
        --cancer-subtype Unknown \
-       --segmentation-config Resection
+       --segmentation-config Resection \
+       --sex Female \
+       --tissue-site Lung
 ```
 
 ### Example 2: Process a single breast cancer slide with known IHC subtype
@@ -199,7 +203,9 @@ mosaic --slide-path /data/slides/breast_sample.svs \
        --site-type Primary \
        --cancer-subtype BRCA \
        --ihc-subtype "HR+/HER2-" \
-       --segmentation-config Biopsy
+       --segmentation-config Biopsy \
+       --sex Female \
+       --tissue-site Breast
 ```
 
 ### Example 3: Process multiple slides from CSV
@@ -207,10 +213,10 @@ mosaic --slide-path /data/slides/breast_sample.svs \
 Create a CSV file `slides.csv` with the following format:
 
 ```csv
-Slide,Site Type,Cancer Subtype,Segmentation Config,IHC Subtype
-/data/slides/sample1.svs,Primary,Unknown,Resection,
-/data/slides/sample2.svs,Metastatic,LUAD,Biopsy,
-/data/slides/sample3.svs,Primary,BRCA,TCGA,HR+/HER2-
+Slide,Site Type,Cancer Subtype,Segmentation Config,IHC Subtype,Sex,Tissue Site
+/data/slides/sample1.svs,Primary,Unknown,Resection,,Female,Lung
+/data/slides/sample2.svs,Metastatic,LUAD,Biopsy,,,Liver
+/data/slides/sample3.svs,Primary,BRCA,TCGA,HR+/HER2-,Female,Breast
 ```
 
 Then run:
@@ -220,6 +226,32 @@ mosaic --slide-csv slides.csv --output-dir /data/results
 ```
 
 ## Advanced Usage
+
+### Model Management
+
+#### Download Models Before Processing
+
+To download models from HuggingFace without running any analysis:
+
+```bash
+mosaic --download-models-only
+```
+
+Or using the Makefile:
+
+```bash
+make download-models
+```
+
+#### Skip Model Download
+
+If models are already cached and you want to skip the download check:
+
+```bash
+mosaic --skip-model-download --slide-path /path/to/slide.svs --output-dir /path/to/output
+```
+
+This is useful for offline processing or when you know models are already cached.
 
 ### Adjusting Performance
 
@@ -280,14 +312,24 @@ When processing multiple slides using the `--slide-csv` option, the CSV file mus
   - `HR+/HER2-`
   - `HR-/HER2+`
   - `HR-/HER2-`
+- **Sex**: Patient sex for improved Aeon cancer subtype inference. One of `Male`, `Female`, or `Unknown`.
+- **Tissue Site**: Primary tissue site for improved Aeon cancer subtype inference. Examples include:
+  - `Lung`
+  - `Breast`
+  - `Colon`
+  - `Liver`
+  - `Brain`
+  - `Lymph Node`
+  - `Bone`
+  - See `data/tissue_site_original_to_idx.csv` for complete list of supported tissue sites.
 
 ### CSV Example
 
 ```csv
-Slide,Site Type,Cancer Subtype,Segmentation Config,IHC Subtype
-/data/slides/lung1.svs,Primary,LUAD,Resection,
-/data/slides/breast1.svs,Primary,BRCA,Biopsy,HR+/HER2-
-/data/slides/unknown1.svs,Metastatic,Unknown,TCGA,
+Slide,Site Type,Cancer Subtype,Segmentation Config,IHC Subtype,Sex,Tissue Site
+/data/slides/lung1.svs,Primary,LUAD,Resection,,Male,Lung
+/data/slides/breast1.svs,Primary,BRCA,Biopsy,HR+/HER2-,Female,Breast
+/data/slides/unknown1.svs,Metastatic,Unknown,TCGA,,,Liver
 ```
 
 ## Cancer Subtypes
