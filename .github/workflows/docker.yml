@@ -63,8 +63,8 @@ jobs:
         ssh: default
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        secret-files: |
-          "github_token=${{ secrets.GITHUB_TOKEN }}"
+        secrets: |
+          github_token=${{ secrets.GITHUB_TOKEN }}
 
     - name: Docker Summary
       run: |
