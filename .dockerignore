@@ -71,7 +71,6 @@ profile_output/
 # Lock files (we use uv.lock)
 poetry.lock
 Pipfile.lock
-requirements*.txt
 
 # Makefile and CI configs
 Makefile
