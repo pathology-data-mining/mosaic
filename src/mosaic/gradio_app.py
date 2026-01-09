@@ -193,13 +193,13 @@ def main():
         logger.debug("Debug logging enabled")
 
     # Handle model download options
-    if getattr(args, 'download_models_only', False):
+    if getattr(args, "download_models_only", False):
         logger.info("Downloading models from HuggingFace...")
         download_and_process_models()
         logger.info("✓ Model download complete. Exiting.")
         return
-    
-    if not getattr(args, 'skip_model_download', False):
+
+    if not getattr(args, "skip_model_download", False):
         cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = (
             download_and_process_models()
         )
@@ -207,12 +207,16 @@ def main():
         logger.info("Skipping model download, using cached models...")
         # Load cancer subtype mappings from cached data
         from mosaic.data_directory import get_data_directory
+
         cache_dir = get_data_directory()
         model_map = pd.read_csv(Path(cache_dir) / "paladin_model_map.csv")
         cancer_subtypes = model_map["cancer_subtype"].unique().tolist()
         cancer_subtype_name_map = {"Unknown": "UNK"}
         cancer_subtype_name_map.update(
-            {f"{get_oncotree_code_name(code)} ({code})": code for code in cancer_subtypes}
+            {
+                f"{get_oncotree_code_name(code)} ({code})": code
+                for code in cancer_subtypes
+            }
         )
         reversed_cancer_subtype_name_map = {
             value: key for key, value in cancer_subtype_name_map.items()
