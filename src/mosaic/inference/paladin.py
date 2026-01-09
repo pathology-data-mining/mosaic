@@ -129,7 +129,6 @@ def run_model_with_preloaded(device, dataset, model, num_workers, batch_size) ->
         dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
     )
 
-    results_df = []
     batch = next(iter(dataloader))
     with torch.no_grad():
         batch["tile_tensor"] = batch["tile_tensor"].to(device)
