@@ -140,18 +140,55 @@ To process a batch of WSIs, use:
 mosaic --slide-csv /path/to/your/wsi_list.csv --output-dir /path/to/output/directory
 ```
 
-The CSV file should at least contain columns `Slide`, and `Site Type`.
-Optionally, it can also contain `Cancer Subtype`, `Segmentation Config`, `IHC Subtype`, `Sex`, and `Tissue Site`.
+#### Complete CLI Options Reference
 
-- `Slide` should contain the full path to the WSI file.
-- `Site Type` should be one of `Primary`, or `Metastatic`.
-- `Cancer Subtype` should be the oncotree code for the cancer subtype.
-- `Segmentation Config` should be one of `Biopsy`, `Resection`, or `TCGA`.
-- `IHC Subtype` should be one of `HR+/HER2+`, `HR+/HER2-`, `HR-/HER2+`, or `HR-/HER2-`.
-- `Sex` (optional): Patient sex for improved Aeon inference - one of `Male`, `Female`, or `Unknown`.
-- `Tissue Site` (optional): Primary tissue site for improved Aeon inference (e.g., `Lung`, `Breast`, `Colon`, `Liver`, `Brain`).
+##### Processing Options
 
-See additional options with the help command. This command may take a few seconds to run:
+- `--slide-path PATH`: Path to a single slide for processing (mutually exclusive with `--slide-csv`)
+- `--slide-csv PATH`: CSV file with slide settings for batch processing (see [CSV File Format](#csv-file-format))
+- `--output-dir PATH`: Directory to save output results (required for CLI processing)
+
+##### Single Slide Parameters
+
+These options apply when using `--slide-path` for single slide processing:
+
+- `--site-type {Primary,Metastatic}`: Site type of the slide (default: `Primary`)
+- `--cancer-subtype CODE`: Cancer subtype OncoTree code (default: `Unknown` to infer with Aeon model)
+- `--segmentation-config {Biopsy,Resection,TCGA}`: Tissue segmentation configuration (default: `Biopsy`)
+- `--ihc-subtype SUBTYPE`: IHC subtype for breast cancer (BRCA) only. Options:
+  - `HR+/HER2+`
+  - `HR+/HER2-`
+  - `HR-/HER2+`
+  - `HR-/HER2-`
+- `--sex {Male,Female,Unknown}`: Patient sex for improved Aeon inference (default: `Unknown`)
+- `--tissue-site SITE`: Primary tissue site for improved Aeon inference (default: `Unknown`)
+  - Examples: `Lung`, `Breast`, `Colon`, `Liver`, `Brain`, `Lymph Node`, `Bone`
+  - See `data/tissue_site_original_to_idx.csv` for complete list
+
+##### Performance & Processing
+
+- `--num-workers N`: Number of workers for feature extraction (default: 4)
+  - Increase for faster processing (e.g., 8-16) if you have sufficient CPU/memory
+  - Decrease (e.g., 2-4) if encountering memory issues
+
+##### Model Management
+
+- `--skip-model-download`: Skip downloading models from HuggingFace (assumes models are already cached)
+- `--download-models-only`: Download models from HuggingFace and exit without running analysis
+
+##### Web Server Options
+
+- `--server-name ADDRESS`: Server address for Gradio web interface (default: `0.0.0.0`)
+- `--server-port PORT`: Server port for Gradio web interface (default: uses `GRADIO_SERVER_PORT` env var or 7860)
+- `--share`: Create a public shareable link for the Gradio interface (use with caution)
+
+##### Debugging
+
+- `--debug`: Enable debug logging (creates `debug.log` file with detailed information)
+
+##### Getting Help
+
+See all available options with:
 
 ```bash
 mosaic --help
