@@ -54,6 +54,7 @@ def download_and_process_models():
             "aeon_model.pkl",  # Aeon model
             "marker_classifier.pkl",  # Marker classifier
             "tissue_site_*",  # Tissue site mappings
+            "metadata/*",  # Metadata files (including target_dict.tsv)
         ],
         # No local_dir - use HF cache
     )
