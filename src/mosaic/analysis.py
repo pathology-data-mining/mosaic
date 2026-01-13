@@ -54,6 +54,7 @@ else:
     GPU_TYPE = f"Standard GPU ({GPU_NAME})"
 
 import pickle
+import gc
 import pandas as pd
 import gradio as gr
 from pathlib import Path
@@ -438,7 +439,16 @@ def _run_inference_pipeline_impl(
         return aeon_results, paladin_results
     finally:
         # Clean up models to free GPU memory
+        logger.info("Cleaning up models after single-slide inference")
         model_cache.cleanup()
+        
+        # Extra aggressive cleanup for T4 instances
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            gc.collect()
+            mem_allocated = torch.cuda.memory_allocated() / (1024**3)
+            logger.info(f"GPU memory after cleanup: {mem_allocated:.2f} GB")
 
 
 # ============================================================================
