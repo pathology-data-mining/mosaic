@@ -96,9 +96,24 @@ def analyze_slides(
     if len(slides) != len(settings_input):
         raise gr.Error("Missing settings for uploaded slides")
 
+    # Check that all slides have sex specified
+    if settings_input["Sex"].isna().any() or (settings_input["Sex"] == "").any() or (settings_input["Sex"] == None).any():
+        raise gr.Error("Sex is required for all slides. Please select Male or Female.")
+
     all_slide_masks = []
     all_aeon_results = []
     all_paladin_results = []
+
+    # Yield initial state to make settings table visible immediately
+    yield (
+        gr.Dataframe(value=settings_input, visible=True),  # Make settings visible
+        [],  # Empty slide masks
+        gr.DataFrame(visible=False),  # Hidden AEON table
+        gr.DownloadButton(visible=False),  # Hidden AEON download
+        None,  # No PALADIN results yet
+        gr.DownloadButton(visible=False),  # Hidden PALADIN download
+        user_dir,  # user_dir_state
+    )
 
     # Load models once (for batch) or per-slide (for single)
     model_cache = None
@@ -123,7 +138,7 @@ def analyze_slides(
                 slide_path=slide_path,
                 seg_config=row["Segmentation Config"],
                 site_type=row["Site Type"],
-                sex=row.get("Sex", "Unknown"),
+                sex=row["Sex"],
                 tissue_site=row.get("Tissue Site", "Unknown"),
                 cancer_subtype=row["Cancer Subtype"],
                 cancer_subtype_name_map=cancer_subtype_name_map,
@@ -146,18 +161,54 @@ def analyze_slides(
                 )
                 all_paladin_results.append(paladin_results)
 
-            # Yield intermediate update to show slide masks as they're generated
-            # This allows the UI to update incrementally during processing
+            # Build partial AEON results for display
+            partial_aeon_df = gr.DataFrame(visible=False)
+            if all_aeon_results:
+                partial_aeon = pd.concat(all_aeon_results, axis=1)
+                partial_aeon.reset_index(inplace=True)
+                partial_aeon = partial_aeon.round(3)
+
+                # Convert OncoTree codes to names for display
+                cancer_subtype_names = [
+                    f"{get_oncotree_code_name(code)} ({code})"
+                    for code in partial_aeon["Cancer Subtype"]
+                ]
+                partial_aeon["Cancer Subtype"] = cancer_subtype_names
+
+                partial_aeon_df = gr.DataFrame(
+                    partial_aeon,
+                    visible=True,
+                    column_widths=["4px"] + ["2px"] * (partial_aeon.shape[1] - 1),
+                )
+
+            # Build partial PALADIN results for display
+            partial_paladin_df = None
+            if all_paladin_results:
+                partial_paladin = pd.concat(all_paladin_results, ignore_index=True)
+
+                # Convert OncoTree codes to names for display
+                cancer_subtype_names = [
+                    f"{get_oncotree_code_name(code)} ({code})"
+                    for code in partial_paladin["Cancer Subtype"]
+                ]
+                partial_paladin["Cancer Subtype"] = cancer_subtype_names
+
+                # Ensure Score is numeric before rounding
+                partial_paladin["Score"] = pd.to_numeric(partial_paladin["Score"], errors='coerce')
+                partial_paladin["Score"] = partial_paladin["Score"].round(3)
+
+                partial_paladin_df = partial_paladin
+
+            # Yield intermediate update to show progressive results
+            # Download buttons stay hidden until all slides are processed
+            # Make settings visible during processing (for progress bar display)
             yield (
+                gr.Dataframe(value=settings_input, visible=True),  # Settings visible for progress
                 all_slide_masks.copy(),  # Current slide masks
-                gr.DataFrame(visible=False),  # aeon_output_table (not ready yet)
-                gr.DownloadButton(
-                    visible=False
-                ),  # aeon_download_button (not ready yet)
-                None,  # paladin_output_table (not ready yet)
-                gr.DownloadButton(
-                    visible=False
-                ),  # paladin_download_button (not ready yet)
+                partial_aeon_df,  # Partial AEON results (growing)
+                gr.DownloadButton(visible=False),  # Download button hidden until complete
+                partial_paladin_df,  # Partial PALADIN results (growing)
+                gr.DownloadButton(visible=False),  # Download button hidden until complete
                 user_dir,  # user_dir_state
             )
 
@@ -206,6 +257,9 @@ def analyze_slides(
             for code in combined_paladin_results["Cancer Subtype"]
         ]
         combined_paladin_results["Cancer Subtype"] = cancer_subtype_names
+
+        # Ensure Score is numeric before rounding
+        combined_paladin_results["Score"] = pd.to_numeric(combined_paladin_results["Score"], errors='coerce')
         combined_paladin_results["Score"] = combined_paladin_results["Score"].round(3)
 
         paladin_output_path = user_dir / f"paladin_results-{timestamp}.csv"
@@ -215,7 +269,10 @@ def analyze_slides(
     progress(1.0, desc="All done!")
 
     # Final yield with complete results
+    # Hide settings table if only one slide, keep visible for multiple slides
+    settings_visible = len(slides) > 1
     yield (
+        gr.Dataframe(value=settings_input, visible=settings_visible),  # Hide if single slide
         all_slide_masks,
         combined_aeon_results,
         aeon_output,
@@ -249,7 +306,7 @@ def launch_gradio(server_name, server_port, share):
                 sex_dropdown = gr.Dropdown(
                     choices=SEX_OPTIONS,
                     label="Sex",
-                    value="Unknown",
+                    value=None,
                 )
                 tissue_site_dropdown = gr.Dropdown(
                     choices=get_tissue_sites(),
@@ -357,7 +414,7 @@ def launch_gradio(server_name, server_port, share):
                     [
                         slide_name,
                         site_type,
-                        sex,
+                        sex if sex is not None else "",
                         tissue_site,
                         cancer_subtype,
                         ihc_subtype,
@@ -373,6 +430,9 @@ def launch_gradio(server_name, server_port, share):
                 return settings_df
             # Create a copy to avoid modifying the original
             updated_df = settings_df.copy()
+            # Convert None to empty string for display (especially for Sex column)
+            if new_value is None:
+                new_value = ""
             updated_df[column_name] = new_value
             return updated_df
 
@@ -510,6 +570,7 @@ def launch_gradio(server_name, server_port, share):
                 user_dir_state,
             ],
             outputs=[
+                settings_input,
                 slide_masks,
                 aeon_output_table,
                 aeon_download_button,
@@ -518,7 +579,7 @@ def launch_gradio(server_name, server_port, share):
                 user_dir_state,
             ],
             queue=True,
-            show_progress_on=paladin_output_table,
+            show_progress_on=settings_input,
         )
         settings_input.change(
             lambda df: validate_settings(
