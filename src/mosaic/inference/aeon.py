@@ -224,9 +224,9 @@ def parse_args():
     parser.add_argument(
         "--sex",
         type=str,
-        choices=["Male", "Female", "Unknown"],
+        choices=["Male", "Female"],
         default=None,
-        help="Patient sex (Male or Female)",
+        help="Patient sex (Male or Female, required for inference)",
     )
     parser.add_argument(
         "--tissue-site",

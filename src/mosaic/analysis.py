@@ -673,7 +673,7 @@ def analyze_slide(
         slide_path: Path to the whole slide image file
         seg_config: Segmentation configuration, one of "Biopsy", "Resection", or "TCGA"
         site_type: Site type, either "Primary" or "Metastatic"
-        sex: Patient sex ("Unknown", "Male", "Female")
+        sex: Patient sex ("Male" or "Female") - required
         tissue_site: Tissue site name
         cancer_subtype: Cancer subtype (OncoTree code or "Unknown" for inference)
         cancer_subtype_name_map: Dictionary mapping cancer subtype names to codes
