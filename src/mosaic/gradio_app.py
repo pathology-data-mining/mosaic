@@ -140,8 +140,8 @@ def main():
         "--sex",
         type=str,
         choices=SEX_OPTIONS,
-        default="Unknown",
-        help="Sex of the patient (for single slide processing)",
+        default=None,
+        help="Sex of the patient (required for single slide processing)",
     )
     parser.add_argument(
         "--tissue-site",
@@ -231,6 +231,8 @@ def main():
         # Single slide processing mode
         if not args.output_dir:
             raise ValueError("Please provide --output-dir to save results")
+        if not args.sex:
+            raise ValueError("Please provide --sex (Male or Female) for single slide processing")
         settings_df = pd.DataFrame(
             [
                 [
@@ -320,7 +322,7 @@ def main():
                     slide_path=slide_path,
                     seg_config=row["Segmentation Config"],
                     site_type=row["Site Type"],
-                    sex=row.get("Sex", "Unknown"),
+                    sex=row["Sex"],
                     tissue_site=row.get("Tissue Site", "Unknown"),
                     cancer_subtype=row["Cancer Subtype"],
                     cancer_subtype_name_map=cancer_subtype_name_map,
