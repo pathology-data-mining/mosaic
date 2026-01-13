@@ -34,6 +34,9 @@ cancer_subtype_name_map = {}
 reversed_cancer_subtype_name_map = {}
 cancer_subtypes = []
 
+# Global model cache for T4 (to persist models across sequential requests)
+_global_model_cache = None
+
 
 def set_cancer_subtype_maps(csn_map, rcsn_map, cs):
     """Set the global cancer subtype maps."""
@@ -117,8 +120,21 @@ def analyze_slides(
     )
 
     # Load models once (for batch) or per-slide (for single)
+    # On T4: Keep models loaded globally across all requests (concurrency=1 ensures no conflicts)
+    # On high-memory GPUs: Load models per-batch, reload for single slides
+    global _global_model_cache
     model_cache = None
-    if len(slides) > 1:
+
+    if IS_T4_GPU:
+        # T4: Use global cache to keep models loaded across requests
+        if _global_model_cache is None:
+            logger.info("T4: Loading models once (will persist across all requests)")
+            progress(0.0, desc="Loading models (one-time initialization)")
+            _global_model_cache = load_all_models(use_gpu=True, aggressive_memory_mgmt=None)
+        else:
+            logger.info(f"T4: Reusing pre-loaded models from global cache")
+        model_cache = _global_model_cache
+    elif len(slides) > 1:
         logger.info(f"Batch mode: Loading models once for {len(slides)} slides")
         progress(0.0, desc=f"Loading models for batch processing")
         model_cache = load_all_models(use_gpu=True, aggressive_memory_mgmt=None)
@@ -215,9 +231,14 @@ def analyze_slides(
 
     finally:
         # Clean up model cache if it was loaded for batch processing
-        if model_cache is not None:
-            logger.info("Cleaning up model cache")
+        # On T4: Keep global cache loaded, only cleanup Paladin models
+        # On high-memory GPUs: Cleanup everything after batch
+        if model_cache is not None and not IS_T4_GPU:
+            logger.info("Cleaning up model cache after batch")
             model_cache.cleanup()
+        elif IS_T4_GPU and model_cache is not None:
+            logger.info("T4: Keeping core models loaded, cleaning up Paladin models only")
+            model_cache.cleanup_paladin()
 
     progress(0.99, desc="Analysis complete, wrapping up results")
 
