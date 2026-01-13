@@ -271,12 +271,38 @@ def analyze_slides(
     # Final yield with complete results
     # Hide settings table if only one slide, keep visible for multiple slides
     settings_visible = len(slides) > 1
+    
+    # Store final results before cleanup
+    final_slide_masks = all_slide_masks
+    final_combined_paladin = combined_paladin_results if len(combined_paladin_results) > 0 else None
+    
+    # Aggressive memory cleanup after storing final results
+    import gc
+    import torch
+    
+    # Clear intermediate data structures
+    all_slide_masks = None
+    all_aeon_results = None
+    all_paladin_results = None
+    combined_paladin_results = None
+    
+    # Force garbage collection
+    gc.collect()
+    
+    # Clear GPU cache if available
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        mem_allocated = torch.cuda.memory_allocated() / (1024**3)
+        mem_reserved = torch.cuda.memory_reserved() / (1024**3)
+        logger.info(f"GPU memory after final cleanup: {mem_allocated:.2f} GB allocated, {mem_reserved:.2f} GB reserved")
+    
     yield (
         gr.Dataframe(value=settings_input, visible=settings_visible),  # Hide if single slide
-        all_slide_masks,
+        final_slide_masks,
         combined_aeon_results,
         aeon_output,
-        combined_paladin_results if len(combined_paladin_results) > 0 else None,
+        final_combined_paladin,
         paladin_output,
         user_dir,
     )
