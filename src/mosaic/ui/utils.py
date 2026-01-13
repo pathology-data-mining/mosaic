@@ -19,7 +19,7 @@ from mosaic.data_directory import get_data_directory
 TEMP_USER_DATA_DIR = Path(tempfile.gettempdir()) / "mosaic_user_data"
 
 IHC_SUBTYPES = ["", "HR+/HER2+", "HR+/HER2-", "HR-/HER2+", "HR-/HER2-"]
-SEX_OPTIONS = ["Unknown", "Male", "Female"]
+SEX_OPTIONS = ["Male", "Female"]
 
 SETTINGS_COLUMNS = [
     "Slide",
@@ -128,8 +128,6 @@ def load_settings(slide_csv_path):
         settings_df["Cancer Subtype"] = "Unknown"
     if "IHC Subtype" not in settings_df.columns:
         settings_df["IHC Subtype"] = ""
-    if "Sex" not in settings_df.columns:
-        settings_df["Sex"] = "Unknown"
     if "Tissue Site" not in settings_df.columns:
         settings_df["Tissue Site"] = "Unknown"
     if not set(SETTINGS_COLUMNS).issubset(settings_df.columns):
@@ -183,11 +181,11 @@ def validate_settings(
                 f"Slide {slide_name}: Unknown site type. Valid types are: Metastatic, Primary. "
             )
             settings_df.at[idx, "Site Type"] = "Primary"
-        if row["Sex"] not in SEX_OPTIONS:
+        if row["Sex"] not in SEX_OPTIONS and row["Sex"] != "" and row["Sex"] is not None:
             warnings.append(
-                f"Slide {slide_name}: Unknown sex. Valid options are: {', '.join(SEX_OPTIONS)}. "
+                f"Slide {slide_name}: Invalid sex value. Valid options are: {', '.join(SEX_OPTIONS)}. "
             )
-            settings_df.at[idx, "Sex"] = "Unknown"
+            settings_df.at[idx, "Sex"] = ""
         if row["Tissue Site"] not in tissue_sites:
             warnings.append(
                 f"Slide {slide_name}: Unknown tissue site. Valid tissue sites are: {', '.join(tissue_sites)}. "
