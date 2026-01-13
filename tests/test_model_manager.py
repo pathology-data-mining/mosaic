@@ -129,6 +129,8 @@ class TestLoadAllModels:
         assert cache.device == torch.device("cpu")
         assert cache.aggressive_memory_mgmt is False
 
+    @patch("mosaic.model_manager.IS_T4_GPU", False)
+    @patch("mosaic.model_manager.GPU_NAME", "NVIDIA A100")
     @patch("torch.cuda.is_available", return_value=True)
     @patch("torch.cuda.get_device_name", return_value="NVIDIA A100")
     @patch("torch.cuda.memory_allocated", return_value=0)
@@ -156,6 +158,8 @@ class TestLoadAllModels:
         assert cache.is_t4_gpu is False
         assert cache.aggressive_memory_mgmt is False  # A100 should use caching
 
+    @patch("mosaic.model_manager.IS_T4_GPU", True)
+    @patch("mosaic.model_manager.GPU_NAME", "Tesla T4")
     @patch("torch.cuda.is_available", return_value=True)
     @patch("torch.cuda.get_device_name", return_value="Tesla T4")
     @patch("torch.cuda.memory_allocated", return_value=0)
@@ -199,6 +203,8 @@ class TestLoadAllModels:
                     with patch("pickle.load"):
                         load_all_models(use_gpu=False)
 
+    @patch("mosaic.model_manager.IS_T4_GPU", False)
+    @patch("mosaic.model_manager.GPU_NAME", "NVIDIA A100")
     @patch("torch.cuda.is_available", return_value=True)
     @patch("torch.cuda.memory_allocated", return_value=0)
     @patch("torch.cuda.get_device_properties")
