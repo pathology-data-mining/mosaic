@@ -21,6 +21,15 @@ from mosaic.gradio_app import download_and_process_models
 from mosaic.ui import launch_gradio
 
 if __name__ == "__main__":
+    # Fix OMP_NUM_THREADS environment variable if invalid
+    omp_threads = os.environ.get("OMP_NUM_THREADS", "")
+    if not omp_threads or omp_threads == "0" or (omp_threads.lstrip('-').isdigit() and int(omp_threads) <= 0):
+        # Set to a reasonable default based on CPU count
+        import multiprocessing
+        num_cpus = multiprocessing.cpu_count()
+        # Use half of available CPUs, minimum 1, maximum 8 for stability
+        os.environ["OMP_NUM_THREADS"] = str(max(1, min(8, num_cpus // 2)))
+    
     # Enable HF transfer for faster downloads on Spaces
     os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
     
