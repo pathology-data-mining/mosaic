@@ -69,7 +69,7 @@ class TestGeneratorBehavior:
             {
                 "Slide": ["test_slide_1.svs"],
                 "Site Type": ["Primary"],
-                "Sex": ["Unknown"],
+                "Sex": ["Male"],
                 "Tissue Site": ["Unknown"],
                 "Cancer Subtype": ["Unknown"],
                 "IHC Subtype": [""],
@@ -138,7 +138,7 @@ class TestGeneratorBehavior:
             {
                 "Slide": ["test_slide_1.svs", "test_slide_2.svs", "test_slide_3.svs"],
                 "Site Type": ["Primary", "Primary", "Primary"],
-                "Sex": ["Unknown", "Unknown", "Unknown"],
+                "Sex": ["Male", "Female", "Male"],
                 "Tissue Site": ["Unknown", "Unknown", "Unknown"],
                 "Cancer Subtype": ["Unknown", "Unknown", "Unknown"],
                 "IHC Subtype": ["", "", ""],
@@ -161,12 +161,36 @@ class TestGeneratorBehavior:
         # Get first intermediate yield (after first slide)
         first_yield = next(gen)
 
-        # Should be tuple with 6 elements
-        assert len(first_yield) == 6
+        # Should be tuple with 7 elements (added settings_input back)
+        assert len(first_yield) == 7
 
-        # First element is slide_masks (should have 1 entry)
-        slide_masks = first_yield[0]
+        # First element is settings_input (visible during processing for progress)
+        settings = first_yield[0]
+        assert hasattr(settings, "visible") and settings.visible
+
+        # Second element is slide_masks (should have 1 entry)
+        slide_masks = first_yield[1]
         assert len(slide_masks) == 1
+
+        # Third element should be AEON results DataFrame (now visible with partial results)
+        aeon_output = first_yield[2]
+        # Should have a DataFrame (not hidden anymore)
+        assert aeon_output is not None
+
+        # Fourth element should be AEON download button (hidden until complete)
+        aeon_download = first_yield[3]
+        # Download button should be hidden during intermediate yields
+        assert hasattr(aeon_download, "visible") and not aeon_download.visible
+
+        # Fifth element should be PALADIN results DataFrame (partial results)
+        paladin_output = first_yield[4]
+        # Should have data (DataFrame with partial results)
+        assert paladin_output is not None
+
+        # Sixth element should be PALADIN download button (hidden until complete)
+        paladin_download = first_yield[5]
+        # Download button should be hidden during intermediate yields
+        assert hasattr(paladin_download, "visible") and not paladin_download.visible
 
     @patch("mosaic.ui.app.load_all_models")
     @patch("mosaic.ui.app.analyze_slide")
@@ -214,7 +238,7 @@ class TestGeneratorBehavior:
             {
                 "Slide": ["test_slide_1.svs", "test_slide_2.svs", "test_slide_3.svs"],
                 "Site Type": ["Primary", "Primary", "Primary"],
-                "Sex": ["Unknown", "Unknown", "Unknown"],
+                "Sex": ["Male", "Female", "Male"],
                 "Tissue Site": ["Unknown", "Unknown", "Unknown"],
                 "Cancer Subtype": ["Unknown", "Unknown", "Unknown"],
                 "IHC Subtype": ["", "", ""],
@@ -238,10 +262,24 @@ class TestGeneratorBehavior:
         results = list(gen)
         final_yield = results[-1]
 
-        # Final yield should have all results
-        assert len(final_yield) == 6
-        slide_masks = final_yield[0]
+        # Final yield should have all results (7 elements with settings_input)
+        assert len(final_yield) == 7
+
+        # First element is settings_input (should be visible for 3 slides)
+        settings = final_yield[0]
+        assert hasattr(settings, "visible") and settings.visible  # Visible for multiple slides
+
+        # Second element is slide_masks
+        slide_masks = final_yield[1]
         assert len(slide_masks) == 3  # All 3 slides
+
+        # AEON download button should be visible on final yield (4th element, index 3)
+        aeon_download = final_yield[3]
+        assert hasattr(aeon_download, "visible") and aeon_download.visible
+
+        # PALADIN download button should be visible on final yield (6th element, index 5)
+        paladin_download = final_yield[5]
+        assert hasattr(paladin_download, "visible") and paladin_download.visible
 
 
 class TestErrorDisplay:
@@ -307,7 +345,7 @@ class TestErrorDisplay:
         # Verify defaults applied
         assert result.iloc[0]["Site Type"] == "Primary"  # Invalid → Primary
         assert result.iloc[0]["Cancer Subtype"] == "Unknown"  # Invalid → Unknown
-        assert result.iloc[1]["Sex"] == "Unknown"  # Invalid → Unknown
+        assert result.iloc[1]["Sex"] == ""  # Invalid → empty string
         assert result.iloc[1]["Segmentation Config"] == "Biopsy"  # Invalid → Biopsy
 
     @patch("mosaic.ui.app.create_user_directory")

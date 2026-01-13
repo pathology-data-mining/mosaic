@@ -81,9 +81,9 @@ class TestLoadSettings:
     def temp_settings_csv(self):
         """Create a temporary settings CSV file with all columns."""
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
-            f.write("Slide,Site Type,Cancer Subtype,IHC Subtype,Segmentation Config\n")
-            f.write("slide1.svs,Primary,Unknown,,Biopsy\n")
-            f.write("slide2.svs,Metastatic,Unknown,,Resection\n")
+            f.write("Slide,Site Type,Sex,Cancer Subtype,IHC Subtype,Segmentation Config\n")
+            f.write("slide1.svs,Primary,Male,Unknown,,Biopsy\n")
+            f.write("slide2.svs,Metastatic,Female,Unknown,,Resection\n")
             temp_path = f.name
         yield temp_path
         Path(temp_path).unlink()
@@ -92,9 +92,9 @@ class TestLoadSettings:
     def temp_minimal_settings_csv(self):
         """Create a temporary settings CSV file with minimal columns."""
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
-            f.write("Slide,Site Type\n")
-            f.write("slide1.svs,Primary\n")
-            f.write("slide2.svs,Metastatic\n")
+            f.write("Slide,Site Type,Sex\n")
+            f.write("slide1.svs,Primary,Male\n")
+            f.write("slide2.svs,Metastatic,Female\n")
             temp_path = f.name
         yield temp_path
         Path(temp_path).unlink()
