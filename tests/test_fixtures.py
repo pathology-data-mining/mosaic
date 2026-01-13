@@ -88,7 +88,7 @@ def sample_settings_df():
         {
             "Slide": ["slide1.svs", "slide2.svs", "slide3.svs"],
             "Site Type": ["Primary", "Metastatic", "Primary"],
-            "Sex": ["Unknown", "Female", "Male"],
+            "Sex": ["Male", "Female", "Male"],
             "Tissue Site": ["Lung", "Liver", "Unknown"],
             "Cancer Subtype": ["Unknown", "Lung Adenocarcinoma (LUAD)", "Unknown"],
             "IHC Subtype": ["", "", ""],

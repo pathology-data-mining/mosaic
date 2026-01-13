@@ -327,7 +327,7 @@ class TestErrorDisplay:
             {
                 "Slide": ["test1.svs", "test2.svs"],
                 "Site Type": ["InvalidSite", "Primary"],
-                "Sex": ["Unknown", "InvalidSex"],
+                "Sex": ["Male", "InvalidSex"],
                 "Tissue Site": ["Unknown", "Unknown"],
                 "Cancer Subtype": ["InvalidSubtype", "Unknown"],
                 "IHC Subtype": ["", ""],

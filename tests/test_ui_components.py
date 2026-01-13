@@ -37,7 +37,7 @@ class TestSettingsValidation:
             {
                 "Slide": ["test.svs"],
                 "Site Type": ["Primary"],
-                "Sex": ["Unknown"],
+                "Sex": ["Male"],
                 "Tissue Site": ["Unknown"],
                 "Cancer Subtype": ["InvalidSubtype"],
                 "IHC Subtype": [""],
@@ -69,7 +69,7 @@ class TestSettingsValidation:
             {
                 "Slide": ["test.svs"],
                 "Site Type": ["InvalidSite"],
-                "Sex": ["Unknown"],
+                "Sex": ["Male"],
                 "Tissue Site": ["Unknown"],
                 "Cancer Subtype": ["Unknown"],
                 "IHC Subtype": [""],
@@ -114,7 +114,7 @@ class TestAnalysisWorkflow:
             {
                 "Slide": ["test_slide_1.svs"],
                 "Site Type": ["Primary"],
-                "Sex": ["Unknown"],
+                "Sex": ["Male"],
                 "Tissue Site": ["Unknown"],
                 "Cancer Subtype": ["Unknown"],
                 "IHC Subtype": [""],
@@ -194,7 +194,7 @@ class TestAnalysisWorkflow:
             {
                 "Slide": ["test_slide_1.svs", "test_slide_2.svs", "test_slide_3.svs"],
                 "Site Type": ["Primary", "Primary", "Primary"],
-                "Sex": ["Unknown", "Unknown", "Unknown"],
+                "Sex": ["Male", "Female", "Male"],
                 "Tissue Site": ["Unknown", "Unknown", "Unknown"],
                 "Cancer Subtype": ["Unknown", "Unknown", "Unknown"],
                 "IHC Subtype": ["", "", ""],
