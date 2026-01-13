@@ -4,6 +4,15 @@ import sys
 from unittest.mock import MagicMock
 
 
+# Create mock component that tracks visible attribute
+class MockComponent(MagicMock):
+    """Mock Gradio component that tracks visible attribute."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.visible = kwargs.get('visible', True)
+
+
 # Create mock for gradio with Error class
 class GradioMock(MagicMock):
     """Mock for gradio that supports Error and Warning classes."""
@@ -14,6 +23,26 @@ class GradioMock(MagicMock):
     def Warning(msg):
         """Mock Warning that accepts a message."""
         return None
+
+    @staticmethod
+    def DownloadButton(*args, **kwargs):
+        """Mock DownloadButton that tracks visible attribute."""
+        return MockComponent(*args, **kwargs)
+
+    @staticmethod
+    def DataFrame(*args, **kwargs):
+        """Mock DataFrame that tracks visible attribute."""
+        return MockComponent(*args, **kwargs)
+
+    @staticmethod
+    def Label(*args, **kwargs):
+        """Mock Label that tracks visible attribute."""
+        return MockComponent(*args, **kwargs)
+
+    @staticmethod
+    def Textbox(*args, **kwargs):
+        """Mock Textbox that tracks visible attribute."""
+        return MockComponent(*args, **kwargs)
 
     Request = MagicMock
     Progress = MagicMock
