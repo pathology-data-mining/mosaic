@@ -181,9 +181,12 @@ def validate_settings(
                 f"Slide {slide_name}: Unknown site type. Valid types are: Metastatic, Primary. "
             )
             settings_df.at[idx, "Site Type"] = "Primary"
-        if row["Sex"] not in SEX_OPTIONS and row["Sex"] != "" and row["Sex"] is not None:
+        # Only warn about invalid sex values that are not empty/None
+        # Empty/None will be validated at analysis time
+        sex_value = row["Sex"]
+        if sex_value and sex_value not in SEX_OPTIONS:
             warnings.append(
-                f"Slide {slide_name}: Invalid sex value. Valid options are: {', '.join(SEX_OPTIONS)}. "
+                f"Slide {slide_name}: Invalid sex value '{sex_value}'. Valid options are: {', '.join(SEX_OPTIONS)}. "
             )
             settings_df.at[idx, "Sex"] = ""
         if row["Tissue Site"] not in tissue_sites:
