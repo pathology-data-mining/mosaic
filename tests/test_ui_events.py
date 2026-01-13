@@ -158,6 +158,9 @@ class TestGeneratorBehavior:
             temp_output_dir,
         )
 
+        # Skip initial yield (empty state)
+        initial_yield = next(gen)
+
         # Get first intermediate yield (after first slide)
         first_yield = next(gen)
 

@@ -34,7 +34,7 @@ class TestArgumentParsing:
 
     @patch("mosaic.gradio_app.analyze_slide")
     @patch("mosaic.gradio_app.download_and_process_models")
-    @patch("sys.argv", ["mosaic", "--slide-path", "test.svs", "--output-dir", "out"])
+    @patch("sys.argv", ["mosaic", "--slide-path", "test.svs", "--output-dir", "out", "--sex", "Male"])
     def test_slide_path_routes_to_single_mode(self, mock_download, mock_analyze):
         """Test --slide-path routes to single-slide mode."""
         mock_download.return_value = ({"Unknown": "UNK"}, {"UNK": "Unknown"}, [])
