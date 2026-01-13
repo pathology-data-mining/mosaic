@@ -287,14 +287,18 @@ def encode_sex(sex):
     """Convert sex to numeric encoding.
 
     Args:
-        sex: "Male", "Female", or "Unknown" (case insensitive)
+        sex: "Male" or "Female" (required, case insensitive)
 
     Returns:
-        int: 0 for Male, 1 for Female, 2 for Unknown
+        int: 0 for Male, 1 for Female
+
+    Raises:
+        ValueError: If sex is not "Male" or "Female"
     """
     sex_map = get_sex_map()
-    unknown_idx = sex_map.get("Unknown", 2)
-    return sex_map.get(sex, unknown_idx)
+    if sex not in sex_map:
+        raise ValueError(f"Sex must be 'Male' or 'Female', got: {sex}")
+    return sex_map[sex]
 
 
 def encode_tissue_site(site_name):
