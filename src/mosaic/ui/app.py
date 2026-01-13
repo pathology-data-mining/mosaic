@@ -137,6 +137,8 @@ def analyze_slides(
             if slide_mask is not None:
                 all_slide_masks.append((slide_mask, slide_name))
             if aeon_results is not None:
+                # Rename "Confidence" column to slide name for proper concatenation
+                aeon_results = aeon_results.rename(columns={"Confidence": slide_name})
                 all_aeon_results.append(aeon_results)
             if paladin_results is not None:
                 paladin_results.insert(
