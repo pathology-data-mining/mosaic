@@ -21,6 +21,9 @@ from mosaic.gradio_app import download_and_process_models
 from mosaic.ui import launch_gradio
 
 if __name__ == "__main__":
+    # Enable HF transfer for faster downloads on Spaces
+    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+    
     # Install flash-attn for H100 acceleration (if on Spaces)
     if os.environ.get("SPACE_ID"):
         try:

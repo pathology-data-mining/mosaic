@@ -66,6 +66,7 @@ def download_and_process_models():
     # Pre-download Optimus model from bioptimus/H-optimus-0
     # This ensures it's cached at startup since it's needed for every slide
     logger.info("Pre-downloading Optimus model from bioptimus/H-optimus-0...")
+    logger.info("This may take several minutes on first run - downloading ~1GB model...")
     from mussel.models import ModelType, get_model_factory
 
     optimus_factory = get_model_factory(ModelType.OPTIMUS)
@@ -75,7 +76,7 @@ def download_and_process_models():
         use_gpu=False,  # Just download, don't load to GPU yet
         gpu_device_id=None,
     )
-    logger.info("✓ Optimus model cached")
+    logger.info("✓ Optimus model cached successfully")
 
     model_map = pd.read_csv(
         Path(cache_dir) / "paladin_model_map.csv",
