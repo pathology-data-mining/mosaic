@@ -183,8 +183,11 @@ def validate_settings(
             settings_df.at[idx, "Site Type"] = "Primary"
         # Only warn about invalid sex values that are not empty/None
         # Empty/None will be validated at analysis time
+        # Convert old "Unknown" values to empty string silently
         sex_value = row["Sex"]
-        if sex_value and sex_value not in SEX_OPTIONS:
+        if sex_value == "Unknown":
+            settings_df.at[idx, "Sex"] = ""
+        elif sex_value and sex_value not in SEX_OPTIONS:
             warnings.append(
                 f"Slide {slide_name}: Invalid sex value '{sex_value}'. Valid options are: {', '.join(SEX_OPTIONS)}. "
             )

@@ -433,6 +433,9 @@ def launch_gradio(server_name, server_port, share):
             # Convert None to empty string for display (especially for Sex column)
             if new_value is None:
                 new_value = ""
+            # Convert legacy "Unknown" sex values to empty string
+            if column_name == "Sex" and new_value == "Unknown":
+                new_value = ""
             updated_df[column_name] = new_value
             return updated_df
 
