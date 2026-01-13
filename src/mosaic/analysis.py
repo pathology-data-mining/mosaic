@@ -4,57 +4,9 @@ This module provides the main slide analysis pipeline that integrates tissue seg
 feature extraction, and model inference for cancer subtype and biomarker prediction.
 """
 
-# Import spaces first before any CUDA-related imports
-import os
-
-try:
-    import spaces
-
-    HAS_SPACES = True
-    # Check if we're actually running on ZeroGPU
-    # HF Spaces sets SPACES_ZERO_GPU=1 when using ZeroGPU
-    IS_ZEROGPU = os.environ.get("SPACES_ZERO_GPU") == "1"
-except ImportError:
-    HAS_SPACES = False
-    IS_ZEROGPU = False
-
-    # Create a no-op decorator if spaces is not available
-    class spaces:
-        @staticmethod
-        def GPU(fn=None, duration=None):
-            if fn is None:
-                return lambda f: f
-            return fn
-
-
-# Detect T4 hardware by checking actual GPU
-import torch
-
-IS_T4_GPU = False
-GPU_NAME = "Unknown"
-if not IS_ZEROGPU and torch.cuda.is_available():
-    try:
-        GPU_NAME = torch.cuda.get_device_name(0)
-        IS_T4_GPU = "T4" in GPU_NAME
-    except:
-        pass
-
-# Set optimal parameters based on hardware
-if IS_ZEROGPU:
-    DEFAULT_BATCH_SIZE = 128
-    DEFAULT_NUM_WORKERS = 0
-    GPU_TYPE = "ZeroGPU (H100)"
-elif IS_T4_GPU:
-    DEFAULT_BATCH_SIZE = 64
-    DEFAULT_NUM_WORKERS = 4
-    GPU_TYPE = f"T4 ({GPU_NAME})"
-else:
-    DEFAULT_BATCH_SIZE = 64
-    DEFAULT_NUM_WORKERS = 8
-    GPU_TYPE = f"Standard GPU ({GPU_NAME})"
-
 import pickle
 import gc
+import torch
 import pandas as pd
 import gradio as gr
 from pathlib import Path
@@ -66,9 +18,14 @@ from loguru import logger
 from mosaic.inference import run_aeon, run_paladin
 from mosaic.data_directory import get_data_directory
 
-# Log hardware detection at module load
-logger.info(
-    f"Hardware: {GPU_TYPE} | batch_size={DEFAULT_BATCH_SIZE}, num_workers={DEFAULT_NUM_WORKERS}"
+# Import centralized hardware detection
+from mosaic.hardware import (
+    spaces,
+    IS_ZEROGPU,
+    IS_T4_GPU,
+    GPU_TYPE,
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_NUM_WORKERS,
 )
 
 
@@ -441,14 +398,11 @@ def _run_inference_pipeline_impl(
         # Clean up models to free GPU memory
         logger.info("Cleaning up models after single-slide inference")
         model_cache.cleanup()
-        
-        # Extra aggressive cleanup for T4 instances
-        if torch.cuda.is_available():
+
+        # T4-specific: Ensure GPU operations are complete before next request
+        if IS_T4_GPU and torch.cuda.is_available():
             torch.cuda.synchronize()
-            torch.cuda.empty_cache()
-            gc.collect()
-            mem_allocated = torch.cuda.memory_allocated() / (1024**3)
-            logger.info(f"GPU memory after cleanup: {mem_allocated:.2f} GB")
+            logger.info("T4: GPU operations synchronized")
 
 
 # ============================================================================

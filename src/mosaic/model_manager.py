@@ -13,6 +13,7 @@ import torch
 from loguru import logger
 
 from mosaic.data_directory import get_data_directory
+from mosaic.hardware import IS_T4_GPU, GPU_NAME
 from mussel.models import ModelType, get_model_factory
 
 
@@ -129,28 +130,25 @@ def load_all_models(
     logger.info("BATCH PROCESSING: Loading models (this happens ONCE per batch)")
     logger.info("=" * 80)
 
-    # Detect GPU type
+    # Use centralized GPU detection
     device = torch.device("cpu")
-    is_t4_gpu = False
 
     if use_gpu and torch.cuda.is_available():
         device = torch.device("cuda")
-        gpu_name = torch.cuda.get_device_name(0)
-        is_t4_gpu = "T4" in gpu_name
         gpu_memory_total = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-        logger.info(f"GPU detected: {gpu_name}")
+        logger.info(f"GPU detected: {GPU_NAME}")
         logger.info(f"GPU total memory: {gpu_memory_total:.2f} GB")
 
         # Log initial GPU memory
         mem_before = torch.cuda.memory_allocated() / (1024**3)
         logger.info(f"GPU memory before loading models: {mem_before:.2f} GB")
 
-        # Auto-detect memory management strategy
+        # Auto-detect memory management strategy based on centralized hardware detection
         if aggressive_memory_mgmt is None:
-            aggressive_memory_mgmt = is_t4_gpu
-            strategy = "AGGRESSIVE (T4)" if is_t4_gpu else "CACHING (High-Memory GPU)"
+            aggressive_memory_mgmt = IS_T4_GPU
+            strategy = "AGGRESSIVE (T4)" if IS_T4_GPU else "CACHING (High-Memory GPU)"
             logger.info(f"Memory management strategy: {strategy}")
-            if is_t4_gpu:
+            if IS_T4_GPU:
                 logger.info("  → Paladin models will be loaded and freed per slide")
             else:
                 logger.info(
@@ -247,7 +245,7 @@ def load_all_models(
         optimus_model=optimus_model,
         marker_classifier=marker_classifier,
         aeon_model=aeon_model,
-        is_t4_gpu=is_t4_gpu,
+        is_t4_gpu=IS_T4_GPU,
         aggressive_memory_mgmt=aggressive_memory_mgmt,
         device=device,
     )
