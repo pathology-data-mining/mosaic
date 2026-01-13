@@ -30,9 +30,9 @@ htmlcov/
 *~
 
 # Git
-.git/
-.gitignore
-.gitattributes
+#.git/
+#.gitignore
+#.gitattributes
 
 # CI/CD
 .github/
