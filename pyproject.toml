@@ -43,7 +43,7 @@ disable = [
 
 [tool.uv.sources]
 paladin = { git = "ssh://git@github.com/pathology-data-mining/paladin.git", rev = "dev" }
-mussel = { git = "https://github.com/pathology-data-mining/Mussel.git", rev = "mosaic-dev" }
+mussel = { git = "ssh://git@github.com/pathology-data-mining/Mussel.git", rev = "mosaic-dev" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

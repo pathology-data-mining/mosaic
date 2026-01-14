@@ -19,3 +19,7 @@ flagged/
 gradio_cached_examples/
 *.svs
 *.png
+
+# GitHub tokens and secrets
+github_token
+*_token

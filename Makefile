@@ -4,9 +4,9 @@
 .DEFAULT_GOAL := help
 
 # Variables
-DOCKER_IMAGE_NAME := mosaic
+DOCKER_IMAGE_NAME := mskmind/mosaic
 DOCKER_TAG := latest
-DOCKER_REGISTRY := # Set your registry here (e.g., docker.io/username)
+DOCKER_REGISTRY := docker.io
 PYTHON := uv run python
 PYTEST := uv run pytest
 BLACK := uv run black
@@ -83,11 +83,17 @@ run-batch: ## Run batch analysis from CSV (usage: make run-batch CSV=settings.cs
 
 ##@ Docker
 
-docker-build: ## Build Docker image
-	docker build -t $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) .
+docker-build: ## Build Docker image with SSH forwarding
+	@echo "Building Docker image with SSH authentication..."
+	@./build.sh
 
 docker-build-no-cache: ## Build Docker image without cache
-	docker build --no-cache -t $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) .
+	@echo "Building Docker image with SSH authentication (no cache)..."
+	@eval "$$(ssh-agent -s)" && \
+	ssh-add ~/.ssh/id_ed25519 && \
+	export DOCKER_BUILDKIT=1 && \
+	docker build --no-cache --ssh default=$$SSH_AUTH_SOCK -t $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) . && \
+	eval "$$(ssh-agent -k)"
 
 docker-run: ## Run Docker container (web UI mode)
 	docker run -it --rm \
