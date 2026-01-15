@@ -12,8 +12,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# Copy project files
+# Copy project files (including .git for faster HF Spaces dev)
 COPY pyproject.toml README.md ./
+COPY .git/ ./.git/
 COPY src/ ./src/
 COPY data/*.csv data/metadata/ ./data/
 
