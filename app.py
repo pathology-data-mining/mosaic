@@ -23,7 +23,11 @@ from mosaic.ui import launch_gradio
 if __name__ == "__main__":
     # Fix OMP_NUM_THREADS environment variable if invalid
     omp_threads = os.environ.get("OMP_NUM_THREADS", "")
-    if not omp_threads or omp_threads == "0" or (omp_threads.lstrip('-').isdigit() and int(omp_threads) <= 0):
+    try:
+        # Check if value is a valid positive integer
+        if not omp_threads or int(omp_threads) <= 0:
+            raise ValueError("Invalid OMP_NUM_THREADS")
+    except (ValueError, AttributeError):
         # Set to a reasonable default based on CPU count
         import multiprocessing
         num_cpus = multiprocessing.cpu_count()

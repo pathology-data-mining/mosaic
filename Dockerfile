@@ -33,6 +33,8 @@ RUN useradd -m -u 1000 user && \
 USER user
 
 ENV PATH="/app/.venv/bin:$PATH"
+# Set OMP_NUM_THREADS to a safe default to avoid libgomp errors
+ENV OMP_NUM_THREADS=4
 
 EXPOSE 7860
 
