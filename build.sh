@@ -1,15 +1,19 @@
 #!/bin/bash
 set -e
 
-# Start SSH agent and add key
-eval "$(ssh-agent -s)"
-ssh-add ~/.ssh/id_ed25519
+# Load GH_TOKEN from .gh_env file
+if [ -f .gh_env ]; then
+    source .gh_env
+else
+    echo "Error: .gh_env file not found"
+    exit 1
+fi
 
 # Enable BuildKit
 export DOCKER_BUILDKIT=1
 
-# Build with SSH forwarding
-docker build --ssh default=$SSH_AUTH_SOCK -t mskmind/mosaic:latest .
-
-# Kill SSH agent
-eval "$(ssh-agent -k)"
+# Build with secret mount for GH_TOKEN
+docker build \
+    --secret id=GH_TOKEN,env=GH_TOKEN \
+    -t mskmind/mosaic:latest \
+    .

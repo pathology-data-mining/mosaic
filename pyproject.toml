@@ -42,8 +42,11 @@ disable = [
 ]
 
 [tool.uv.sources]
+# For local dev with SSH: uv pip install -e .
+# For Docker builds with token: GH_TOKEN=<token> uv pip install -e .
+# uv will fall back to git credential helper if ${GH_TOKEN} is empty
 paladin = { git = "ssh://git@github.com/pathology-data-mining/paladin.git", rev = "dev" }
-mussel = { git = "ssh://git@github.com/pathology-data-mining/Mussel.git", rev = "mosaic-dev" }
+mussel = { git = "https://github.com/pathology-data-mining/Mussel.git", rev = "mosaic-dev" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

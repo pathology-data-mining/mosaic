@@ -3,10 +3,7 @@ title: Mosaic
 emoji: 🧬
 colorFrom: blue
 colorTo: purple
-sdk: gradio
-sdk_version: 5.49.0
-python_version: 3.11
-app_file: app.py
+sdk: docker
 pinned: false
 license: apache-2.0
 ---

@@ -5,24 +5,25 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     git \
-    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Setup SSH for git (as root)
-RUN mkdir -p /root/.ssh && ssh-keyscan github.com >> /root/.ssh/known_hosts
-
 WORKDIR /app
 
 # Copy project files
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md app.py ./
 COPY src/ ./src/
 
-# Create venv and install with dependencies (as root, before switching users)
-RUN --mount=type=ssh \
+# Create venv and install with dependencies using GH_TOKEN secret
+# Use BuildKit secret mount to securely pass GH_TOKEN
+RUN --mount=type=secret,id=GH_TOKEN \
     uv venv && \
+    if [ -f /run/secrets/GH_TOKEN ]; then \
+        export GH_TOKEN=$(cat /run/secrets/GH_TOKEN) && \
+        git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"; \
+    fi && \
     uv pip install -e .
 
 # Create non-root user for runtime
@@ -33,6 +34,6 @@ USER user
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-EXPOSE 7877
+EXPOSE 7860
 
-ENTRYPOINT ["gradio_app"]
+CMD ["python", "app.py"]
