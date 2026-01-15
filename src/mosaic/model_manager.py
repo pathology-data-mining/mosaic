@@ -292,7 +292,16 @@ def load_paladin_model_for_inference(
         )
         # Extract the relative path from the data directory
         data_dir = get_data_directory()
-        relative_path = model_path.relative_to(data_dir)
+        
+        # Handle both absolute and relative paths by resolving to absolute first
+        try:
+            model_path_abs = model_path.resolve()
+            data_dir_abs = data_dir.resolve()
+            relative_path = model_path_abs.relative_to(data_dir_abs)
+        except ValueError:
+            # If relative_to fails, model_path might already be relative
+            # or might be a string path that needs handling
+            relative_path = model_path
 
         downloaded_path = hf_hub_download(
             repo_id="PDM-Group/paladin-aeon-models",
