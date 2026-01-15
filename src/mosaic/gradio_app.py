@@ -256,12 +256,12 @@ def main():
 
     if not getattr(args, "skip_model_download", False):
         if is_launching_ui:
-            # UI mode: download metadata and core models synchronously, Paladin models in background
+            # UI mode: download only metadata synchronously (fast, local in Docker)
+            # All models download in background to start Gradio immediately
             cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = (
                 download_metadata()
             )
-            download_core_models()
-            # Paladin models will be downloaded in background by launch_gradio()
+            # Core and Paladin models will be downloaded in background by launch_gradio()
         else:
             # CLI mode: download everything synchronously
             cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = (

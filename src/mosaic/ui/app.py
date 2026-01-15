@@ -51,10 +51,10 @@ def set_cancer_subtype_maps(csn_map, rcsn_map, cs):
 
 
 def start_background_model_download():
-    """Start downloading Paladin models in a background thread.
+    """Start downloading all models in a background thread.
 
-    Core models (CTransPath, Optimus, Aeon) are already downloaded synchronously.
-    This downloads the remaining Paladin models asynchronously.
+    Downloads core models (CTransPath, Optimus, Aeon) and Paladin models asynchronously.
+    This allows Gradio to start immediately and satisfy HF Spaces health checks.
     """
     global _model_download_thread, _model_download_complete
 
@@ -64,21 +64,23 @@ def start_background_model_download():
 
     def download_worker():
         try:
-            from mosaic.gradio_app import download_paladin_models
-            logger.info("🔄 Starting background download of Paladin models...")
+            from mosaic.gradio_app import download_core_models, download_paladin_models
+            logger.info("🔄 Starting background download of all models...")
+            download_core_models()
+            logger.info("✅ Core models downloaded")
             download_paladin_models()
             global _model_download_complete
             _model_download_complete = True
-            logger.info("✅ Background Paladin model download complete")
+            logger.info("✅ All model downloads complete")
         except Exception as e:
-            logger.error(f"❌ Error during background Paladin model download: {e}")
+            logger.error(f"❌ Error during background model download: {e}")
             import traceback
             traceback.print_exc()
 
     import threading
     _model_download_thread = threading.Thread(target=download_worker, daemon=True)
     _model_download_thread.start()
-    logger.info("🚀 Paladin model download started in background thread")
+    logger.info("🚀 Model download started in background thread")
 
 
 def analyze_slides(
