@@ -40,6 +40,7 @@ _global_model_cache = None
 # Background download thread for model initialization
 _model_download_thread = None
 _model_download_complete = False
+_core_models_complete = False  # Track core models separately
 
 
 def set_cancer_subtype_maps(csn_map, rcsn_map, cs):
@@ -56,7 +57,7 @@ def start_background_model_download():
     Downloads core models (CTransPath, Optimus, Aeon) and Paladin models asynchronously.
     This allows Gradio to start immediately and satisfy HF Spaces health checks.
     """
-    global _model_download_thread, _model_download_complete
+    global _model_download_thread, _model_download_complete, _core_models_complete
 
     if _model_download_thread is not None:
         logger.info("Background model download already started, skipping")
@@ -68,7 +69,9 @@ def start_background_model_download():
 
             logger.info("🔄 Starting background download of all models...")
             download_core_models()
-            logger.info("✅ Core models downloaded")
+            global _core_models_complete
+            _core_models_complete = True
+            logger.info("✅ Core models downloaded (analysis can proceed)")
             download_paladin_models()
             global _model_download_complete
             _model_download_complete = True
@@ -99,15 +102,17 @@ def analyze_slides(
     progress=gr.Progress(track_tqdm=True),
     request: gr.Request = None,
 ):
-    global _model_download_thread, _model_download_complete
+    global _model_download_thread, _model_download_complete, _core_models_complete
 
-    # Wait for background model download to complete
-    if _model_download_thread is not None and not _model_download_complete:
-        logger.info("Waiting for model download to complete...")
-        progress(0, desc="Waiting for models to download...")
-        _model_download_thread.join()
-        _model_download_complete = True
-        logger.info("Model download complete, proceeding with analysis")
+    # Wait for core models download to complete (Paladin models can continue in background)
+    if _model_download_thread is not None and not _core_models_complete:
+        logger.info("Waiting for core models to download...")
+        progress(0, desc="Waiting for core models to download...")
+        # Poll until core models are ready (instead of joining the entire thread)
+        import time
+        while not _core_models_complete:
+            time.sleep(0.5)
+        logger.info("Core models ready, proceeding with analysis (Paladin models may still be downloading)")
 
     if slides is None or len(slides) == 0:
         raise gr.Error("Please upload at least one slide.")
