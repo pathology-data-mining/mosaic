@@ -38,4 +38,5 @@ ENV OMP_NUM_THREADS=4
 
 EXPOSE 7860
 
-CMD ["python", "app.py"]
+# Use mosaic CLI command which runs gradio_app:main (skips runtime pip install)
+CMD ["mosaic"]
