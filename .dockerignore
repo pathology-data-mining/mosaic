@@ -44,7 +44,10 @@ docs/
 !README.md
 
 # Data and outputs
-data/
+data/*
+# But include metadata files for Docker image
+!data/*.csv
+!data/metadata/
 output/
 *.svs
 *.tiff
