@@ -47,14 +47,16 @@ def download_metadata():
     else:
         # Fall back to downloading from HuggingFace Hub
         logger.info("Downloading metadata from HuggingFace Hub...")
-        cache_dir = Path(snapshot_download(
-            repo_id="PDM-Group/paladin-aeon-models",
-            allow_patterns=[
-                "*.csv",  # Model maps and metadata
-                "tissue_site_*",  # Tissue site mappings
-                "metadata/*",  # Metadata files (including target_dict.tsv)
-            ],
-        ))
+        cache_dir = Path(
+            snapshot_download(
+                repo_id="PDM-Group/paladin-aeon-models",
+                allow_patterns=[
+                    "*.csv",  # Model maps and metadata
+                    "tissue_site_*",  # Tissue site mappings
+                    "metadata/*",  # Metadata files (including target_dict.tsv)
+                ],
+            )
+        )
         logger.info(f"Metadata downloaded to: {cache_dir}")
 
     # Set the data directory for other modules to use
@@ -258,15 +260,19 @@ def main():
         if is_launching_ui:
             # UI mode: download only metadata synchronously (fast, local in Docker)
             # All models download in background to start Gradio immediately
-            cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = (
-                download_metadata()
-            )
+            (
+                cancer_subtype_name_map,
+                reversed_cancer_subtype_name_map,
+                cancer_subtypes,
+            ) = download_metadata()
             # Core and Paladin models will be downloaded in background by launch_gradio()
         else:
             # CLI mode: download everything synchronously
-            cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = (
-                download_and_process_models()
-            )
+            (
+                cancer_subtype_name_map,
+                reversed_cancer_subtype_name_map,
+                cancer_subtypes,
+            ) = download_and_process_models()
     else:
         logger.info("Skipping model download, using cached models...")
         # Load cancer subtype mappings from cached data
@@ -295,7 +301,9 @@ def main():
         if not args.output_dir:
             raise ValueError("Please provide --output-dir to save results")
         if not args.sex:
-            raise ValueError("Please provide --sex (Male or Female) for single slide processing")
+            raise ValueError(
+                "Please provide --sex (Male or Female) for single slide processing"
+            )
         settings_df = pd.DataFrame(
             [
                 [

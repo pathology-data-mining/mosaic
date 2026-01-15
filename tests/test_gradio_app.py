@@ -81,7 +81,9 @@ class TestLoadSettings:
     def temp_settings_csv(self):
         """Create a temporary settings CSV file with all columns."""
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
-            f.write("Slide,Site Type,Sex,Cancer Subtype,IHC Subtype,Segmentation Config\n")
+            f.write(
+                "Slide,Site Type,Sex,Cancer Subtype,IHC Subtype,Segmentation Config\n"
+            )
             f.write("slide1.svs,Primary,Male,Unknown,,Biopsy\n")
             f.write("slide2.svs,Metastatic,Female,Unknown,,Resection\n")
             temp_path = f.name

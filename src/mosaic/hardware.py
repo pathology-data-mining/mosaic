@@ -50,7 +50,9 @@ if IS_ZEROGPU:
 elif IS_T4_GPU:
     DEFAULT_BATCH_SIZE = 64
     DEFAULT_NUM_WORKERS = 4
-    DEFAULT_CONCURRENCY_LIMIT = 1  # T4 can only handle one analysis at a time (16GB memory)
+    DEFAULT_CONCURRENCY_LIMIT = (
+        1  # T4 can only handle one analysis at a time (16GB memory)
+    )
     GPU_TYPE = f"T4 ({GPU_NAME})"
 else:
     DEFAULT_BATCH_SIZE = 64

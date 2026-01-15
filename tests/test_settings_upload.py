@@ -20,12 +20,14 @@ class TestReadSettingsHandler:
 
     def test_read_settings_with_none_returns_none(self):
         """Test read_settings handler logic returns None when file is None."""
+
         # Test the handler logic directly
         # Simulate the read_settings function from app.py
         def read_settings(file):
             if file is None:
                 return None
             from mosaic.ui.utils import load_settings
+
             df = load_settings(file.name if hasattr(file, "name") else file)
             return df  # In actual app, returns gr.Dataframe(df, visible=True)
 
@@ -135,7 +137,9 @@ class TestCsvFormatEdgeCases:
 
         try:
             # Empty CSV should raise an error
-            with pytest.raises(Exception):  # Could be pd.errors.EmptyDataError or ValueError
+            with pytest.raises(
+                Exception
+            ):  # Could be pd.errors.EmptyDataError or ValueError
                 load_settings(temp_path)
         finally:
             Path(temp_path).unlink(missing_ok=True)
@@ -230,7 +234,9 @@ class TestCsvFormatEdgeCases:
         from mosaic.ui.utils import load_settings
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
-            f.write("Slide,Site Type,Sex,Cancer Subtype,IHC Subtype,Segmentation Config\n")
+            f.write(
+                "Slide,Site Type,Sex,Cancer Subtype,IHC Subtype,Segmentation Config\n"
+            )
             # Empty values for optional columns
             f.write("slide1.svs,Primary,Male,Unknown,,\n")
             f.flush()
@@ -339,7 +345,9 @@ class TestEncodingEdgeCases:
         """Test loading UTF-8 encoded CSV (should work)."""
         from mosaic.ui.utils import load_settings
 
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".csv", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", suffix=".csv", delete=False
+        ) as f:
             f.write("Slide,Site Type,Sex,Cancer Subtype\n")
             f.write("slide1.svs,Primary,Male,Unknown\n")
             f.flush()
@@ -356,7 +364,9 @@ class TestEncodingEdgeCases:
         """Test CSV with Unicode characters in values."""
         from mosaic.ui.utils import load_settings
 
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".csv", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", suffix=".csv", delete=False
+        ) as f:
             f.write("Slide,Site Type,Sex,Cancer Subtype\n")
             # Unicode characters in slide name
             f.write("slide_café_™_测试.svs,Primary,Unknown\n")
@@ -451,7 +461,7 @@ class TestErrorRecoveryScenarios:
         from mosaic.ui.utils import load_settings
         import os
 
-        if os.name == 'nt':
+        if os.name == "nt":
             # Skip on Windows due to different permission model
             pytest.skip("Permission test not applicable on Windows")
 
@@ -491,7 +501,9 @@ class TestValidationWithUpload:
         """Test that uploaded CSV is automatically validated."""
         from mosaic.ui.utils import load_settings, validate_settings
 
-        cancer_subtype_name_map, reversed_map, cancer_subtypes = mock_cancer_subtype_maps
+        cancer_subtype_name_map, reversed_map, cancer_subtypes = (
+            mock_cancer_subtype_maps
+        )
 
         # Create CSV with invalid values
         with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
@@ -518,7 +530,9 @@ class TestValidationWithUpload:
         """Test CSV with mix of valid and invalid rows."""
         from mosaic.ui.utils import load_settings, validate_settings
 
-        cancer_subtype_name_map, reversed_map, cancer_subtypes = mock_cancer_subtype_maps
+        cancer_subtype_name_map, reversed_map, cancer_subtypes = (
+            mock_cancer_subtype_maps
+        )
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
             f.write("Slide,Site Type,Sex,Cancer Subtype\n")
