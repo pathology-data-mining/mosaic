@@ -15,6 +15,7 @@ WORKDIR /app
 # Copy project files
 COPY pyproject.toml README.md app.py ./
 COPY src/ ./src/
+COPY data/*.csv data/metadata/ ./data/
 
 # Create venv and install with dependencies using GH_TOKEN secret
 # Use BuildKit secret mount to securely pass GH_TOKEN

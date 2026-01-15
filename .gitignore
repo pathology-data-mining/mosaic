@@ -11,7 +11,10 @@ tmp*
 *.swp
 .idea/
 .vscode/
-data/
+data/*
+# But include metadata files
+!data/*.csv
+!data/metadata/
 .pytest_cache/
 .coverage
 htmlcov/

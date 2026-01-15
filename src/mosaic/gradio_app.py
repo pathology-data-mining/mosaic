@@ -29,26 +29,36 @@ from mosaic.model_manager import load_all_models
 
 
 def download_metadata():
-    """Download only metadata files (CSV, tissue site mappings).
+    """Load metadata files from local data/ directory or download from HuggingFace.
 
-    Fast synchronous download of small files needed for UI initialization.
+    Fast loading of small files needed for UI initialization.
+    Prioritizes local files in data/ directory (bundled with Docker image).
 
     Returns:
         tuple: (cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes)
     """
-    logger.info("Downloading metadata from HuggingFace Hub...")
-    cache_dir = snapshot_download(
-        repo_id="PDM-Group/paladin-aeon-models",
-        allow_patterns=[
-            "*.csv",  # Model maps and metadata
-            "tissue_site_*",  # Tissue site mappings
-            "metadata/*",  # Metadata files (including target_dict.tsv)
-        ],
-    )
-    logger.info(f"Metadata downloaded to: {cache_dir}")
+    # Check if metadata exists in local data/ directory (Docker deployment)
+    local_data_dir = Path(__file__).parent.parent.parent / "data"
+    local_model_map = local_data_dir / "paladin_model_map.csv"
+
+    if local_model_map.exists():
+        logger.info(f"Using local metadata from: {local_data_dir}")
+        cache_dir = local_data_dir
+    else:
+        # Fall back to downloading from HuggingFace Hub
+        logger.info("Downloading metadata from HuggingFace Hub...")
+        cache_dir = Path(snapshot_download(
+            repo_id="PDM-Group/paladin-aeon-models",
+            allow_patterns=[
+                "*.csv",  # Model maps and metadata
+                "tissue_site_*",  # Tissue site mappings
+                "metadata/*",  # Metadata files (including target_dict.tsv)
+            ],
+        ))
+        logger.info(f"Metadata downloaded to: {cache_dir}")
 
     # Set the data directory for other modules to use
-    set_data_directory(cache_dir)
+    set_data_directory(str(cache_dir))
 
     model_map = pd.read_csv(Path(cache_dir) / "paladin_model_map.csv")
     cancer_subtypes = model_map["cancer_subtype"].unique().tolist()
