@@ -1803,7 +1803,7 @@ requires-dist = [
     { name = "lightning", specifier = ">=2.6.0" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "memory-profiler", specifier = ">=0.61.0" },
-    { name = "mussel", extras = ["torch-gpu"], git = "ssh://git@github.com/pathology-data-mining/Mussel.git?rev=mosaic-dev" },
+    { name = "mussel", extras = ["torch-gpu"], git = "https://github.com/pathology-data-mining/Mussel.git?rev=mosaic-dev" },
     { name = "paladin", git = "ssh://git@github.com/pathology-data-mining/paladin.git?rev=dev" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "spaces", specifier = ">=0.30.0" },
@@ -1879,7 +1879,7 @@ wheels = [
 [[package]]
 name = "mussel"
 version = "1.1.1"
-source = { git = "ssh://git@github.com/pathology-data-mining/Mussel.git?rev=mosaic-dev#c848d4dc07845198cff79e9ddc0b261976846095" }
+source = { git = "https://github.com/pathology-data-mining/Mussel.git?rev=mosaic-dev#c848d4dc07845198cff79e9ddc0b261976846095" }
 dependencies = [
     { name = "configargparse" },
     { name = "einops" },
