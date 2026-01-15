@@ -37,6 +37,10 @@ cancer_subtypes = []
 # Global model cache for T4 (to persist models across sequential requests)
 _global_model_cache = None
 
+# Background download thread for model initialization
+_model_download_thread = None
+_model_download_complete = False
+
 
 def set_cancer_subtype_maps(csn_map, rcsn_map, cs):
     """Set the global cancer subtype maps."""
@@ -44,6 +48,31 @@ def set_cancer_subtype_maps(csn_map, rcsn_map, cs):
     cancer_subtype_name_map = csn_map
     reversed_cancer_subtype_name_map = rcsn_map
     cancer_subtypes = cs
+
+
+def start_background_model_download():
+    """Start downloading Paladin models in a background thread.
+
+    Core models (CTransPath, Optimus, Aeon) are already downloaded synchronously.
+    This downloads the remaining Paladin models asynchronously.
+    """
+    global _model_download_thread, _model_download_complete
+
+    def download_worker():
+        try:
+            from mosaic.gradio_app import download_paladin_models
+            logger.info("Starting background download of Paladin models...")
+            download_paladin_models()
+            logger.info("Background Paladin model download complete")
+        except Exception as e:
+            logger.error(f"Error during background Paladin model download: {e}")
+            raise
+
+    if _model_download_thread is None:
+        import threading
+        _model_download_thread = threading.Thread(target=download_worker, daemon=True)
+        _model_download_thread.start()
+        logger.info("Paladin model download started in background thread")
 
 
 def analyze_slides(
@@ -59,6 +88,16 @@ def analyze_slides(
     progress=gr.Progress(track_tqdm=True),
     request: gr.Request = None,
 ):
+    global _model_download_thread, _model_download_complete
+
+    # Wait for background model download to complete
+    if _model_download_thread is not None and not _model_download_complete:
+        logger.info("Waiting for model download to complete...")
+        progress(0, desc="Waiting for models to download...")
+        _model_download_thread.join()
+        _model_download_complete = True
+        logger.info("Model download complete, proceeding with analysis")
+
     if slides is None or len(slides) == 0:
         raise gr.Error("Please upload at least one slide.")
     if user_dir is None:
@@ -321,6 +360,9 @@ def analyze_slides(
 
 
 def launch_gradio(server_name, server_port, share):
+    # Start downloading models in background
+    start_background_model_download()
+
     with gr.Blocks(title="Mosaic") as demo:
         user_dir_state = gr.State(None)
         gr.Markdown(

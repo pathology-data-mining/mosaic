@@ -28,59 +28,29 @@ from mosaic.analysis import analyze_slide
 from mosaic.model_manager import load_all_models
 
 
-def download_and_process_models():
-    """Download essential models from HuggingFace and initialize cancer subtype mappings.
+def download_metadata():
+    """Download only metadata files (CSV, tissue site mappings).
 
-    Downloads only the core models (CTransPath, Optimus, Aeon, marker classifier) and
-    metadata files from the PDM-Group HuggingFace repository. Paladin models are
-    downloaded on-demand when needed for inference.
+    Fast synchronous download of small files needed for UI initialization.
 
     Returns:
         tuple: (cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes)
-            - cancer_subtype_name_map: Dict mapping display names to OncoTree codes
-            - reversed_cancer_subtype_name_map: Dict mapping OncoTree codes to display names
-            - cancer_subtypes: List of all supported cancer subtype codes
     """
-    # Download only essential files to HF cache directory
-    # Paladin models will be downloaded on-demand
-    logger.info(
-        "Downloading essential models from HuggingFace Hub (Paladin models loaded on-demand)..."
-    )
+    logger.info("Downloading metadata from HuggingFace Hub...")
     cache_dir = snapshot_download(
         repo_id="PDM-Group/paladin-aeon-models",
         allow_patterns=[
             "*.csv",  # Model maps and metadata
-            "ctranspath.pth",  # CTransPath model
-            "aeon_model.pkl",  # Aeon model
-            "marker_classifier.pkl",  # Marker classifier
             "tissue_site_*",  # Tissue site mappings
             "metadata/*",  # Metadata files (including target_dict.tsv)
         ],
-        # No local_dir - use HF cache
     )
-    logger.info(f"Essential models downloaded to: {cache_dir}")
+    logger.info(f"Metadata downloaded to: {cache_dir}")
 
     # Set the data directory for other modules to use
     set_data_directory(cache_dir)
 
-    # Pre-download Optimus model from bioptimus/H-optimus-0
-    # This ensures it's cached at startup since it's needed for every slide
-    logger.info("Pre-downloading Optimus model from bioptimus/H-optimus-0...")
-    logger.info("This may take several minutes on first run - downloading ~1GB model...")
-    from mussel.models import ModelType, get_model_factory
-
-    optimus_factory = get_model_factory(ModelType.OPTIMUS)
-    # This will trigger the download and cache the model
-    _ = optimus_factory.get_model(
-        model_path="hf-hub:bioptimus/H-optimus-0",
-        use_gpu=False,  # Just download, don't load to GPU yet
-        gpu_device_id=None,
-    )
-    logger.info("✓ Optimus model cached successfully")
-
-    model_map = pd.read_csv(
-        Path(cache_dir) / "paladin_model_map.csv",
-    )
+    model_map = pd.read_csv(Path(cache_dir) / "paladin_model_map.csv")
     cancer_subtypes = model_map["cancer_subtype"].unique().tolist()
     cancer_subtype_name_map = {"Unknown": "UNK"}
     cancer_subtype_name_map.update(
@@ -96,6 +66,65 @@ def download_and_process_models():
     )
 
     return cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes
+
+
+def download_core_models():
+    """Download core models: CTransPath, Optimus, Aeon, marker classifier.
+
+    Priority models needed for basic analysis pipeline.
+    """
+    logger.info("Downloading core models (CTransPath, Optimus, Aeon)...")
+
+    # Download CTransPath, Aeon, marker classifier
+    snapshot_download(
+        repo_id="PDM-Group/paladin-aeon-models",
+        allow_patterns=[
+            "ctranspath.pth",
+            "aeon_model.pkl",
+            "marker_classifier.pkl",
+        ],
+    )
+
+    # Download Optimus model
+    logger.info("Downloading Optimus model (~1GB)...")
+    from mussel.models import ModelType, get_model_factory
+
+    optimus_factory = get_model_factory(ModelType.OPTIMUS)
+    _ = optimus_factory.get_model(
+        model_path="hf-hub:bioptimus/H-optimus-0",
+        use_gpu=False,
+        gpu_device_id=None,
+    )
+    logger.info("✓ Core models downloaded successfully")
+
+
+def download_paladin_models():
+    """Download all Paladin models.
+
+    Lower priority models downloaded after core models.
+    """
+    logger.info("Downloading all Paladin models...")
+    snapshot_download(
+        repo_id="PDM-Group/paladin-aeon-models",
+        allow_patterns=[
+            "*.pkl",  # All Paladin model files
+        ],
+    )
+    logger.info("✓ Paladin models downloaded successfully")
+
+
+def download_and_process_models():
+    """Download all models and initialize cancer subtype mappings.
+
+    Downloads metadata, core models, and Paladin models synchronously.
+
+    Returns:
+        tuple: (cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes)
+    """
+    result = download_metadata()
+    download_core_models()
+    download_paladin_models()
+    return result
 
 
 def main():
@@ -201,10 +230,22 @@ def main():
         logger.info("✓ Model download complete. Exiting.")
         return
 
+    # Determine if we're launching the UI or doing CLI processing
+    is_launching_ui = not args.slide_path and not args.slide_csv
+
     if not getattr(args, "skip_model_download", False):
-        cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = (
-            download_and_process_models()
-        )
+        if is_launching_ui:
+            # UI mode: download metadata and core models synchronously, Paladin models in background
+            cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = (
+                download_metadata()
+            )
+            download_core_models()
+            # Paladin models will be downloaded in background by launch_gradio()
+        else:
+            # CLI mode: download everything synchronously
+            cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes = (
+                download_and_process_models()
+            )
     else:
         logger.info("Skipping model download, using cached models...")
         # Load cancer subtype mappings from cached data
