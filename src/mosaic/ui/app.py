@@ -58,21 +58,27 @@ def start_background_model_download():
     """
     global _model_download_thread, _model_download_complete
 
+    if _model_download_thread is not None:
+        logger.info("Background model download already started, skipping")
+        return
+
     def download_worker():
         try:
             from mosaic.gradio_app import download_paladin_models
-            logger.info("Starting background download of Paladin models...")
+            logger.info("🔄 Starting background download of Paladin models...")
             download_paladin_models()
-            logger.info("Background Paladin model download complete")
+            global _model_download_complete
+            _model_download_complete = True
+            logger.info("✅ Background Paladin model download complete")
         except Exception as e:
-            logger.error(f"Error during background Paladin model download: {e}")
-            raise
+            logger.error(f"❌ Error during background Paladin model download: {e}")
+            import traceback
+            traceback.print_exc()
 
-    if _model_download_thread is None:
-        import threading
-        _model_download_thread = threading.Thread(target=download_worker, daemon=True)
-        _model_download_thread.start()
-        logger.info("Paladin model download started in background thread")
+    import threading
+    _model_download_thread = threading.Thread(target=download_worker, daemon=True)
+    _model_download_thread.start()
+    logger.info("🚀 Paladin model download started in background thread")
 
 
 def analyze_slides(

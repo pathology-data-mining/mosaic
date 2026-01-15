@@ -103,14 +103,14 @@ def download_paladin_models():
 
     Lower priority models downloaded after core models.
     """
-    logger.info("Downloading all Paladin models...")
-    snapshot_download(
+    logger.info("📦 Downloading all Paladin models...")
+    cache_dir = snapshot_download(
         repo_id="PDM-Group/paladin-aeon-models",
         allow_patterns=[
             "*.pkl",  # All Paladin model files
         ],
     )
-    logger.info("✓ Paladin models downloaded successfully")
+    logger.info(f"✅ Paladin models downloaded successfully to: {cache_dir}")
 
 
 def download_and_process_models():
