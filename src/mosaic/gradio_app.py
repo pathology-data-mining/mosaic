@@ -112,12 +112,13 @@ def download_paladin_models():
     """Download all Paladin models.
 
     Lower priority models downloaded after core models.
+    Excludes optimus.pkl since we download Optimus from bioptimus/H-optimus-0 instead.
     """
     logger.info("📦 Downloading all Paladin models...")
     cache_dir = snapshot_download(
         repo_id="PDM-Group/paladin-aeon-models",
         allow_patterns=[
-            "*.pkl",  # All Paladin model files
+            "paladin/*.pkl",  # All Paladin model files in paladin/ subdirectory
         ],
     )
     logger.info(f"✅ Paladin models downloaded successfully to: {cache_dir}")
