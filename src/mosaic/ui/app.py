@@ -41,6 +41,7 @@ _global_model_cache = None
 _model_download_thread = None
 _model_download_complete = False
 _core_models_complete = False  # Track core models separately
+_shutdown_requested = False  # Flag to signal graceful shutdown
 
 
 def set_cancer_subtype_maps(csn_map, rcsn_map, cs):
@@ -64,22 +65,40 @@ def start_background_model_download():
         return
 
     def download_worker():
+        global _core_models_complete, _model_download_complete, _shutdown_requested
         try:
             from mosaic.gradio_app import download_core_models, download_paladin_models
 
             logger.info("🔄 Starting background download of all models...")
+
+            # Check for shutdown before starting
+            if _shutdown_requested:
+                logger.info("Shutdown requested, aborting model download")
+                return
+
             download_core_models()
-            global _core_models_complete
             _core_models_complete = True
             logger.info("✅ Core models downloaded (analysis can proceed)")
+
+            # Check for shutdown before Paladin download
+            if _shutdown_requested:
+                logger.info("Shutdown requested, skipping Paladin model download")
+                return
+
             download_paladin_models()
-            global _model_download_complete
             _model_download_complete = True
             logger.info("✅ All model downloads complete")
+        except RuntimeError as e:
+            if "interpreter shutdown" in str(e) or "cannot schedule new futures" in str(e):
+                logger.info("Interpreter shutting down, stopping model download gracefully")
+                _core_models_complete = True  # Mark as complete to avoid blocking
+            else:
+                logger.error(f"❌ Error during background model download: {e}")
+                import traceback
+                traceback.print_exc()
         except Exception as e:
             logger.error(f"❌ Error during background model download: {e}")
             import traceback
-
             traceback.print_exc()
 
     import threading
@@ -415,57 +434,200 @@ def launch_gradio(server_name, server_port, share):
         gr.Markdown(
             "Upload an H&E whole slide image in SVS or TIFF format. The slide will be processed to infer cancer subtype and relevant biomarkers."
         )
+
+        # Comprehensive documentation section
+        with gr.Accordion("📖 Documentation & Help", open=False):
+            gr.Markdown("""
+## Quick Start Guide
+
+**Single Slide Analysis:**
+1. Upload an H&E whole slide image (.svs, .tiff, or .tif)
+2. Configure settings:
+   - **Sex**: Required - Patient biological sex (affects analysis)
+   - **Site Type**: Primary tumor or metastatic site
+   - **Tissue Site**: Anatomical location (if known)
+   - **Cancer Subtype**: Leave as "Unknown" for automatic inference
+   - **Segmentation Config**: Choose based on slide type
+     - **Biopsy**: For small tissue samples
+     - **Resection**: For surgical specimens
+     - **TCGA**: For TCGA-compatible slides
+3. Click "Analyze" and wait for results
+
+**Batch Processing:**
+- Upload multiple slides at once to process them sequentially
+- Use "Settings CSV Upload" for batch configuration with a CSV file
+
+---
+
+## Input Requirements
+
+**Supported Formats:**
+- SVS (Aperio ScanScope Virtual Slide)
+- TIFF/TIF (Multi-resolution pyramid TIFF)
+
+**File Requirements:**
+- H&E stained whole slide images
+- Standard microscopy scanning resolution
+- Compatible with OpenSlide library
+
+**Configuration Fields:**
+- **Sex** (Required): Male/Female - Used for sex-specific cancer analysis
+- **Site Type**: Primary vs Metastatic - Affects biomarker interpretation
+- **Tissue Site**: 60+ anatomical sites supported (see dropdown)
+- **Cancer Subtype**: Use "Unknown" for automatic inference via Aeon model
+
+---
+
+## Understanding Your Results
+
+**Slide Masks:**
+Visual representation of tissue segmentation showing analyzed regions
+
+**Cancer Subtype Predictions:**
+- Uses **Aeon foundation model** for cancer type classification
+- Confidence scores range 0-1 (higher = more confident)
+- Displays top predicted subtypes with OncoTree codes
+
+**Biomarker Predictions:**
+- Uses **Paladin model** for biomarker inference
+- Biomarkers are cancer-subtype specific
+- Scores indicate predicted expression/mutation status
+
+**OncoTree Codes:**
+Standardized cancer classification system (e.g., LUAD = Lung Adenocarcinoma, BRCA = Breast Invasive Carcinoma). Learn more at [oncotree.mskcc.org](https://oncotree.mskcc.org/)
+
+---
+
+## Processing Information
+
+**Expected Processing Time:**
+- Single slide: 5-15 minutes (depending on slide size)
+- Multiple slides: Processed sequentially
+- Results appear progressively as each slide completes
+
+**Hardware:**
+- Running on GPU-accelerated infrastructure
+- Models: CTransPath, Optimus, Aeon (subtype), Paladin (biomarker)
+- Background model loading may occur on first use
+
+---
+
+## CSV Batch Upload Format
+
+Upload a CSV file with these columns:
+```
+Slide,Site Type,Sex,Tissue Site,Cancer Subtype,Segmentation Config
+slide1.svs,Primary,Female,Breast,Unknown,Resection
+slide2.tif,Metastatic,Male,Lung,LUAD,Biopsy
+```
+
+**Tips:**
+- Slide names must match uploaded filenames
+- Use "Unknown" for automatic cancer subtype inference
+- All rows must have Sex specified (Male or Female)
+
+---
+
+## Important Limitations
+
+**Research Use Only:**
+This tool is for research purposes only and not approved for clinical diagnosis.
+
+**Model Limitations:**
+- Predictions are probabilistic and may contain errors
+- Performance varies by tissue type and slide quality
+- Best results with standard H&E staining protocols
+- Not validated for all rare cancer subtypes
+
+**Quality Requirements:**
+- Slides should have clear H&E staining
+- Adequate tissue present (not mostly blank)
+- Standard microscopy resolution
+
+---
+
+## Models & Technical Details
+
+**Models Used:**
+- **[CTransPath](https://github.com/Xiyue-Wang/TransPath)**: Used for filtering marker tiles (not the main analysis model)
+- **[Optimus-0](https://huggingface.co/bioptimus/H-optimus-0)**: Vision-language foundation model (main feature extraction)
+- **Aeon**: Cancer subtype classification
+- **Paladin**: Biomarker prediction
+
+**Learn More:**
+- [Mosaic GitHub Repository](https://github.com/pathology-data-mining/mosaic)
+
+---
+
+## Troubleshooting
+
+**Common Issues:**
+- **"Sex is required"**: Select Male or Female before analyzing
+- **Slow processing**: Large slides take longer; be patient
+- **Upload failed**: Check file format (.svs, .tiff, .tif only)
+- **No results**: Ensure slide contains sufficient tissue
+            """)
+
         with gr.Row():
             with gr.Column():
                 input_slides = gr.File(
-                    label="Upload H&E Whole Slide Image",
+                    label="Upload H&E Whole Slide Image (SVS or TIFF format)",
                     file_types=[".svs", ".tiff", ".tif"],
-                    file_count="multiple",
+                    file_count="multiple"
                 )
                 site_dropdown = gr.Dropdown(
                     choices=["Primary", "Metastatic"],
                     label="Site Type",
                     value="Primary",
+                    info="Primary tumor or metastatic site - affects biomarker interpretation"
                 )
                 sex_dropdown = gr.Dropdown(
                     choices=SEX_OPTIONS,
                     label="Sex",
                     value=None,
+                    info="Required - Patient biological sex (used for sex-specific cancer analysis)"
                 )
                 tissue_site_dropdown = gr.Dropdown(
                     choices=get_tissue_sites(),
                     label="Tissue Site",
                     value="Unknown",
+                    info="Anatomical location of the tissue sample (if known)"
                 )
                 cancer_subtype_dropdown = gr.Dropdown(
                     choices=[name for name in cancer_subtype_name_map.keys()],
                     label="Cancer Subtype",
                     value="Unknown",
+                    info="Leave as 'Unknown' for automatic inference using the Aeon model"
                 )
-                ihc_subtype_dropdown = gr.Dropdown(
-                    choices=IHC_SUBTYPES,
-                    label="IHC Subtype (if applicable)",
-                    value="",
-                    visible=False,
-                )
+                # TODO: Enable IHC subtype dropdown in future work
+                # ihc_subtype_dropdown = gr.Dropdown(
+                #     choices=IHC_SUBTYPES,
+                #     label="IHC Subtype (if applicable)",
+                #     value="",
+                #     visible=False,
+                # )
+                ihc_subtype_dropdown = gr.State("")  # Placeholder state for now
                 seg_config_dropdown = gr.Dropdown(
                     choices=["Biopsy", "Resection", "TCGA"],
                     label="Segmentation Config",
                     value="Biopsy",
+                    info="Biopsy: small samples | Resection: surgical specimens | TCGA: TCGA-compatible slides"
                 )
                 with gr.Row():
                     settings_input = gr.Dataframe(
                         headers=SETTINGS_COLUMNS,
-                        label="Current Settings",
+                        label="Current Settings (editable for multiple slides)",
                         datatype=["str"] * len(SETTINGS_COLUMNS),
                         visible=False,
                         interactive=True,
-                        static_columns="Slide",
+                        static_columns="Slide"
                     )
 
                 with gr.Row():
                     settings_csv = gr.File(
-                        file_types=[".csv"], label="Upload Settings CSV", visible=False
+                        file_types=[".csv"],
+                        label="Upload Settings CSV (columns: Slide, Site Type, Sex, Tissue Site, Cancer Subtype, Segmentation Config)",
+                        visible=False
                     )
 
                 with gr.Row():
@@ -473,16 +635,16 @@ def launch_gradio(server_name, server_port, share):
                     analyze_button = gr.Button("Analyze", variant="primary")
             with gr.Column():
                 slide_masks = gr.Gallery(
-                    label="Slide Masks",
+                    label="Slide Masks (tissue segmentation)",
                     columns=3,
                     object_fit="contain",
-                    height="auto",
+                    height="auto"
                 )
                 aeon_output_table = gr.Dataframe(
                     headers=["Cancer Subtype", "Slide Name"],
-                    label="Cancer Subtype Inference Confidence",
+                    label="Cancer Subtype Inference Confidence (Aeon model, scores 0-1)",
                     datatype=["str", "number"],
-                    visible=False,
+                    visible=False
                 )
                 aeon_download_button = gr.DownloadButton(
                     "Download Aeon Results as CSV",
@@ -491,8 +653,8 @@ def launch_gradio(server_name, server_port, share):
                 )
                 paladin_output_table = gr.Dataframe(
                     headers=["Slide", "Cancer Subtype", "Biomarker", "Score"],
-                    label="Biomarker Inference",
-                    datatype=["str", "str", "str", "number"],
+                    label="Biomarker Inference (Paladin model)",
+                    datatype=["str", "str", "str", "number"]
                 )
                 paladin_download_button = gr.DownloadButton(
                     "Download Paladin Results as CSV",
@@ -556,9 +718,9 @@ def launch_gradio(server_name, server_port, share):
             files, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config
         ):
             """Handle file upload - regenerate settings table from scratch."""
-            has_ihc = "Breast" in cancer_subtype
+            # has_ihc = "Breast" in cancer_subtype  # TODO: Enable when IHC dropdown is active
             if not files:
-                return None, None, gr.Dropdown(visible=has_ihc)
+                return None, None, ""  # Return empty string for State component
             settings_df = get_settings(
                 files,
                 site_type,
@@ -568,13 +730,13 @@ def launch_gradio(server_name, server_port, share):
                 ihc_subtype,
                 seg_config,
             )
-            if settings_df is not None:
-                has_ihc = any("Breast" in cs for cs in settings_df["Cancer Subtype"])
+            # if settings_df is not None:
+            #     has_ihc = any("Breast" in cs for cs in settings_df["Cancer Subtype"])
             visible = files and len(files) > 1
             return (
                 gr.Dataframe(value=settings_df, visible=visible),
                 gr.File(visible=visible),
-                gr.Dropdown(visible=has_ihc),
+                "",  # Return empty string for State component
             )
 
         # Handle individual dropdown changes - only update the relevant column
@@ -617,24 +779,25 @@ def launch_gradio(server_name, server_port, share):
         )
         def update_cancer_subtype(settings_df, cancer_subtype):
             """Update Cancer Subtype column when dropdown changes."""
-            has_ihc = "Breast" in cancer_subtype
+            # has_ihc = "Breast" in cancer_subtype  # TODO: Enable when IHC dropdown is active
             if settings_df is None or len(settings_df) == 0:
-                return settings_df, gr.Dropdown(visible=has_ihc)
+                return settings_df, ""  # Return empty string for State component
             updated_df = update_settings_column(
                 settings_df, "Cancer Subtype", cancer_subtype
             )
-            return gr.Dataframe(value=updated_df), gr.Dropdown(visible=has_ihc)
+            return gr.Dataframe(value=updated_df), ""  # Return empty string for State component
 
-        @ihc_subtype_dropdown.change(
-            inputs=[settings_input, ihc_subtype_dropdown],
-            outputs=[settings_input],
-        )
-        def update_ihc_subtype(settings_df, ihc_subtype):
-            """Update IHC Subtype column when dropdown changes."""
-            if settings_df is None or len(settings_df) == 0:
-                return settings_df
-            updated_df = update_settings_column(settings_df, "IHC Subtype", ihc_subtype)
-            return gr.Dataframe(value=updated_df)
+        # TODO: Enable IHC subtype change handler in future work
+        # @ihc_subtype_dropdown.change(
+        #     inputs=[settings_input, ihc_subtype_dropdown],
+        #     outputs=[settings_input],
+        # )
+        # def update_ihc_subtype(settings_df, ihc_subtype):
+        #     """Update IHC Subtype column when dropdown changes."""
+        #     if settings_df is None or len(settings_df) == 0:
+        #         return settings_df
+        #     updated_df = update_settings_column(settings_df, "IHC Subtype", ihc_subtype)
+        #     return gr.Dataframe(value=updated_df)
 
         @seg_config_dropdown.change(
             inputs=[settings_input, seg_config_dropdown],
@@ -731,6 +894,18 @@ def launch_gradio(server_name, server_port, share):
     # T4 GPUs (16GB) can only handle one analysis at a time to prevent OOM
     # Higher-memory GPUs and ZeroGPU can handle multiple concurrent analyses
     demo.queue(max_size=10, default_concurrency_limit=DEFAULT_CONCURRENCY_LIMIT)
+
+    # Register cleanup handler for graceful shutdown
+    import atexit
+
+    def cleanup_on_exit():
+        """Signal background thread to stop before interpreter shutdown."""
+        global _shutdown_requested
+        _shutdown_requested = True
+        logger.info("Shutdown signal sent to background model download thread")
+
+    atexit.register(cleanup_on_exit)
+
     demo.launch(
         server_name=server_name,
         share=share,
