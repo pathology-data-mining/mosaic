@@ -462,30 +462,6 @@ def launch_gradio(server_name, server_port, share):
                     visible=False,
                 )
 
-        @clear_button.click(
-            outputs=[
-                input_slides,
-                slide_masks,
-                paladin_output_table,
-                paladin_download_button,
-                aeon_output_table,
-                aeon_download_button,
-                settings_input,
-                settings_csv,
-            ],
-        )
-        def clear_fn():
-            return (
-                None,  # input_slides
-                None,  # slide_masks
-                None,  # paladin_output_table
-                gr.DownloadButton(visible=False),  # paladin_download_button
-                gr.Dataframe(visible=False),  # aeon_output_table
-                gr.DownloadButton(visible=False),  # aeon_download_button
-                gr.Dataframe(visible=False),  # settings_input
-                gr.File(visible=False),  # settings_csv
-            )
-
         def get_settings(
             files, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config
         ):
@@ -680,6 +656,31 @@ def launch_gradio(server_name, server_port, share):
             inputs=[settings_input],
             outputs=[settings_input],
         )
+
+        @clear_button.click(
+            outputs=[
+                input_slides,
+                slide_masks,
+                paladin_output_table,
+                paladin_download_button,
+                aeon_output_table,
+                aeon_download_button,
+                settings_input,
+                settings_csv,
+            ],
+        )
+        def clear_fn():
+            return (
+                None,  # input_slides
+                None,  # slide_masks
+                None,  # paladin_output_table
+                gr.DownloadButton(visible=False),  # paladin_download_button
+                gr.Dataframe(visible=False),  # aeon_output_table
+                gr.DownloadButton(visible=False),  # aeon_download_button
+                gr.Dataframe(visible=False),  # settings_input
+                gr.File(visible=False),  # settings_csv
+            )
+
         demo.load(
             create_user_directory,
             inputs=[user_dir_state],

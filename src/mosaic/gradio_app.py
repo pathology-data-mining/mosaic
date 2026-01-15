@@ -82,18 +82,26 @@ def download_core_models():
     """Download core models: CTransPath, Optimus, Aeon, marker classifier.
 
     Priority models needed for basic analysis pipeline.
+    Also downloads metadata files to ensure everything is in the same cache directory.
     """
     logger.info("Downloading core models (CTransPath, Optimus, Aeon)...")
 
-    # Download CTransPath, Aeon, marker classifier
-    snapshot_download(
+    # Download CTransPath, Aeon, marker classifier, and metadata files
+    # Include metadata to ensure all files are in same HF cache directory
+    cache_dir = snapshot_download(
         repo_id="PDM-Group/paladin-aeon-models",
         allow_patterns=[
             "ctranspath.pth",
             "aeon_model.pkl",
             "marker_classifier.pkl",
+            "*.csv",  # Model maps and metadata
+            "tissue_site_*",  # Tissue site mappings
+            "metadata/*",  # Metadata files (including target_dict.tsv)
         ],
     )
+    # Update data directory to ensure models are found
+    set_data_directory(str(cache_dir))
+    logger.info(f"Core models downloaded to: {cache_dir}")
 
     # Download Optimus model
     logger.info("Downloading Optimus model (~1GB)...")
@@ -121,6 +129,8 @@ def download_paladin_models():
             "paladin/*.pkl",  # All Paladin model files in paladin/ subdirectory
         ],
     )
+    # Update data directory to ensure models are found
+    set_data_directory(str(cache_dir))
     logger.info(f"✅ Paladin models downloaded successfully to: {cache_dir}")
 
 
