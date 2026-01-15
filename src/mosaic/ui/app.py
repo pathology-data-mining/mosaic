@@ -697,5 +697,4 @@ def launch_gradio(server_name, server_port, share):
         server_port=server_port,
         show_error=True,
         favicon_path=current_dir / "favicon.svg",
-        watch=False,  # Disable file watching to prevent false restarts on HF Spaces
     )
