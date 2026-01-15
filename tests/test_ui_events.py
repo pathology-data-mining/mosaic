@@ -164,8 +164,8 @@ class TestGeneratorBehavior:
         # Get first intermediate yield (after first slide)
         first_yield = next(gen)
 
-        # Should be tuple with 7 elements (added settings_input back)
-        assert len(first_yield) == 7
+        # Should be tuple with 9 elements (added analyze and clear button states)
+        assert len(first_yield) == 9
 
         # First element is settings_input (visible during processing for progress)
         settings = first_yield[0]
@@ -194,6 +194,14 @@ class TestGeneratorBehavior:
         paladin_download = first_yield[5]
         # Download button should be hidden during intermediate yields
         assert hasattr(paladin_download, "visible") and not paladin_download.visible
+
+        # Eighth element should be analyze button (disabled during processing)
+        analyze_button = first_yield[7]
+        assert hasattr(analyze_button, "interactive") and not analyze_button.interactive
+
+        # Ninth element should be clear button (disabled during processing)
+        clear_button = first_yield[8]
+        assert hasattr(clear_button, "interactive") and not clear_button.interactive
 
     @patch("mosaic.ui.app.load_all_models")
     @patch("mosaic.ui.app.analyze_slide")
@@ -265,12 +273,14 @@ class TestGeneratorBehavior:
         results = list(gen)
         final_yield = results[-1]
 
-        # Final yield should have all results (7 elements with settings_input)
-        assert len(final_yield) == 7
+        # Final yield should have all results (9 elements with analyze and clear buttons)
+        assert len(final_yield) == 9
 
         # First element is settings_input (should be visible for 3 slides)
         settings = final_yield[0]
-        assert hasattr(settings, "visible") and settings.visible  # Visible for multiple slides
+        assert (
+            hasattr(settings, "visible") and settings.visible
+        )  # Visible for multiple slides
 
         # Second element is slide_masks
         slide_masks = final_yield[1]
@@ -283,6 +293,14 @@ class TestGeneratorBehavior:
         # PALADIN download button should be visible on final yield (6th element, index 5)
         paladin_download = final_yield[5]
         assert hasattr(paladin_download, "visible") and paladin_download.visible
+
+        # Eighth element should be analyze button (re-enabled after processing)
+        analyze_button = final_yield[7]
+        assert hasattr(analyze_button, "interactive") and analyze_button.interactive
+
+        # Ninth element should be clear button (re-enabled after processing)
+        clear_button = final_yield[8]
+        assert hasattr(clear_button, "interactive") and clear_button.interactive
 
 
 class TestErrorDisplay:

@@ -10,7 +10,7 @@ class MockComponent(MagicMock):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.visible = kwargs.get('visible', True)
+        self.visible = kwargs.get("visible", True)
 
 
 # Create mock for gradio with Error class
@@ -43,6 +43,13 @@ class GradioMock(MagicMock):
     def Textbox(*args, **kwargs):
         """Mock Textbox that tracks visible attribute."""
         return MockComponent(*args, **kwargs)
+
+    @staticmethod
+    def Button(*args, **kwargs):
+        """Mock Button that tracks interactive attribute."""
+        button = MockComponent(*args, **kwargs)
+        button.interactive = kwargs.get("interactive", True)
+        return button
 
     Request = MagicMock
     Progress = MagicMock

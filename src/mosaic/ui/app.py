@@ -65,6 +65,7 @@ def start_background_model_download():
     def download_worker():
         try:
             from mosaic.gradio_app import download_core_models, download_paladin_models
+
             logger.info("🔄 Starting background download of all models...")
             download_core_models()
             logger.info("✅ Core models downloaded")
@@ -75,9 +76,11 @@ def start_background_model_download():
         except Exception as e:
             logger.error(f"❌ Error during background model download: {e}")
             import traceback
+
             traceback.print_exc()
 
     import threading
+
     _model_download_thread = threading.Thread(target=download_worker, daemon=True)
     _model_download_thread.start()
     logger.info("🚀 Model download started in background thread")
@@ -148,7 +151,11 @@ def analyze_slides(
         raise gr.Error("Missing settings for uploaded slides")
 
     # Check that all slides have sex specified
-    if settings_input["Sex"].isna().any() or (settings_input["Sex"] == "").any() or (settings_input["Sex"] == None).any():
+    if (
+        settings_input["Sex"].isna().any()
+        or (settings_input["Sex"] == "").any()
+        or (settings_input["Sex"] == None).any()
+    ):
         raise gr.Error("Sex is required for all slides. Please select Male or Female.")
 
     all_slide_masks = []
@@ -164,6 +171,8 @@ def analyze_slides(
         None,  # No PALADIN results yet
         gr.DownloadButton(visible=False),  # Hidden PALADIN download
         user_dir,  # user_dir_state
+        gr.Button(interactive=False),  # Disable analyze button
+        gr.Button(interactive=False),  # Disable clear button
     )
 
     # Load models once (for batch) or per-slide (for single)
@@ -177,7 +186,9 @@ def analyze_slides(
         if _global_model_cache is None:
             logger.info("T4: Loading models once (will persist across all requests)")
             progress(0.0, desc="Loading models (one-time initialization)")
-            _global_model_cache = load_all_models(use_gpu=True, aggressive_memory_mgmt=None)
+            _global_model_cache = load_all_models(
+                use_gpu=True, aggressive_memory_mgmt=None
+            )
         else:
             logger.info(f"T4: Reusing pre-loaded models from global cache")
         model_cache = _global_model_cache
@@ -258,7 +269,9 @@ def analyze_slides(
                 partial_paladin["Cancer Subtype"] = cancer_subtype_names
 
                 # Ensure Score is numeric before rounding
-                partial_paladin["Score"] = pd.to_numeric(partial_paladin["Score"], errors='coerce')
+                partial_paladin["Score"] = pd.to_numeric(
+                    partial_paladin["Score"], errors="coerce"
+                )
                 partial_paladin["Score"] = partial_paladin["Score"].round(3)
 
                 partial_paladin_df = partial_paladin
@@ -267,13 +280,21 @@ def analyze_slides(
             # Download buttons stay hidden until all slides are processed
             # Make settings visible during processing (for progress bar display)
             yield (
-                gr.Dataframe(value=settings_input, visible=True),  # Settings visible for progress
+                gr.Dataframe(
+                    value=settings_input, visible=True
+                ),  # Settings visible for progress
                 all_slide_masks.copy(),  # Current slide masks
                 partial_aeon_df,  # Partial AEON results (growing)
-                gr.DownloadButton(visible=False),  # Download button hidden until complete
+                gr.DownloadButton(
+                    visible=False
+                ),  # Download button hidden until complete
                 partial_paladin_df,  # Partial PALADIN results (growing)
-                gr.DownloadButton(visible=False),  # Download button hidden until complete
+                gr.DownloadButton(
+                    visible=False
+                ),  # Download button hidden until complete
                 user_dir,  # user_dir_state
+                gr.Button(interactive=False),  # Keep analyze button disabled
+                gr.Button(interactive=False),  # Keep clear button disabled
             )
 
     finally:
@@ -284,7 +305,9 @@ def analyze_slides(
             logger.info("Cleaning up model cache after batch")
             model_cache.cleanup()
         elif IS_T4_GPU and model_cache is not None:
-            logger.info("T4: Keeping core models loaded, cleaning up Paladin models only")
+            logger.info(
+                "T4: Keeping core models loaded, cleaning up Paladin models only"
+            )
             model_cache.cleanup_paladin()
 
     progress(0.99, desc="Analysis complete, wrapping up results")
@@ -328,7 +351,9 @@ def analyze_slides(
         combined_paladin_results["Cancer Subtype"] = cancer_subtype_names
 
         # Ensure Score is numeric before rounding
-        combined_paladin_results["Score"] = pd.to_numeric(combined_paladin_results["Score"], errors='coerce')
+        combined_paladin_results["Score"] = pd.to_numeric(
+            combined_paladin_results["Score"], errors="coerce"
+        )
         combined_paladin_results["Score"] = combined_paladin_results["Score"].round(3)
 
         paladin_output_path = user_dir / f"paladin_results-{timestamp}.csv"
@@ -343,7 +368,9 @@ def analyze_slides(
 
     # Store final results before cleanup
     final_slide_masks = all_slide_masks
-    final_combined_paladin = combined_paladin_results if len(combined_paladin_results) > 0 else None
+    final_combined_paladin = (
+        combined_paladin_results if len(combined_paladin_results) > 0 else None
+    )
 
     # Memory cleanup: Clear intermediate data structures from RAM
     import gc
@@ -355,15 +382,19 @@ def analyze_slides(
 
     # Force garbage collection to free Python memory
     gc.collect()
-    
+
     yield (
-        gr.Dataframe(value=settings_input, visible=settings_visible),  # Hide if single slide
+        gr.Dataframe(
+            value=settings_input, visible=settings_visible
+        ),  # Hide if single slide
         final_slide_masks,
         combined_aeon_results,
         aeon_output,
         final_combined_paladin,
         paladin_output,
         user_dir,
+        gr.Button(interactive=True),  # Re-enable analyze button
+        gr.Button(interactive=True),  # Re-enable clear button
     )
 
 
@@ -644,6 +675,8 @@ def launch_gradio(server_name, server_port, share):
                 paladin_output_table,
                 paladin_download_button,
                 user_dir_state,
+                analyze_button,  # Add analyze_button as output to control its state
+                clear_button,  # Add clear_button as output to control its state
             ],
             queue=True,
             show_progress_on=settings_input,
