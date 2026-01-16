@@ -1799,7 +1799,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "gradio", specifier = ">=5.49.0" },
+    { name = "gradio", specifier = ">=6.0.0" },
     { name = "lightning", specifier = ">=2.6.0" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "memory-profiler", specifier = ">=0.61.0" },

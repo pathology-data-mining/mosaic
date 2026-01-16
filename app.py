@@ -15,7 +15,7 @@ except ImportError:
     pass
 
 # Add src directory to path for Hugging Face Spaces
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from mosaic.gradio_app import download_and_process_models
 from mosaic.ui import launch_gradio
@@ -30,13 +30,14 @@ if __name__ == "__main__":
     except (ValueError, AttributeError):
         # Set to a reasonable default based on CPU count
         import multiprocessing
+
         num_cpus = multiprocessing.cpu_count()
         # Use half of available CPUs, minimum 1, maximum 8 for stability
         os.environ["OMP_NUM_THREADS"] = str(max(1, min(8, num_cpus // 2)))
-    
+
     # Enable HF transfer for faster downloads on Spaces
     os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
-    
+
     # Install flash-attn for H100 acceleration (if on Spaces)
     if os.environ.get("SPACE_ID"):
         try:
@@ -48,7 +49,7 @@ if __name__ == "__main__":
             )
         except Exception:
             pass  # Flash-attn is optional, continue without it
-    
+
     # Install Paladin from GitHub
     GIT_TOKEN = os.environ.get("GH_TOKEN")
     if GIT_TOKEN:

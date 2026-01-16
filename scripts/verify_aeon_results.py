@@ -105,31 +105,35 @@ def verify_results(test_samples: List[Dict], results_dir: Path) -> Dict:
                 failed += 1
                 status = "FAIL"
 
-            results.append({
-                "slide_id": slide_id,
-                "ground_truth": ground_truth,
-                "predicted": predicted,
-                "confidence": confidence,
-                "site_type": site_type,
-                "sex": sex,
-                "tissue_site": tissue_site,
-                "status": status
-            })
+            results.append(
+                {
+                    "slide_id": slide_id,
+                    "ground_truth": ground_truth,
+                    "predicted": predicted,
+                    "confidence": confidence,
+                    "site_type": site_type,
+                    "sex": sex,
+                    "tissue_site": tissue_site,
+                    "status": status,
+                }
+            )
 
         except Exception as e:
             print(f"  Status: ✗ ERROR - {e}")
             failed += 1
-            results.append({
-                "slide_id": slide_id,
-                "ground_truth": ground_truth,
-                "predicted": None,
-                "confidence": None,
-                "site_type": site_type,
-                "sex": sex,
-                "tissue_site": tissue_site,
-                "status": "ERROR",
-                "error": str(e)
-            })
+            results.append(
+                {
+                    "slide_id": slide_id,
+                    "ground_truth": ground_truth,
+                    "predicted": None,
+                    "confidence": None,
+                    "site_type": site_type,
+                    "sex": sex,
+                    "tissue_site": tissue_site,
+                    "status": "ERROR",
+                    "error": str(e),
+                }
+            )
 
         print()
 
@@ -165,7 +169,7 @@ def verify_results(test_samples: List[Dict], results_dir: Path) -> Dict:
         "passed": passed,
         "failed": failed,
         "accuracy": passed / total if total > 0 else 0,
-        "results": results
+        "results": results,
     }
 
 
@@ -177,18 +181,16 @@ def main():
         "--test-samples",
         type=Path,
         default=Path("test_slides/test_samples.json"),
-        help="Path to test_samples.json (default: test_slides/test_samples.json)"
+        help="Path to test_samples.json (default: test_slides/test_samples.json)",
     )
     parser.add_argument(
         "--results-dir",
         type=Path,
         default=Path("test_slides/results"),
-        help="Directory containing results (default: test_slides/results)"
+        help="Directory containing results (default: test_slides/results)",
     )
     parser.add_argument(
-        "--output",
-        type=Path,
-        help="Optional path to save verification report as JSON"
+        "--output", type=Path, help="Optional path to save verification report as JSON"
     )
 
     args = parser.parse_args()

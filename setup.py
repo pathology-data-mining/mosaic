@@ -1,4 +1,5 @@
 """Setup script for Mosaic package."""
+
 from setuptools import setup, find_packages
 
 setup(

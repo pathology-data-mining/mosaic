@@ -89,16 +89,22 @@ def start_background_model_download():
             _model_download_complete = True
             logger.info("✅ All model downloads complete")
         except RuntimeError as e:
-            if "interpreter shutdown" in str(e) or "cannot schedule new futures" in str(e):
-                logger.info("Interpreter shutting down, stopping model download gracefully")
+            if "interpreter shutdown" in str(e) or "cannot schedule new futures" in str(
+                e
+            ):
+                logger.info(
+                    "Interpreter shutting down, stopping model download gracefully"
+                )
                 _core_models_complete = True  # Mark as complete to avoid blocking
             else:
                 logger.error(f"❌ Error during background model download: {e}")
                 import traceback
+
                 traceback.print_exc()
         except Exception as e:
             logger.error(f"❌ Error during background model download: {e}")
             import traceback
+
             traceback.print_exc()
 
     import threading
@@ -129,9 +135,12 @@ def analyze_slides(
         progress(0, desc="Waiting for core models to download...")
         # Poll until core models are ready (instead of joining the entire thread)
         import time
+
         while not _core_models_complete:
             time.sleep(0.5)
-        logger.info("Core models ready, proceeding with analysis (Paladin models may still be downloading)")
+        logger.info(
+            "Core models ready, proceeding with analysis (Paladin models may still be downloading)"
+        )
 
     if slides is None or len(slides) == 0:
         raise gr.Error("Please upload at least one slide.")
@@ -437,7 +446,8 @@ def launch_gradio(server_name, server_port, share):
 
         # Comprehensive documentation section
         with gr.Accordion("📖 Documentation & Help", open=False):
-            gr.Markdown("""
+            gr.Markdown(
+                """
 ## Quick Start Guide
 
 **Single Slide Analysis:**
@@ -566,38 +576,39 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 - **Slow processing**: Large slides take longer; be patient
 - **Upload failed**: Check file format (.svs, .tiff, .tif only)
 - **No results**: Ensure slide contains sufficient tissue
-            """)
+            """
+            )
 
         with gr.Row():
             with gr.Column():
                 input_slides = gr.File(
                     label="Upload H&E Whole Slide Image (SVS or TIFF format)",
                     file_types=[".svs", ".tiff", ".tif"],
-                    file_count="multiple"
+                    file_count="multiple",
                 )
                 site_dropdown = gr.Dropdown(
                     choices=["Primary", "Metastatic"],
                     label="Site Type",
                     value="Primary",
-                    info="Primary tumor or metastatic site - affects biomarker interpretation"
+                    info="Primary tumor or metastatic site - affects biomarker interpretation",
                 )
                 sex_dropdown = gr.Dropdown(
                     choices=SEX_OPTIONS,
                     label="Sex",
                     value=None,
-                    info="Required - Patient biological sex (used for sex-specific cancer analysis)"
+                    info="Required - Patient biological sex (used for sex-specific cancer analysis)",
                 )
                 tissue_site_dropdown = gr.Dropdown(
                     choices=get_tissue_sites(),
                     label="Tissue Site",
                     value="Unknown",
-                    info="Anatomical location of the tissue sample (if known)"
+                    info="Anatomical location of the tissue sample (if known)",
                 )
                 cancer_subtype_dropdown = gr.Dropdown(
                     choices=[name for name in cancer_subtype_name_map.keys()],
                     label="Cancer Subtype",
                     value="Unknown",
-                    info="Leave as 'Unknown' for automatic inference using the Aeon model"
+                    info="Leave as 'Unknown' for automatic inference using the Aeon model",
                 )
                 # TODO: Enable IHC subtype dropdown in future work
                 # ihc_subtype_dropdown = gr.Dropdown(
@@ -611,7 +622,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     choices=["Biopsy", "Resection", "TCGA"],
                     label="Segmentation Config",
                     value="Biopsy",
-                    info="Biopsy: small samples | Resection: surgical specimens | TCGA: TCGA-compatible slides"
+                    info="Biopsy: small samples | Resection: surgical specimens | TCGA: TCGA-compatible slides",
                 )
                 with gr.Row():
                     settings_input = gr.Dataframe(
@@ -620,14 +631,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         datatype=["str"] * len(SETTINGS_COLUMNS),
                         visible=False,
                         interactive=True,
-                        static_columns="Slide"
+                        static_columns="Slide",
                     )
 
                 with gr.Row():
                     settings_csv = gr.File(
                         file_types=[".csv"],
                         label="Upload Settings CSV (columns: Slide, Site Type, Sex, Tissue Site, Cancer Subtype, Segmentation Config)",
-                        visible=False
+                        visible=False,
                     )
 
                 with gr.Row():
@@ -638,13 +649,13 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     label="Slide Masks (tissue segmentation)",
                     columns=3,
                     object_fit="contain",
-                    height="auto"
+                    height="auto",
                 )
                 aeon_output_table = gr.Dataframe(
                     headers=["Cancer Subtype", "Slide Name"],
                     label="Cancer Subtype Inference Confidence (Aeon model, scores 0-1)",
                     datatype=["str", "number"],
-                    visible=False
+                    visible=False,
                 )
                 aeon_download_button = gr.DownloadButton(
                     "Download Aeon Results as CSV",
@@ -654,7 +665,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 paladin_output_table = gr.Dataframe(
                     headers=["Slide", "Cancer Subtype", "Biomarker", "Score"],
                     label="Biomarker Inference (Paladin model)",
-                    datatype=["str", "str", "str", "number"]
+                    datatype=["str", "str", "str", "number"],
                 )
                 paladin_download_button = gr.DownloadButton(
                     "Download Paladin Results as CSV",
@@ -785,7 +796,10 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             updated_df = update_settings_column(
                 settings_df, "Cancer Subtype", cancer_subtype
             )
-            return gr.Dataframe(value=updated_df), ""  # Return empty string for State component
+            return (
+                gr.Dataframe(value=updated_df),
+                "",
+            )  # Return empty string for State component
 
         # TODO: Enable IHC subtype change handler in future work
         # @ihc_subtype_dropdown.change(

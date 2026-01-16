@@ -77,8 +77,7 @@ def export_checkpoint(checkpoint_path: Path, output_path: Path, metadata_dir: Pa
 
     print(f"Loading checkpoint from {checkpoint_path}...")
     pl_module = AeonLightningModule.load_from_checkpoint(
-        str(checkpoint_path),
-        metadata=metadata
+        str(checkpoint_path), metadata=metadata
     )
 
     # Extract the model
@@ -107,19 +106,16 @@ def main():
         "--checkpoint",
         type=Path,
         required=True,
-        help="Path to PyTorch Lightning checkpoint (.ckpt)"
+        help="Path to PyTorch Lightning checkpoint (.ckpt)",
     )
     parser.add_argument(
-        "--output",
-        type=Path,
-        required=True,
-        help="Path to save exported model (.pkl)"
+        "--output", type=Path, required=True, help="Path to save exported model (.pkl)"
     )
     parser.add_argument(
         "--metadata-dir",
         type=Path,
         default=Path("data/metadata"),
-        help="Directory containing metadata files (default: data/metadata)"
+        help="Directory containing metadata files (default: data/metadata)",
     )
 
     args = parser.parse_args()
