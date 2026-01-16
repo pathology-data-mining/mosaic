@@ -84,7 +84,7 @@ jobs:
         labels: ${{ steps.meta-ghcr.outputs.labels }}
         ssh: default=${{ env.SSH_AUTH_SOCK }}
         secrets: |
-          GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN=${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
@@ -98,7 +98,7 @@ jobs:
         labels: ${{ steps.meta-dockerhub.outputs.labels }}
         ssh: default=${{ env.SSH_AUTH_SOCK }}
         secrets: |
-          GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN=${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         cache-from: type=gha
 
     - name: Docker Summary
