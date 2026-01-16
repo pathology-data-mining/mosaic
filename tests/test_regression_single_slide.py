@@ -176,9 +176,17 @@ class TestSingleSlideRegression:
                 )
                 # Consume generator to get final result
                 results = list(gen)
-                settings, masks, aeon, aeon_btn, paladin, paladin_btn, user_dir = (
-                    results[-1]
-                )
+                (
+                    settings,
+                    masks,
+                    aeon,
+                    aeon_btn,
+                    paladin,
+                    paladin_btn,
+                    user_dir,
+                    analyze_btn,
+                    clear_btn,
+                ) = results[-1]
 
             # Verify analyze_slide was called (not analyze_slides_batch)
             mock_analyze_slide.assert_called_once()
