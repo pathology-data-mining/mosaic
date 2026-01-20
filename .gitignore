@@ -6,6 +6,7 @@ venv*/
 *.pyc
 outputs/
 *.env
+*_env
 tmp*
 *~
 *.swp
