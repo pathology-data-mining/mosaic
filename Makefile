@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-coverage test-verbose lint format clean docker-build docker-run docker-push docker-clean run-ui run-cli
+.PHONY: help install install-dev test test-coverage test-verbose lint format clean docker-build docker-run docker-run-cli docker-push docker-clean run-ui run-cli
 
 # Default target
 .DEFAULT_GOAL := help
@@ -75,13 +75,18 @@ run-ui: ## Launch Gradio web interface
 run-ui-public: ## Launch Gradio web interface with public sharing
 	$(PYTHON) -m mosaic.gradio_app --share
 
-run-single: ## Run single slide analysis (usage: make run-single SLIDE=path/to/slide.svs OUTPUT=output_dir)
-	$(PYTHON) -m mosaic.gradio_app --slide-path $(SLIDE) --output-dir $(OUTPUT)
+run-single: ## Run single slide analysis (usage: make run-single SLIDE=path/to/slide.svs OUTPUT=output_dir [ARGS="--extra-args"])
+	$(PYTHON) -m mosaic.gradio_app --slide-path $(SLIDE) --output-dir $(OUTPUT) $(ARGS)
 
-run-batch: ## Run batch analysis from CSV (usage: make run-batch CSV=settings.csv OUTPUT=output_dir)
-	$(PYTHON) -m mosaic.gradio_app --slide-csv $(CSV) --output-dir $(OUTPUT)
+run-batch: ## Run batch analysis from CSV (usage: make run-batch CSV=settings.csv OUTPUT=output_dir [ARGS="--extra-args"])
+	$(PYTHON) -m mosaic.gradio_app --slide-csv $(CSV) --output-dir $(OUTPUT) $(ARGS)
 
 ##@ Docker
+
+# Docker run options matching the mosaic entrypoint script
+DOCKER_GPU_ARGS := --gpus=all --runtime=nvidia
+HF_CACHE_DIR := $(HOME)/.cache/huggingface
+DOCKER_COMMON_ARGS := --shm-size=3G --env HF_TOKEN="$(HF_TOKEN)" --env HF_HOME=/mnt/hf_cache --env TRANSFORMERS_CACHE=/mnt/hf_cache --user $(shell id -u):$(shell id -g) -v $(HF_CACHE_DIR):/mnt/hf_cache
 
 docker-build: ## Build Docker image with SSH forwarding
 	@echo "Building Docker image with SSH authentication..."
@@ -96,38 +101,65 @@ docker-build-no-cache: ## Build Docker image without cache
 	eval "$$(ssh-agent -k)"
 
 docker-run: ## Run Docker container (web UI mode)
+	@test -n "$(HF_TOKEN)" || (echo "Error: HF_TOKEN environment variable is not set" && exit 1)
 	docker run -it --rm \
-		--gpus all \
+		$(DOCKER_GPU_ARGS) \
+		$(DOCKER_COMMON_ARGS) \
 		-p 7860:7860 \
-		-v $(PWD)/data:/app/data \
-		-v $(PWD)/output:/app/output \
+		-v $(PWD)/data:/mnt/data:ro \
+		-v $(PWD)/output:/mnt/output \
 		$(DOCKER_IMAGE_NAME):$(DOCKER_TAG)
 
-docker-run-single: ## Run Docker container (single slide mode)
+docker-run-cli: ## Run Docker container with mosaic CLI (usage: make docker-run-cli ARGS="--help")
+	@test -n "$(HF_TOKEN)" || (echo "Error: HF_TOKEN environment variable is not set" && exit 1)
 	docker run -it --rm \
-		--gpus all \
-		-v $(PWD)/data:/app/data \
-		-v $(PWD)/output:/app/output \
+		$(DOCKER_GPU_ARGS) \
+		$(DOCKER_COMMON_ARGS) \
+		-v $(PWD)/data:/mnt/data:ro \
+		-v $(PWD)/output:/mnt/output \
+		--entrypoint mosaic \
 		$(DOCKER_IMAGE_NAME):$(DOCKER_TAG) \
-		--slide-path /app/data/$(SLIDE) \
-		--output-dir /app/output
+		$(ARGS)
 
-docker-run-batch: ## Run Docker container (batch mode)
+docker-run-single: ## Run Docker container (single slide mode, usage: make docker-run-single SLIDE=path/to/slide.svs [ARGS="--extra-args"])
+	@test -n "$(HF_TOKEN)" || (echo "Error: HF_TOKEN environment variable is not set" && exit 1)
+	@test -n "$(SLIDE)" || (echo "Error: SLIDE variable is required" && exit 1)
+	@mkdir -p $(PWD)/output
 	docker run -it --rm \
-		--gpus all \
-		-v $(PWD)/data:/app/data \
-		-v $(PWD)/output:/app/output \
+		$(DOCKER_GPU_ARGS) \
+		$(DOCKER_COMMON_ARGS) \
+		-v $(dir $(abspath $(SLIDE))):/mnt/slides:ro \
+		-v $(PWD)/output:/mnt/output \
+		--entrypoint mosaic \
 		$(DOCKER_IMAGE_NAME):$(DOCKER_TAG) \
-		--slide-csv /app/data/$(CSV) \
-		--output-dir /app/output
+		--slide-path /mnt/slides/$(notdir $(SLIDE)) \
+		--output-dir /mnt/output \
+		$(ARGS)
+
+docker-run-batch: ## Run Docker container (batch mode, usage: make docker-run-batch CSV=path/to/slides.csv [ARGS="--extra-args"])
+	@test -n "$(HF_TOKEN)" || (echo "Error: HF_TOKEN environment variable is not set" && exit 1)
+	@test -n "$(CSV)" || (echo "Error: CSV variable is required" && exit 1)
+	@mkdir -p $(PWD)/output
+	docker run -it --rm \
+		$(DOCKER_GPU_ARGS) \
+		$(DOCKER_COMMON_ARGS) \
+		-v $(dir $(abspath $(CSV))):/mnt/data:ro \
+		-v $(PWD)/output:/mnt/output \
+		--entrypoint mosaic \
+		$(DOCKER_IMAGE_NAME):$(DOCKER_TAG) \
+		--slide-csv /mnt/data/$(notdir $(CSV)) \
+		--output-dir /mnt/output \
+		$(ARGS)
 
 docker-shell: ## Open shell in Docker container
+	@test -n "$(HF_TOKEN)" || (echo "Error: HF_TOKEN environment variable is not set" && exit 1)
 	docker run -it --rm \
-		--gpus all \
-		-v $(PWD)/data:/app/data \
-		-v $(PWD)/output:/app/output \
-		$(DOCKER_IMAGE_NAME):$(DOCKER_TAG) \
-		/bin/bash
+		$(DOCKER_GPU_ARGS) \
+		$(DOCKER_COMMON_ARGS) \
+		-v $(PWD)/data:/mnt/data:ro \
+		-v $(PWD)/output:/mnt/output \
+		--entrypoint /bin/bash \
+		$(DOCKER_IMAGE_NAME):$(DOCKER_TAG)
 
 docker-tag: ## Tag Docker image for registry
 	docker tag $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_NAME):$(DOCKER_TAG)
