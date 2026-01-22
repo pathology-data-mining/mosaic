@@ -3,8 +3,6 @@
 import json
 from datetime import datetime
 
-import pytest
-
 from mosaic.telemetry.events import (
     AppSessionEvent,
     UsageEvent,
