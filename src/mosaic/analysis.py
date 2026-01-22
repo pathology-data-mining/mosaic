@@ -626,6 +626,8 @@ def analyze_slide(
     progress=gr.Progress(track_tqdm=True),
     request: gr.Request = None,
     model_cache=None,
+    analysis_id=None,
+    session_hash=None,
 ):
     """Analyze a whole slide image for cancer subtype and biomarker prediction.
 
@@ -646,6 +648,8 @@ def analyze_slide(
         progress: Gradio progress tracker for UI updates
         request: Gradio request object (for HF Spaces authentication)
         model_cache: Optional ModelCache with pre-loaded models (for batch processing)
+        analysis_id: Optional telemetry analysis ID (for resource event tracking)
+        session_hash: Optional session hash (for telemetry privacy)
 
     Returns:
         tuple: (slide_mask, aeon_results, paladin_results)
@@ -660,6 +664,11 @@ def analyze_slide(
     """
     if slide_path is None:
         raise gr.Error("Please upload a slide.")
+
+    # Initialize telemetry for resource tracking
+    import time as time_module
+
+    slide_start_time = time_module.time()
 
     # Step 1: Segment tissue (CPU-only, not GPU-intensive)
     start_time = pd.Timestamp.now()
@@ -814,5 +823,23 @@ def analyze_slide(
                 num_workers,
                 progress,
             )
+
+    # Log resource event if telemetry is enabled
+    if analysis_id is not None:
+        from mosaic.telemetry import TelemetryTracker
+        from mosaic.hardware import get_gpu_metrics
+
+        total_duration = time_module.time() - slide_start_time
+        gpu_metrics = get_gpu_metrics()
+
+        tracker = TelemetryTracker.get_instance()
+        tracker.log_resource_event(
+            analysis_id=analysis_id,
+            session_hash=session_hash,
+            total_duration_sec=total_duration,
+            tile_count=len(coords) if coords is not None else None,
+            gpu_type=gpu_metrics.get("gpu_type"),
+            peak_gpu_memory_gb=gpu_metrics.get("max_memory_allocated_gb"),
+        )
 
     return slide_mask, aeon_results, paladin_results
