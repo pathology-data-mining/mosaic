@@ -417,6 +417,93 @@ If the default port 7860 is already in use:
 2. Use a different port: `export GRADIO_SERVER_PORT=7861`
 3. Or specify the port directly: `mosaic --server-port 7861`
 
+## Makefile Commands
+
+This project includes a Makefile with many useful commands for development, testing, and deployment. You can see all available commands by running:
+
+```bash
+make help
+```
+
+Here are the main Makefile targets:
+
+### Development Setup
+- `make install` - Install production dependencies using uv
+- `make install-dev` - Install development dependencies using uv
+
+### Testing
+- `make test` - Run all tests
+- `make test-fast` - Run tests without coverage (faster)
+- `make test-coverage` - Run tests with detailed coverage report
+- `make test-ui` - Run only UI tests
+- `make test-cli` - Run only CLI tests
+- `make test-verbose` - Run tests with verbose output and show print statements
+- `make test-specific` - Run specific test (usage: `make test-specific TEST=tests/test_cli.py::TestClass::test_method`)
+- `make test-watch` - Run tests in watch mode (requires pytest-watch)
+
+### Code Quality
+- `make lint` - Run linting checks with pylint
+- `make lint-strict` - Run pylint on both src and tests
+- `make format` - Format code with black
+- `make format-check` - Check code formatting without making changes
+- `make quality` - Run all code quality checks
+
+### Application
+- `make run-ui` - Launch Gradio web interface
+- `make run-ui-public` - Launch Gradio web interface with public sharing
+- `make run-single` - Run single slide analysis (usage: `make run-single SLIDE=path/to/slide.svs OUTPUT=output_dir [ARGS="--extra-args"]`)
+- `make run-batch` - Run batch analysis from CSV (usage: `make run-batch CSV=settings.csv OUTPUT=output_dir [ARGS="--extra-args"]`)
+
+### Docker
+- `make docker-build` - Build Docker image with SSH forwarding
+- `make docker-build-no-cache` - Build Docker image without cache
+- `make docker-run` - Run Docker container (web UI mode)
+- `make docker-run-cli` - Run Docker container with mosaic CLI (usage: `make docker-run-cli ARGS="--help"`)
+- `make docker-run-single` - Run Docker container (single slide mode, usage: `make docker-run-single SLIDE=path/to/slide.svs [ARGS="--extra-args"]`)
+- `make docker-run-batch` - Run Docker container (batch mode, usage: `make docker-run-batch CSV=path/to/slides.csv [ARGS="--extra-args"]`)
+- `make docker-shell` - Open shell in Docker container
+- `make docker-tag` - Tag Docker image for registry
+- `make docker-push` - Push Docker image to registry
+- `make docker-clean` - Remove Docker image
+- `make docker-prune` - Clean up Docker build cache
+
+### Cleanup
+- `make clean` - Remove build artifacts and cache files
+- `make clean-outputs` - Remove output files (masks, results CSVs)
+- `make clean-all` - Remove all build artifacts, cache, and Docker images
+
+### Model Management
+- `make download-models` - Download required models from HuggingFace
+
+### Documentation
+- `make docs-requirements` - Show what needs to be documented
+
+### CI/CD
+- `make ci-test` - Run all CI checks (no lint to save time)
+- `make ci-test-strict` - Run all CI checks including pylint
+- `make ci-docker` - Build Docker image for CI
+
+### Development Utilities
+- `make shell` - Open Python shell with project in path
+- `make ipython` - Open IPython shell with project in path
+- `make notebook` - Start Jupyter notebook server
+- `make check-deps` - Check for outdated dependencies
+- `make update-deps` - Update dependencies (be careful!)
+- `make lock` - Update lock file
+
+### Git Hooks
+- `make pre-commit-install` - Install pre-commit hooks
+- `make pre-commit-uninstall` - Uninstall pre-commit hooks
+
+### Information
+- `make info` - Display project information
+- `make version` - Show version information
+- `make tree` - Show project directory tree (requires tree command)
+
+### Performance
+- `make profile` - Profile a single slide analysis (usage: `make profile SLIDE=path/to/slide.svs`)
+- `make benchmark` - Run performance benchmarks
+
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
