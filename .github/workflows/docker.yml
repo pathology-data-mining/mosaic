@@ -61,7 +61,7 @@ jobs:
           type=ref,event=pr
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
-          type=sha,prefix={{branch}}-
+          type=sha,prefix=sha-
 
     - name: Extract metadata for Docker Hub
       id: meta-dockerhub

@@ -70,6 +70,27 @@ logger.info(
 )
 
 
+def get_gpu_metrics() -> dict:
+    """Collect current GPU metrics for telemetry.
+
+    Returns:
+        Dictionary with GPU metrics:
+        - gpu_available: bool
+        - gpu_type: str (if available)
+        - memory_allocated_gb: float (if available)
+        - max_memory_allocated_gb: float (if available)
+    """
+    if not torch.cuda.is_available():
+        return {"gpu_available": False}
+
+    return {
+        "gpu_available": True,
+        "gpu_type": GPU_TYPE,
+        "memory_allocated_gb": torch.cuda.memory_allocated() / (1024**3),
+        "max_memory_allocated_gb": torch.cuda.max_memory_allocated() / (1024**3),
+    }
+
+
 # Export commonly used symbols
 __all__ = [
     "spaces",
@@ -81,4 +102,5 @@ __all__ = [
     "DEFAULT_BATCH_SIZE",
     "DEFAULT_NUM_WORKERS",
     "DEFAULT_CONCURRENCY_LIMIT",
+    "get_gpu_metrics",
 ]

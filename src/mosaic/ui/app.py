@@ -8,6 +8,10 @@ It includes functionality for:
 - CSV-based batch processing
 """
 
+import threading
+import time
+import uuid
+
 import gradio as gr
 import pandas as pd
 from pathlib import Path
@@ -25,7 +29,7 @@ from mosaic.ui.utils import (
 )
 from mosaic.analysis import analyze_slide
 from mosaic.model_manager import load_all_models
-from mosaic.hardware import DEFAULT_CONCURRENCY_LIMIT, IS_T4_GPU
+from mosaic.hardware import DEFAULT_CONCURRENCY_LIMIT, IS_T4_GPU, GPU_TYPE
 
 current_dir = Path(__file__).parent.parent
 
@@ -129,12 +133,18 @@ def analyze_slides(
 ):
     global _model_download_thread, _model_download_complete, _core_models_complete
 
+    # Initialize telemetry tracking
+    from mosaic.telemetry import TelemetryTracker
+
+    tracker = TelemetryTracker.get_instance()
+    analysis_id = str(uuid.uuid4())
+    start_time = time.time()
+    session_hash = request.session_hash if request else None
+
     # Wait for core models download to complete (Paladin models can continue in background)
     if _model_download_thread is not None and not _core_models_complete:
         logger.info("Waiting for core models to download...")
         progress(0, desc="Waiting for core models to download...")
-        # Poll until core models are ready (instead of joining the entire thread)
-        import time
 
         while not _core_models_complete:
             time.sleep(0.5)
@@ -194,6 +204,18 @@ def analyze_slides(
     all_slide_masks = []
     all_aeon_results = []
     all_paladin_results = []
+
+    # Log analysis start event
+    tracker.log_usage_event(
+        event_type="analysis_start",
+        analysis_id=analysis_id,
+        session_hash=session_hash,
+        slide_count=len(slides),
+        site_type=site_type,
+        cancer_subtype=cancer_subtype,
+        seg_config=seg_config,
+        gpu_type=GPU_TYPE,
+    )
 
     # Yield initial state to make settings table visible immediately
     yield (
@@ -255,6 +277,8 @@ def analyze_slides(
                 progress=progress,
                 request=request,
                 model_cache=model_cache,  # Pre-loaded for batch, None for single
+                analysis_id=analysis_id,  # For telemetry tracking
+                session_hash=session_hash,  # For telemetry tracking
             )
 
             if slide_mask is not None:
@@ -330,6 +354,33 @@ def analyze_slides(
                 gr.Button(interactive=False),  # Keep clear button disabled
             )
 
+        # Log analysis complete event (successful completion)
+        duration_sec = time.time() - start_time
+        tracker.log_usage_event(
+            event_type="analysis_complete",
+            analysis_id=analysis_id,
+            session_hash=session_hash,
+            slide_count=len(slides),
+            duration_sec=duration_sec,
+            success=True,
+            gpu_type=GPU_TYPE,
+        )
+
+        progress(0.99, desc="Analysis complete, wrapping up results")
+
+    except Exception as e:
+        # Log failure event
+        tracker.log_failure_event(
+            error_type=type(e).__name__,
+            error_message=str(e),
+            error_stage="analysis_pipeline",
+            analysis_id=analysis_id,
+            session_hash=session_hash,
+            slide_count=len(slides) if slides else 0,
+            gpu_type=GPU_TYPE,
+        )
+        raise
+
     finally:
         # Clean up model cache if it was loaded for batch processing
         # On T4: Keep global cache loaded, only cleanup Paladin models
@@ -342,8 +393,6 @@ def analyze_slides(
                 "T4: Keeping core models loaded, cleaning up Paladin models only"
             )
             model_cache.cleanup_paladin()
-
-    progress(0.99, desc="Analysis complete, wrapping up results")
 
     timestamp = pd.Timestamp.now().strftime("%Y%m%d-%H%M%S")
     combined_paladin_results = (
@@ -432,6 +481,13 @@ def analyze_slides(
 
 
 def launch_gradio(server_name, server_port, share):
+    # Initialize telemetry and log app start
+    from mosaic.telemetry import TelemetryTracker
+    import os
+
+    tracker = TelemetryTracker.get_instance()
+    tracker.log_app_start()
+
     # Start downloading models in background
     start_background_model_download()
 
@@ -913,12 +969,28 @@ This tool is for research purposes only and not approved for clinical diagnosis.
     import atexit
 
     def cleanup_on_exit():
-        """Signal background thread to stop before interpreter shutdown."""
+        """Signal background thread to stop and log telemetry shutdown."""
         global _shutdown_requested
         _shutdown_requested = True
         logger.info("Shutdown signal sent to background model download thread")
 
+        # Log app shutdown for telemetry
+        tracker.log_app_shutdown()
+
+        # Upload telemetry to HF Dataset if configured
+        if os.environ.get("MOSAIC_TELEMETRY_HF_REPO"):
+            tracker.upload_to_hf()
+
     atexit.register(cleanup_on_exit)
+
+    # Start heartbeat thread for telemetry (every 5 minutes)
+    def heartbeat_worker():
+        while not _shutdown_requested:
+            time.sleep(tracker.config.heartbeat_interval_sec)
+            tracker.log_heartbeat()
+
+    heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
+    heartbeat_thread.start()
 
     demo.launch(
         server_name=server_name,
