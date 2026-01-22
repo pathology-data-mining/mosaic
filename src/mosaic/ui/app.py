@@ -354,6 +354,20 @@ def analyze_slides(
                 gr.Button(interactive=False),  # Keep clear button disabled
             )
 
+        # Log analysis complete event (successful completion)
+        duration_sec = time.time() - start_time
+        tracker.log_usage_event(
+            event_type="analysis_complete",
+            analysis_id=analysis_id,
+            session_hash=session_hash,
+            slide_count=len(slides),
+            duration_sec=duration_sec,
+            success=True,
+            gpu_type=GPU_TYPE,
+        )
+
+        progress(0.99, desc="Analysis complete, wrapping up results")
+
     except Exception as e:
         # Log failure event
         tracker.log_failure_event(
@@ -366,6 +380,7 @@ def analyze_slides(
             gpu_type=GPU_TYPE,
         )
         raise
+
     finally:
         # Clean up model cache if it was loaded for batch processing
         # On T4: Keep global cache loaded, only cleanup Paladin models
@@ -378,20 +393,6 @@ def analyze_slides(
                 "T4: Keeping core models loaded, cleaning up Paladin models only"
             )
             model_cache.cleanup_paladin()
-
-    # Log analysis complete event
-    duration_sec = time.time() - start_time
-    tracker.log_usage_event(
-        event_type="analysis_complete",
-        analysis_id=analysis_id,
-        session_hash=session_hash,
-        slide_count=len(slides),
-        duration_sec=duration_sec,
-        success=True,
-        gpu_type=GPU_TYPE,
-    )
-
-    progress(0.99, desc="Analysis complete, wrapping up results")
 
     timestamp = pd.Timestamp.now().strftime("%Y%m%d-%H%M%S")
     combined_paladin_results = (
