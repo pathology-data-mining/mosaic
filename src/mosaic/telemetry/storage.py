@@ -92,9 +92,7 @@ class TelemetryStorage:
             logger.warning(f"Failed to write telemetry event: {e}")
             return False
 
-    def write_session_event(
-        self, event: "AppSessionEvent"
-    ) -> bool:
+    def write_session_event(self, event: "AppSessionEvent") -> bool:
         """Write an app session event."""
         return self.write_event("session", event.to_dict())
 

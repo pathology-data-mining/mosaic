@@ -31,7 +31,9 @@ from mosaic.hardware import (
 )
 
 
-def _extract_ctranspath_features(coords, slide_path, attrs, num_workers, model, timings=None):
+def _extract_ctranspath_features(
+    coords, slide_path, attrs, num_workers, model, timings=None
+):
     """Extract CTransPath features on GPU using pre-loaded model.
 
     Args:
@@ -82,7 +84,9 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers, model, 
     return ctranspath_features, coords
 
 
-def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers, model, timings=None):
+def _extract_optimus_features(
+    filtered_coords, slide_path, attrs, num_workers, model, timings=None
+):
     """Extract Optimus features on GPU using pre-loaded model.
 
     Args:
@@ -194,7 +198,9 @@ def _run_aeon_inference(
     return aeon_results
 
 
-def _run_paladin_inference(features, aeon_results, site_type, num_workers, timings=None):
+def _run_paladin_inference(
+    features, aeon_results, site_type, num_workers, timings=None
+):
     """Run Paladin biomarker inference on GPU.
 
     Args:
@@ -355,8 +361,12 @@ def _run_inference_pipeline_impl(
         # Step 2: Extract CTransPath features using cached model
         progress(0.3, desc="Extracting CTransPath features")
         ctranspath_features, coords = _extract_ctranspath_features(
-            coords, slide_path, attrs, num_workers, model=model_cache.ctranspath_model,
-            timings=timings
+            coords,
+            slide_path,
+            attrs,
+            num_workers,
+            model=model_cache.ctranspath_model,
+            timings=timings,
         )
 
         # Step 3: Filter features using cached marker classifier
@@ -415,8 +425,7 @@ def _run_inference_pipeline_impl(
 
         progress(0.95, desc="Running Paladin for biomarker inference")
         paladin_results = _run_paladin_inference_with_models(
-            features, aeon_results, site_type, model_cache, num_workers,
-            timings=timings
+            features, aeon_results, site_type, model_cache, num_workers, timings=timings
         )
 
         aeon_results.set_index("Cancer Subtype", inplace=True)
@@ -439,7 +448,14 @@ def _run_inference_pipeline_impl(
 
 
 def _run_aeon_inference_with_model(
-    features, model, device, site_type, num_workers, sex_idx=None, tissue_site_idx=None, timings=None
+    features,
+    model,
+    device,
+    site_type,
+    num_workers,
+    sex_idx=None,
+    tissue_site_idx=None,
+    timings=None,
 ):
     """Run Aeon inference using pre-loaded model (for batch processing).
 
@@ -586,8 +602,12 @@ def _run_inference_pipeline_with_models(
     # Step 1: Extract CTransPath features with PRE-LOADED model
     progress(0.3, desc="Extracting CTransPath features")
     ctranspath_features, coords = _extract_ctranspath_features(
-        coords, slide_path, attrs, num_workers, model=model_cache.ctranspath_model,
-        timings=timings
+        coords,
+        slide_path,
+        attrs,
+        num_workers,
+        model=model_cache.ctranspath_model,
+        timings=timings,
     )
 
     # Step 2: Filter features using pre-loaded marker classifier
@@ -608,8 +628,12 @@ def _run_inference_pipeline_with_models(
     # Step 3: Extract Optimus features with PRE-LOADED model
     progress(0.5, desc="Extracting Optimus features")
     features = _extract_optimus_features(
-        filtered_coords, slide_path, attrs, num_workers, model=model_cache.optimus_model,
-        timings=timings
+        filtered_coords,
+        slide_path,
+        attrs,
+        num_workers,
+        model=model_cache.optimus_model,
+        timings=timings,
     )
 
     # Step 4: Run Aeon inference with pre-loaded model (if cancer subtype unknown)
@@ -642,8 +666,7 @@ def _run_inference_pipeline_with_models(
     # Step 5: Run Paladin inference with pre-loaded models
     progress(0.95, desc="Running Paladin for biomarker inference")
     paladin_results = _run_paladin_inference_with_models(
-        features, aeon_results, site_type, model_cache, num_workers,
-        timings=timings
+        features, aeon_results, site_type, model_cache, num_workers, timings=timings
     )
 
     aeon_results.set_index("Cancer Subtype", inplace=True)

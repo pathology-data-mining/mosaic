@@ -66,7 +66,9 @@ class TelemetryConfig:
     """
 
     enabled: bool = field(
-        default_factory=lambda: os.environ.get("MOSAIC_TELEMETRY_ENABLED", "true").lower()
+        default_factory=lambda: os.environ.get(
+            "MOSAIC_TELEMETRY_ENABLED", "true"
+        ).lower()
         != "false"
     )
     base_dir: Path = field(default_factory=_get_telemetry_directory)

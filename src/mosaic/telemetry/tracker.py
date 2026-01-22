@@ -57,7 +57,9 @@ class TelemetryTracker:
         self._session_lock = threading.Lock()
 
     @classmethod
-    def get_instance(cls, config: Optional[TelemetryConfig] = None) -> "TelemetryTracker":
+    def get_instance(
+        cls, config: Optional[TelemetryConfig] = None
+    ) -> "TelemetryTracker":
         """Get or create the singleton tracker instance.
 
         Args:

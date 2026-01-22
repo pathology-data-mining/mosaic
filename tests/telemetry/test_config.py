@@ -7,7 +7,11 @@ from unittest.mock import patch
 
 import pytest
 
-from mosaic.telemetry.config import TelemetryConfig, _detect_hf_spaces, _get_telemetry_directory
+from mosaic.telemetry.config import (
+    TelemetryConfig,
+    _detect_hf_spaces,
+    _get_telemetry_directory,
+)
 
 
 class TestHFSpacesDetection:
@@ -85,9 +89,7 @@ class TestTelemetryConfig:
 
     def test_hf_repo_from_env(self):
         """Test HF repo from environment."""
-        with patch.dict(
-            os.environ, {"MOSAIC_TELEMETRY_HF_REPO": "org/repo"}
-        ):
+        with patch.dict(os.environ, {"MOSAIC_TELEMETRY_HF_REPO": "org/repo"}):
             config = TelemetryConfig()
             assert config.hf_repo == "org/repo"
 
