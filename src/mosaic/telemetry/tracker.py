@@ -7,7 +7,6 @@ This module provides the TelemetryTracker singleton that:
 """
 
 import threading
-import time
 from datetime import datetime
 from typing import Optional
 
