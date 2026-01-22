@@ -347,7 +347,11 @@ def send_email(report: str, to_email: str, subject: str, format: str = "text"):
     """
     from_email = os.environ.get("SMTP_FROM", "mosaic-telemetry@noreply.local")
     smtp_host = os.environ.get("SMTP_HOST", "localhost")
-    smtp_port = int(os.environ.get("SMTP_PORT", "25"))
+    smtp_port_env = os.environ.get("SMTP_PORT", "25")
+    try:
+        smtp_port = int(smtp_port_env)
+    except ValueError:
+        smtp_port = 25
     smtp_user = os.environ.get("SMTP_USER")
     smtp_pass = os.environ.get("SMTP_PASS")
 
