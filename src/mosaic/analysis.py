@@ -6,6 +6,8 @@ feature extraction, and model inference for cancer subtype and biomarker predict
 
 import pickle
 import gc
+import time as time_module
+
 import torch
 import pandas as pd
 import gradio as gr
@@ -29,7 +31,7 @@ from mosaic.hardware import (
 )
 
 
-def _extract_ctranspath_features(coords, slide_path, attrs, num_workers, model):
+def _extract_ctranspath_features(coords, slide_path, attrs, num_workers, model, timings=None):
     """Extract CTransPath features on GPU using pre-loaded model.
 
     Args:
@@ -38,6 +40,7 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers, model):
         attrs: Slide attributes
         num_workers: Number of worker processes
         model: Pre-loaded CTransPath model from ModelCache
+        timings: Optional dict to populate with timing data
 
     Returns:
         tuple: (ctranspath_features, coords)
@@ -57,7 +60,7 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers, model):
         batch_size = 64
         logger.info(f"Running CTransPath with {num_workers} workers")
 
-    start_time = pd.Timestamp.now()
+    start_time = time_module.time()
 
     ctranspath_features, _ = get_features(
         coords,
@@ -69,13 +72,17 @@ def _extract_ctranspath_features(coords, slide_path, attrs, num_workers, model):
         use_gpu=True,
     )
 
-    end_time = pd.Timestamp.now()
-    logger.info(f"CTransPath extraction took {end_time - start_time}")
+    duration_sec = time_module.time() - start_time
+    logger.info(f"CTransPath extraction took {duration_sec:.2f}s")
+
+    if timings is not None:
+        timings["ctranspath"] = duration_sec
+        timings["batch_size"] = batch_size
 
     return ctranspath_features, coords
 
 
-def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers, model):
+def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers, model, timings=None):
     """Extract Optimus features on GPU using pre-loaded model.
 
     Args:
@@ -84,6 +91,7 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers, m
         attrs: Slide attributes
         num_workers: Number of worker processes
         model: Pre-loaded Optimus model from ModelCache
+        timings: Optional dict to populate with timing data
 
     Returns:
         Optimus features
@@ -105,7 +113,7 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers, m
         batch_size = 64
         logger.info(f"Running Optimus with {num_workers} workers")
 
-    start_time = pd.Timestamp.now()
+    start_time = time_module.time()
 
     features, _ = get_features(
         filtered_coords,
@@ -117,14 +125,17 @@ def _extract_optimus_features(filtered_coords, slide_path, attrs, num_workers, m
         use_gpu=True,
     )
 
-    end_time = pd.Timestamp.now()
-    logger.info(f"Optimus extraction took {end_time - start_time}")
+    duration_sec = time_module.time() - start_time
+    logger.info(f"Optimus extraction took {duration_sec:.2f}s")
+
+    if timings is not None:
+        timings["optimus"] = duration_sec
 
     return features
 
 
 def _run_aeon_inference(
-    features, site_type, num_workers, sex=None, tissue_site_idx=None
+    features, site_type, num_workers, sex=None, tissue_site_idx=None, timings=None
 ):
     """Run Aeon cancer subtype inference on GPU.
 
@@ -134,6 +145,7 @@ def _run_aeon_inference(
         num_workers: Number of worker processes
         sex: Patient sex (0=Male, 1=Female), optional
         tissue_site_idx: Tissue site index (0-56), optional
+        timings: Optional dict to populate with timing data
 
     Returns:
         Aeon results DataFrame
@@ -148,7 +160,7 @@ def _run_aeon_inference(
         num_workers = max(num_workers, 8)
         logger.info(f"Running Aeon with num_workers={num_workers}")
 
-    start_time = pd.Timestamp.now()
+    start_time = time_module.time()
     logger.info("Running Aeon for cancer subtype inference")
     data_dir = get_data_directory()
     aeon_results, _ = run_aeon(
@@ -161,25 +173,28 @@ def _run_aeon_inference(
         tissue_site_idx=tissue_site_idx,
         use_cpu=False,
     )
-    end_time = pd.Timestamp.now()
+    duration_sec = time_module.time() - start_time
 
     # Log memory stats if CUDA is available
     if torch.cuda.is_available():
         try:
             max_gpu_memory = torch.cuda.max_memory_allocated() / (1024**3)
             logger.info(
-                f"Aeon inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+                f"Aeon inference took {duration_sec:.2f}s and used {max_gpu_memory:.2f} GB GPU memory"
             )
             torch.cuda.reset_peak_memory_stats()
         except Exception:
-            logger.info(f"Aeon inference took {end_time - start_time}")
+            logger.info(f"Aeon inference took {duration_sec:.2f}s")
     else:
-        logger.info(f"Aeon inference took {end_time - start_time}")
+        logger.info(f"Aeon inference took {duration_sec:.2f}s")
+
+    if timings is not None:
+        timings["aeon"] = duration_sec
 
     return aeon_results
 
 
-def _run_paladin_inference(features, aeon_results, site_type, num_workers):
+def _run_paladin_inference(features, aeon_results, site_type, num_workers, timings=None):
     """Run Paladin biomarker inference on GPU.
 
     Args:
@@ -187,6 +202,7 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
         aeon_results: Aeon results DataFrame
         site_type: Site type ("Primary" or "Metastatic")
         num_workers: Number of worker processes
+        timings: Optional dict to populate with timing data
 
     Returns:
         Paladin results DataFrame
@@ -201,7 +217,7 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
         num_workers = max(num_workers, 8)
         logger.info(f"Running Paladin with num_workers={num_workers}")
 
-    start_time = pd.Timestamp.now()
+    start_time = time_module.time()
     logger.info("Running Paladin for biomarker inference")
     data_dir = get_data_directory()
     paladin_results = run_paladin(
@@ -213,20 +229,23 @@ def _run_paladin_inference(features, aeon_results, site_type, num_workers):
         num_workers=num_workers,
         use_cpu=False,
     )
-    end_time = pd.Timestamp.now()
+    duration_sec = time_module.time() - start_time
 
     # Log memory stats if CUDA is available
     if torch.cuda.is_available():
         try:
             max_gpu_memory = torch.cuda.max_memory_allocated() / (1024**3)
             logger.info(
-                f"Paladin inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+                f"Paladin inference took {duration_sec:.2f}s and used {max_gpu_memory:.2f} GB GPU memory"
             )
             torch.cuda.reset_peak_memory_stats()
         except Exception:
-            logger.info(f"Paladin inference took {end_time - start_time}")
+            logger.info(f"Paladin inference took {duration_sec:.2f}s")
     else:
-        logger.info(f"Paladin inference took {end_time - start_time}")
+        logger.info(f"Paladin inference took {duration_sec:.2f}s")
+
+    if timings is not None:
+        timings["paladin"] = duration_sec
 
     return paladin_results
 
@@ -243,6 +262,7 @@ def _run_inference_pipeline_free(
     cancer_subtype_name_map,
     num_workers,
     progress,
+    timings=None,
 ):
     """Run inference pipeline with 60s GPU limit (for free users)."""
     return _run_inference_pipeline_impl(
@@ -256,6 +276,7 @@ def _run_inference_pipeline_free(
         cancer_subtype_name_map,
         num_workers,
         progress,
+        timings=timings,
     )
 
 
@@ -271,6 +292,7 @@ def _run_inference_pipeline_pro(
     cancer_subtype_name_map,
     num_workers,
     progress,
+    timings=None,
 ):
     """Run inference pipeline with 300s GPU limit (for PRO users)."""
     return _run_inference_pipeline_impl(
@@ -284,6 +306,7 @@ def _run_inference_pipeline_pro(
         cancer_subtype_name_map,
         num_workers,
         progress,
+        timings=timings,
     )
 
 
@@ -298,6 +321,7 @@ def _run_inference_pipeline_impl(
     cancer_subtype_name_map,
     num_workers,
     progress,
+    timings=None,
 ):
     """Run complete inference pipeline using model cache.
 
@@ -313,6 +337,7 @@ def _run_inference_pipeline_impl(
         cancer_subtype_name_map: Dictionary mapping cancer subtype names to codes
         num_workers: Number of worker processes for feature extraction
         progress: Gradio progress tracker for UI updates
+        timings: Optional dict to populate with timing data
 
     Returns:
         tuple: (aeon_results, paladin_results)
@@ -330,11 +355,11 @@ def _run_inference_pipeline_impl(
         # Step 2: Extract CTransPath features using cached model
         progress(0.3, desc="Extracting CTransPath features")
         ctranspath_features, coords = _extract_ctranspath_features(
-            coords, slide_path, attrs, num_workers, model=model_cache.ctranspath_model
+            coords, slide_path, attrs, num_workers, model=model_cache.ctranspath_model,
+            timings=timings
         )
 
         # Step 3: Filter features using cached marker classifier
-        start_time = pd.Timestamp.now()
         progress(0.35, desc="Filtering features with marker classifier")
         logger.info("Filtering features with marker classifier")
         _, filtered_coords = filter_features(
@@ -343,11 +368,11 @@ def _run_inference_pipeline_impl(
             model_cache.marker_classifier,
             threshold=0.25,
         )
-        end_time = pd.Timestamp.now()
-        logger.info(f"Feature filtering took {end_time - start_time}")
         logger.info(
             f"Filtered from {len(coords)} to {len(filtered_coords)} tiles using marker classifier"
         )
+        if timings is not None:
+            timings["filtered_tile_count"] = len(filtered_coords)
 
         # Step 4: Extract Optimus features using cached model
         progress(0.4, desc="Extracting Optimus features")
@@ -357,6 +382,7 @@ def _run_inference_pipeline_impl(
             attrs,
             num_workers,
             model=model_cache.optimus_model,
+            timings=timings,
         )
 
         # Step 5: Run Aeon to predict histology if not supplied
@@ -370,6 +396,7 @@ def _run_inference_pipeline_impl(
                 num_workers,
                 sex,
                 tissue_site_idx,
+                timings=timings,
             )
         else:
             cancer_subtype_code = cancer_subtype_name_map.get(cancer_subtype)
@@ -388,7 +415,8 @@ def _run_inference_pipeline_impl(
 
         progress(0.95, desc="Running Paladin for biomarker inference")
         paladin_results = _run_paladin_inference_with_models(
-            features, aeon_results, site_type, model_cache, num_workers
+            features, aeon_results, site_type, model_cache, num_workers,
+            timings=timings
         )
 
         aeon_results.set_index("Cancer Subtype", inplace=True)
@@ -411,7 +439,7 @@ def _run_inference_pipeline_impl(
 
 
 def _run_aeon_inference_with_model(
-    features, model, device, site_type, num_workers, sex_idx=None, tissue_site_idx=None
+    features, model, device, site_type, num_workers, sex_idx=None, tissue_site_idx=None, timings=None
 ):
     """Run Aeon inference using pre-loaded model (for batch processing).
 
@@ -423,6 +451,7 @@ def _run_aeon_inference_with_model(
         num_workers: Number of workers for data loading
         sex_idx: Encoded sex index (0=Male, 1=Female), optional
         tissue_site_idx: Encoded tissue site index (0-56), optional
+        timings: Optional dict to populate with timing data
 
     Returns:
         DataFrame with cancer subtype predictions and confidence scores
@@ -439,7 +468,7 @@ def _run_aeon_inference_with_model(
         batch_size = 8
         logger.info(f"Running Aeon with num_workers={num_workers}")
 
-    start_time = pd.Timestamp.now()
+    start_time = time_module.time()
     aeon_results, _ = aeon.run_with_model(
         features=features,
         model=model,
@@ -450,19 +479,22 @@ def _run_aeon_inference_with_model(
         sex=sex_idx,
         tissue_site_idx=tissue_site_idx,
     )
-    end_time = pd.Timestamp.now()
+    duration_sec = time_module.time() - start_time
 
     if torch.cuda.is_available():
         max_gpu_memory = torch.cuda.max_memory_allocated() / (1024**3)
         logger.info(
-            f"Aeon inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+            f"Aeon inference took {duration_sec:.2f}s and used {max_gpu_memory:.2f} GB GPU memory"
         )
+
+    if timings is not None:
+        timings["aeon"] = duration_sec
 
     return aeon_results
 
 
 def _run_paladin_inference_with_models(
-    features, aeon_results, site_type, model_cache, num_workers
+    features, aeon_results, site_type, model_cache, num_workers, timings=None
 ):
     """Run Paladin inference using pre-loaded models from cache (for batch processing).
 
@@ -472,6 +504,7 @@ def _run_paladin_inference_with_models(
         site_type: "Primary" or "Metastatic"
         model_cache: ModelCache instance with pre-loaded models
         num_workers: Number of workers for data loading
+        timings: Optional dict to populate with timing data
 
     Returns:
         DataFrame with biomarker predictions (Cancer Subtype, Biomarker, Score)
@@ -490,7 +523,7 @@ def _run_paladin_inference_with_models(
         batch_size = 8
         logger.info(f"Running Paladin with num_workers={num_workers}")
 
-    start_time = pd.Timestamp.now()
+    start_time = time_module.time()
     paladin_results = paladin.run_with_models(
         features=features,
         aeon_results=aeon_results,
@@ -500,13 +533,16 @@ def _run_paladin_inference_with_models(
         batch_size=batch_size,
         num_workers=num_workers,
     )
-    end_time = pd.Timestamp.now()
+    duration_sec = time_module.time() - start_time
 
     if torch.cuda.is_available():
         max_gpu_memory = torch.cuda.max_memory_allocated() / (1024**3)
         logger.info(
-            f"Paladin inference took {end_time - start_time} and used {max_gpu_memory:.2f} GB GPU memory"
+            f"Paladin inference took {duration_sec:.2f}s and used {max_gpu_memory:.2f} GB GPU memory"
         )
+
+    if timings is not None:
+        timings["paladin"] = duration_sec
 
     return paladin_results
 
@@ -523,6 +559,7 @@ def _run_inference_pipeline_with_models(
     model_cache,
     num_workers,
     progress,
+    timings=None,
 ):
     """Run complete inference pipeline using pre-loaded models (for batch processing).
 
@@ -541,6 +578,7 @@ def _run_inference_pipeline_with_models(
         model_cache: ModelCache instance with pre-loaded models
         num_workers: Number of workers for data loading
         progress: Gradio progress tracker
+        timings: Optional dict to populate with timing data
 
     Returns:
         Tuple of (aeon_results, paladin_results)
@@ -548,11 +586,11 @@ def _run_inference_pipeline_with_models(
     # Step 1: Extract CTransPath features with PRE-LOADED model
     progress(0.3, desc="Extracting CTransPath features")
     ctranspath_features, coords = _extract_ctranspath_features(
-        coords, slide_path, attrs, num_workers, model=model_cache.ctranspath_model
+        coords, slide_path, attrs, num_workers, model=model_cache.ctranspath_model,
+        timings=timings
     )
 
     # Step 2: Filter features using pre-loaded marker classifier
-    start_time = pd.Timestamp.now()
     progress(0.35, desc="Filtering features with marker classifier")
     logger.info("Filtering features with PRE-LOADED marker classifier")
     _, filtered_coords = filter_features(
@@ -561,16 +599,17 @@ def _run_inference_pipeline_with_models(
         model_cache.marker_classifier,  # Use pre-loaded classifier
         threshold=0.25,
     )
-    end_time = pd.Timestamp.now()
-    logger.info(f"Feature filtering took {end_time - start_time}")
     logger.info(
         f"Filtered from {len(coords)} to {len(filtered_coords)} tiles using marker classifier"
     )
+    if timings is not None:
+        timings["filtered_tile_count"] = len(filtered_coords)
 
     # Step 3: Extract Optimus features with PRE-LOADED model
     progress(0.5, desc="Extracting Optimus features")
     features = _extract_optimus_features(
-        filtered_coords, slide_path, attrs, num_workers, model=model_cache.optimus_model
+        filtered_coords, slide_path, attrs, num_workers, model=model_cache.optimus_model,
+        timings=timings
     )
 
     # Step 4: Run Aeon inference with pre-loaded model (if cancer subtype unknown)
@@ -590,6 +629,7 @@ def _run_inference_pipeline_with_models(
             num_workers,
             sex_idx,
             tissue_site_idx,
+            timings=timings,
         )
     else:
         # Cancer subtype is known, create synthetic Aeon results
@@ -602,7 +642,8 @@ def _run_inference_pipeline_with_models(
     # Step 5: Run Paladin inference with pre-loaded models
     progress(0.95, desc="Running Paladin for biomarker inference")
     paladin_results = _run_paladin_inference_with_models(
-        features, aeon_results, site_type, model_cache, num_workers
+        features, aeon_results, site_type, model_cache, num_workers,
+        timings=timings
     )
 
     aeon_results.set_index("Cancer Subtype", inplace=True)
@@ -666,12 +707,11 @@ def analyze_slide(
         raise gr.Error("Please upload a slide.")
 
     # Initialize telemetry for resource tracking
-    import time as time_module
-
     slide_start_time = time_module.time()
+    timings = {}  # Collect stage timings for telemetry
 
     # Step 1: Segment tissue (CPU-only, not GPU-intensive)
-    start_time = pd.Timestamp.now()
+    seg_start_time = time_module.time()
 
     if seg_config == "Biopsy":
         seg_config = BiopsySegConfig()
@@ -700,8 +740,8 @@ def analyze_slide(
     else:
         gr.Warning(f"No tissue detected in slide: {slide_path}")
         return None, None, None
-    end_time = pd.Timestamp.now()
-    logger.info(f"Tissue segmentation took {end_time - start_time}")
+    timings["segmentation"] = time_module.time() - seg_start_time
+    logger.info(f"Tissue segmentation took {timings['segmentation']:.2f}s")
     logger.info(f"Found {len(coords)} tissue tiles")
     progress(0.2, desc="Tissue segmented")
 
@@ -740,6 +780,7 @@ def analyze_slide(
             model_cache,
             num_workers,
             progress,
+            timings=timings,
         )
     else:
         # Single-slide mode: load models on-demand
@@ -807,6 +848,7 @@ def analyze_slide(
                 cancer_subtype_name_map,
                 num_workers,
                 progress,
+                timings=timings,
             )
         else:
             if IS_ZEROGPU:
@@ -822,6 +864,7 @@ def analyze_slide(
                 cancer_subtype_name_map,
                 num_workers,
                 progress,
+                timings=timings,
             )
 
     # Log resource event if telemetry is enabled
@@ -837,7 +880,14 @@ def analyze_slide(
             analysis_id=analysis_id,
             session_hash=session_hash,
             total_duration_sec=total_duration,
+            segmentation_duration_sec=timings.get("segmentation"),
+            ctranspath_duration_sec=timings.get("ctranspath"),
+            optimus_duration_sec=timings.get("optimus"),
+            aeon_duration_sec=timings.get("aeon"),
+            paladin_duration_sec=timings.get("paladin"),
             tile_count=len(coords) if coords is not None else None,
+            filtered_tile_count=timings.get("filtered_tile_count"),
+            batch_size=timings.get("batch_size"),
             gpu_type=gpu_metrics.get("gpu_type"),
             peak_gpu_memory_gb=gpu_metrics.get("max_memory_allocated_gb"),
         )
