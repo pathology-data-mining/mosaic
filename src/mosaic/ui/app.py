@@ -986,8 +986,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
     def heartbeat_worker():
         while not _shutdown_requested:
             time.sleep(tracker.config.heartbeat_interval_sec)
-            if not _shutdown_requested:
-                tracker.log_heartbeat()
+            tracker.log_heartbeat()
 
     heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
     heartbeat_thread.start()
