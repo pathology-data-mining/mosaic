@@ -366,6 +366,10 @@ def analyze_slides(
             gpu_type=GPU_TYPE,
         )
 
+        # Upload telemetry immediately after analysis to ensure data is saved
+        # before HF Spaces potentially goes to sleep
+        tracker.upload_to_hf()
+
         progress(0.99, desc="Analysis complete, wrapping up results")
 
     except Exception as e:
@@ -984,10 +988,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
     atexit.register(cleanup_on_exit)
 
     # Start heartbeat thread for telemetry (every 5 minutes)
+    # Also uploads telemetry on each heartbeat to ensure data is saved before HF Spaces sleep
     def heartbeat_worker():
         while not _shutdown_requested:
             time.sleep(tracker.config.heartbeat_interval_sec)
             tracker.log_heartbeat()
+            # Upload telemetry on each heartbeat to avoid data loss when HF Spaces goes to sleep
+            # (atexit handlers may not run when the container is frozen/killed)
+            tracker.upload_to_hf()
 
     heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
     heartbeat_thread.start()
