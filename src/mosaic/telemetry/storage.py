@@ -154,3 +154,103 @@ class TelemetryStorage:
         if not self.daily_dir.exists():
             return []
         return list(self.daily_dir.glob("*.jsonl"))
+
+    def download_from_hf_dataset(self, repo_id: str) -> bool:
+        """Download telemetry files from HF Dataset repository.
+
+        Downloads all JSONL files from the daily/ folder in the repository
+        to the local daily directory, merging with any existing local files.
+
+        Args:
+            repo_id: HuggingFace Dataset repository ID (e.g., "PDM-Group/mosaic-telemetry")
+
+        Returns:
+            True if at least one file was downloaded, False otherwise
+        """
+        try:
+            from huggingface_hub import HfApi, hf_hub_download
+        except ImportError:
+            logger.warning("huggingface_hub not installed, skipping download")
+            return False
+
+        api = HfApi()
+        downloaded = 0
+
+        try:
+            # List files in the repository
+            files = api.list_repo_files(repo_id=repo_id, repo_type="dataset")
+        except Exception as e:
+            logger.error(f"Failed to list files in {repo_id}: {e}")
+            return False
+
+        # Filter for daily/*.jsonl files
+        jsonl_files = [
+            f for f in files if f.startswith("daily/") and f.endswith(".jsonl")
+        ]
+
+        if not jsonl_files:
+            logger.info(f"No telemetry files found in {repo_id}")
+            return False
+
+        self._ensure_directories()
+
+        for remote_path in jsonl_files:
+            try:
+                # Download file to a temp location
+                local_path = hf_hub_download(
+                    repo_id=repo_id,
+                    filename=remote_path,
+                    repo_type="dataset",
+                )
+
+                # Get the filename (e.g., "session_2026-01-21.jsonl")
+                filename = os.path.basename(remote_path)
+                target_path = self.daily_dir / filename
+
+                # Read downloaded content
+                with open(local_path, "r", encoding="utf-8") as f:
+                    remote_content = f.read()
+
+                # If local file exists, merge (append new lines only)
+                if target_path.exists():
+                    with open(target_path, "r", encoding="utf-8") as f:
+                        local_content = f.read()
+
+                    # Parse existing lines to avoid duplicates
+                    local_lines = (
+                        set(local_content.strip().split("\n"))
+                        if local_content.strip()
+                        else set()
+                    )
+                    remote_lines = (
+                        remote_content.strip().split("\n")
+                        if remote_content.strip()
+                        else []
+                    )
+
+                    # Append only new lines
+                    new_lines = [
+                        line
+                        for line in remote_lines
+                        if line and line not in local_lines
+                    ]
+                    if new_lines:
+                        with self._lock:
+                            with open(target_path, "a", encoding="utf-8") as f:
+                                for line in new_lines:
+                                    f.write(line + "\n")
+                        logger.info(
+                            f"Merged {len(new_lines)} new events into {filename}"
+                        )
+                else:
+                    # No local file, just copy
+                    with self._lock:
+                        with open(target_path, "w", encoding="utf-8") as f:
+                            f.write(remote_content)
+                    logger.info(f"Downloaded telemetry file: {filename}")
+
+                downloaded += 1
+            except Exception as e:
+                logger.warning(f"Failed to download {remote_path}: {e}")
+
+        return downloaded > 0
