@@ -3,6 +3,7 @@
 This module provides the web-based user interface for analyzing whole slide images.
 It includes functionality for:
 - Multi-slide upload and analysis
+- TCGA slide fetching by ID (UUID or barcode)
 - Settings configuration (site type, cancer subtype, IHC subtype, segmentation)
 - Results visualization and export
 - CSV-based batch processing
@@ -30,6 +31,15 @@ from mosaic.ui.utils import (
 from mosaic.analysis import analyze_slide
 from mosaic.model_manager import load_all_models
 from mosaic.hardware import DEFAULT_CONCURRENCY_LIMIT, IS_T4_GPU, GPU_TYPE
+from mosaic.tcga import (
+    fetch_slide,
+    get_case_metadata,
+    validate_slide_id,
+    GDCError,
+    GDCInvalidIDError,
+    GDCNotFoundError,
+    GDCAccessDeniedError,
+)
 
 current_dir = Path(__file__).parent.parent
 
@@ -501,7 +511,7 @@ def launch_gradio(server_name, server_port, share):
             "# Mosaic: H&E Whole Slide Image Cancer Subtype and Biomarker Inference"
         )
         gr.Markdown(
-            "Upload an H&E whole slide image in SVS or TIFF format. The slide will be processed to infer cancer subtype and relevant biomarkers."
+            "Upload an H&E whole slide image in SVS or TIFF format, or fetch a slide directly from TCGA. The slide will be processed to infer cancer subtype and relevant biomarkers."
         )
 
         # Comprehensive documentation section
@@ -522,6 +532,12 @@ def launch_gradio(server_name, server_port, share):
      - **Resection**: For surgical specimens
      - **TCGA**: For TCGA-compatible slides
 3. Click "Analyze" and wait for results
+
+**Fetch from TCGA:**
+1. Select "Fetch from TCGA" input mode
+2. Enter a TCGA slide ID (UUID or barcode like TCGA-A1-A0SB-01Z-00-DX1)
+3. Click "Fetch Slide" - metadata will auto-fill the dropdowns
+4. Review/adjust settings, then click "Analyze"
 
 **Batch Processing:**
 - Upload multiple slides at once to process them sequentially
@@ -598,6 +614,37 @@ slide2.tif,Metastatic,Male,Lung,LUAD,Biopsy
 
 ---
 
+## TCGA Slide Fetching
+
+**Supported ID Formats:**
+- **UUID**: 36-character identifier (e.g., `9c960533-ce6d-4a77-9227-eb974710a607`)
+- **TCGA Barcode**: Standard TCGA format (e.g., `TCGA-E2-A1LS-01Z-00-DX1`)
+
+**Example Slide IDs (Public Access, with Paladin biomarker models):**
+| ID | Cancer Type | Format |
+|----|-------------|--------|
+| `6a0ea716-a5f2-47f3-880b-537a5cdc2324` | Lung Adenocarcinoma (LUAD) | UUID |
+| `d65c5d21-6333-4a9e-9a2a-139a122a3c8a` | Colon Adenocarcinoma (COAD) | UUID |
+| `1bc2766c-7064-43c7-97cb-5962d3894671` | Prostate Adenocarcinoma (PRAD) | UUID |
+| `0d083e4f-0037-462e-b810-3182506f15ba` | Bladder Cancer (BLCA) | UUID |
+| `TCGA-86-8074-01Z-00-DX1` | Lung Adenocarcinoma (LUAD) | Barcode |
+| `TCGA-AZ-4313-01Z-00-DX1` | Colon Adenocarcinoma (COAD) | Barcode |
+
+**How It Works:**
+1. Slides are downloaded from the GDC (Genomic Data Commons) API
+2. Downloaded slides are cached locally to avoid re-downloading
+3. Clinical metadata (sex, tissue site, cancer subtype) is extracted and pre-filled
+
+**Authentication:**
+- Public TCGA slides can be fetched without authentication
+- Controlled-access data requires a GDC token (set via `GDC_TOKEN` environment variable)
+
+**Cache Location:**
+- Default: `~/.cache/mosaic/tcga_slides/`
+- Override with `MOSAIC_TCGA_CACHE_DIR` environment variable
+
+---
+
 ## Important Limitations
 
 **Research Use Only:**
@@ -641,11 +688,51 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
         with gr.Row():
             with gr.Column():
+                # Input mode selection
+                input_mode = gr.Radio(
+                    choices=["Upload Files", "Fetch from TCGA"],
+                    value="Upload Files",
+                    label="Input Mode",
+                    info="Choose how to provide the slide",
+                )
+
+                # File upload component (visible by default)
                 input_slides = gr.File(
                     label="Upload H&E Whole Slide Image (SVS or TIFF format)",
                     file_types=[".svs", ".tiff", ".tif"],
                     file_count="multiple",
                 )
+
+                # TCGA fetch components (hidden by default)
+                with gr.Group(visible=False) as tcga_input_group:
+                    tcga_id_input = gr.Textbox(
+                        label="TCGA Slide ID",
+                        placeholder="Enter UUID or TCGA barcode",
+                        info="Supports UUID format or TCGA barcode format",
+                    )
+                    gr.Examples(
+                        examples=[
+                            ["6a0ea716-a5f2-47f3-880b-537a5cdc2324"],  # TCGA-LUAD (Lung) - has Paladin models
+                            ["d65c5d21-6333-4a9e-9a2a-139a122a3c8a"],  # TCGA-COAD (Colon) - has Paladin models
+                            ["1bc2766c-7064-43c7-97cb-5962d3894671"],  # TCGA-PRAD (Prostate) - has Paladin models
+                            ["0d083e4f-0037-462e-b810-3182506f15ba"],  # TCGA-BLCA (Bladder) - has Paladin models
+                            ["TCGA-86-8074-01Z-00-DX1"],  # TCGA-LUAD barcode (Lung)
+                            ["TCGA-AZ-4313-01Z-00-DX1"],  # TCGA-COAD barcode (Colon)
+                        ],
+                        inputs=tcga_id_input,
+                        label="Example TCGA Slide IDs (click to use)",
+                    )
+                    with gr.Row():
+                        fetch_button = gr.Button("Fetch Slide", variant="secondary")
+                    tcga_status = gr.Textbox(
+                        label="Fetch Status",
+                        interactive=False,
+                        visible=False,
+                    )
+
+                # State to track fetched slide path
+                tcga_slide_path_state = gr.State(None)
+
                 site_dropdown = gr.Dropdown(
                     choices=["Primary", "Metastatic"],
                     label="Site Type",
@@ -772,6 +859,107 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             updated_df[column_name] = new_value
             return updated_df
 
+        # Handle input mode switching
+        @input_mode.change(
+            inputs=[input_mode],
+            outputs=[input_slides, tcga_input_group],
+        )
+        def switch_input_mode(mode):
+            """Switch between file upload and TCGA fetch modes."""
+            if mode == "Upload Files":
+                return gr.File(visible=True), gr.Group(visible=False)
+            else:
+                return gr.File(visible=False), gr.Group(visible=True)
+
+        # Handle TCGA slide fetch
+        def fetch_tcga_slide(tcga_id, seg_config, progress=gr.Progress()):
+            """Fetch a slide from TCGA and pre-fill metadata."""
+            if not tcga_id or not tcga_id.strip():
+                raise gr.Error("Please enter a TCGA slide ID (UUID or barcode).")
+
+            try:
+                # Validate ID format first
+                tcga_id = validate_slide_id(tcga_id)
+                progress(0.1, desc="Validating slide ID...")
+
+                # Get tissue sites for metadata mapping
+                tissue_sites = get_tissue_sites()
+
+                # Fetch the slide (will use cache if available)
+                progress(0.2, desc="Fetching slide from TCGA (this may take a while for large files)...")
+
+                def update_progress(downloaded, total):
+                    if total > 0:
+                        pct = 0.2 + (downloaded / total) * 0.7
+                        size_mb = downloaded / (1024 * 1024)
+                        total_mb = total / (1024 * 1024)
+                        progress(pct, desc=f"Downloading: {size_mb:.1f} / {total_mb:.1f} MB")
+
+                slide_path, file_uuid = fetch_slide(
+                    tcga_id,
+                    progress_callback=update_progress,
+                )
+
+                progress(0.9, desc="Extracting metadata...")
+
+                # Get case metadata and convert to Mosaic values
+                metadata = get_case_metadata(file_uuid, tissue_sites)
+
+                progress(1.0, desc="Slide fetched successfully!")
+
+                # Determine cancer subtype display value
+                cancer_subtype_value = "Unknown"
+                if metadata.cancer_subtype and metadata.cancer_subtype != "Unknown":
+                    # Try to find the display name in the map
+                    if metadata.cancer_subtype in reversed_cancer_subtype_name_map:
+                        cancer_subtype_value = reversed_cancer_subtype_name_map[
+                            metadata.cancer_subtype
+                        ]
+                    else:
+                        # Code not in map - keep as Unknown, log warning
+                        logger.warning(
+                            f"Cancer subtype code '{metadata.cancer_subtype}' not found in "
+                            "available subtypes. Using 'Unknown'."
+                        )
+
+                status_msg = f"Slide fetched: {metadata.filename or slide_path.name}"
+                if metadata.sex or metadata.tissue_site != "Unknown":
+                    status_msg += f"\nPre-filled: Sex={metadata.sex or 'N/A'}, Site={metadata.tissue_site}, Subtype={cancer_subtype_value}"
+
+                return (
+                    str(slide_path),  # tcga_slide_path_state
+                    metadata.site_type or "Primary",  # site_dropdown
+                    metadata.sex,  # sex_dropdown
+                    metadata.tissue_site or "Unknown",  # tissue_site_dropdown
+                    cancer_subtype_value,  # cancer_subtype_dropdown
+                    gr.Textbox(value=status_msg, visible=True),  # tcga_status
+                )
+
+            except GDCInvalidIDError as e:
+                raise gr.Error(str(e))
+            except GDCNotFoundError as e:
+                raise gr.Error(str(e))
+            except GDCAccessDeniedError as e:
+                raise gr.Error(str(e))
+            except GDCError as e:
+                raise gr.Error(f"Error fetching slide: {e}")
+            except Exception as e:
+                logger.exception("Unexpected error fetching TCGA slide")
+                raise gr.Error(f"Unexpected error: {e}")
+
+        fetch_button.click(
+            fetch_tcga_slide,
+            inputs=[tcga_id_input, seg_config_dropdown],
+            outputs=[
+                tcga_slide_path_state,
+                site_dropdown,
+                sex_dropdown,
+                tissue_site_dropdown,
+                cancer_subtype_dropdown,
+                tcga_status,
+            ],
+        )
+
         # Handle file uploads - regenerate entire settings table
         @input_slides.change(
             inputs=[
@@ -896,10 +1084,54 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             df = load_settings(file.name if hasattr(file, "name") else file)
             return gr.Dataframe(df, visible=True)
 
+        def analyze_with_tcga_support(
+            input_mode_val,
+            slides,
+            tcga_slide_path,
+            settings_input_val,
+            site_type,
+            sex,
+            tissue_site,
+            cancer_subtype,
+            ihc_subtype,
+            seg_config,
+            user_dir,
+            progress=gr.Progress(track_tqdm=True),
+            request: gr.Request = None,
+        ):
+            """Wrapper to handle both file upload and TCGA slide inputs."""
+            # Determine the slides to analyze based on input mode
+            if input_mode_val == "Fetch from TCGA":
+                if not tcga_slide_path:
+                    raise gr.Error(
+                        "Please fetch a TCGA slide first using the 'Fetch Slide' button."
+                    )
+                # Create a mock file-like object for the TCGA slide
+                slides = [Path(tcga_slide_path)]
+            elif slides is None or len(slides) == 0:
+                raise gr.Error("Please upload at least one slide.")
+
+            # Call the original analyze_slides function
+            yield from analyze_slides(
+                slides,
+                settings_input_val,
+                site_type,
+                sex,
+                tissue_site,
+                cancer_subtype,
+                ihc_subtype,
+                seg_config,
+                user_dir,
+                progress=progress,
+                request=request,
+            )
+
         analyze_button.click(
-            analyze_slides,
+            analyze_with_tcga_support,
             inputs=[
+                input_mode,
                 input_slides,
+                tcga_slide_path_state,
                 settings_input,
                 site_dropdown,
                 sex_dropdown,
@@ -944,6 +1176,11 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 aeon_download_button,
                 settings_input,
                 settings_csv,
+                tcga_id_input,
+                tcga_status,
+                tcga_slide_path_state,
+                input_mode,
+                tcga_input_group,
             ],
         )
         def clear_fn():
@@ -956,6 +1193,11 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 gr.DownloadButton(visible=False),  # aeon_download_button
                 gr.Dataframe(visible=False),  # settings_input
                 gr.File(visible=False),  # settings_csv
+                "",  # tcga_id_input
+                gr.Textbox(visible=False),  # tcga_status
+                None,  # tcga_slide_path_state
+                "Upload Files",  # input_mode - reset to default
+                gr.Group(visible=False),  # tcga_input_group - hide TCGA inputs
             )
 
         demo.load(
