@@ -22,6 +22,12 @@ Usage:
     # HTML format for email
     python scripts/telemetry_report.py /path/to/telemetry --daily --format html
 
+    # Pull data from HuggingFace Dataset repository
+    python scripts/telemetry_report.py --hf-repo PDM-Group/mosaic-telemetry
+
+    # Pull from HF and save to specific directory
+    python scripts/telemetry_report.py /path/to/telemetry --hf-repo PDM-Group/mosaic-telemetry
+
 Example cron entry (daily report at 8am):
     0 8 * * * python /app/scripts/telemetry_report.py /data/telemetry --daily --email team@example.com
 """
@@ -78,9 +84,7 @@ def load_events(
     return events
 
 
-def generate_text_report(
-    telemetry_dir: Path, date: Optional[str] = None
-) -> str:
+def generate_text_report(telemetry_dir: Path, date: Optional[str] = None) -> str:
     """Generate plain text report.
 
     Args:
@@ -107,13 +111,31 @@ def generate_text_report(
     # Cost summary from session events
     if sessions:
         shutdowns = [s for s in sessions if s.get("event_type") == "app_shutdown"]
+
+        # For running instances without shutdowns, use the latest heartbeat per session
+        if not shutdowns:
+            # Group heartbeats by app_start_time to identify unique sessions
+            heartbeats = [s for s in sessions if s.get("event_type") == "heartbeat"]
+            if heartbeats:
+                # Get the latest heartbeat for each session (by app_start_time)
+                sessions_by_start = {}
+                for hb in heartbeats:
+                    start_time = hb.get("app_start_time")
+                    if start_time:
+                        if start_time not in sessions_by_start or hb.get(
+                            "uptime_sec", 0
+                        ) > sessions_by_start[start_time].get("uptime_sec", 0):
+                            sessions_by_start[start_time] = hb
+                shutdowns = list(sessions_by_start.values())
+
         if shutdowns:
             total_uptime_sec = sum(s.get("uptime_sec", 0) for s in shutdowns)
             total_uptime_hrs = total_uptime_sec / 3600
             total_analysis_sec = sum(s.get("analysis_time_sec", 0) for s in shutdowns)
             total_analysis_hrs = total_analysis_sec / 3600
             total_idle_hrs = total_uptime_hrs - total_analysis_hrs
-            hourly_rate = shutdowns[0].get("hourly_rate", DEFAULT_HOURLY_RATE)
+            # Use hourly_rate from data, fallback to DEFAULT if missing or zero
+            hourly_rate = shutdowns[0].get("hourly_rate") or DEFAULT_HOURLY_RATE
             total_cost = total_uptime_hrs * hourly_rate
             analysis_count = sum(s.get("analysis_count", 0) for s in shutdowns)
 
@@ -123,8 +145,16 @@ def generate_text_report(
                 else 0
             )
 
+            # Check if these are from running instances (heartbeats) vs completed (shutdowns)
+            is_running = all(s.get("event_type") == "heartbeat" for s in shutdowns)
+            session_label = (
+                f"Running sessions: {len(shutdowns)}"
+                if is_running
+                else f"App sessions: {len(shutdowns)}"
+            )
+
             lines.append("=== COST SUMMARY ===")
-            lines.append(f"App sessions: {len(shutdowns)}")
+            lines.append(session_label)
             lines.append(f"Total uptime: {total_uptime_hrs:.2f} hours")
             lines.append(
                 f"  - Active analysis: {total_analysis_hrs:.2f} hrs ({utilization:.1f}%)"
@@ -144,10 +174,14 @@ def generate_text_report(
         successful = [c for c in completes if c.get("success", False)]
 
         total_slides = sum(s.get("slide_count", 0) for s in starts)
-        unique_sessions = len(set(u.get("session_hash") for u in usage if u.get("session_hash")))
+        unique_sessions = len(
+            set(u.get("session_hash") for u in usage if u.get("session_hash"))
+        )
 
         # Calculate average duration
-        durations = [c.get("duration_sec", 0) for c in completes if c.get("duration_sec")]
+        durations = [
+            c.get("duration_sec", 0) for c in completes if c.get("duration_sec")
+        ]
         avg_duration = sum(durations) / len(durations) if durations else 0
 
         lines.append("=== USAGE SUMMARY ===")
@@ -184,7 +218,9 @@ def generate_text_report(
     # Resource summary
     if resources:
         total_duration = sum(r.get("total_duration_sec", 0) for r in resources)
-        total_tiles = sum(r.get("tile_count", 0) for r in resources if r.get("tile_count"))
+        total_tiles = sum(
+            r.get("tile_count", 0) for r in resources if r.get("tile_count")
+        )
         peak_memory = max(
             (r.get("peak_gpu_memory_gb", 0) for r in resources), default=0
         )
@@ -224,9 +260,7 @@ def generate_text_report(
     return "\n".join(lines)
 
 
-def generate_html_report(
-    telemetry_dir: Path, date: Optional[str] = None
-) -> str:
+def generate_html_report(telemetry_dir: Path, date: Optional[str] = None) -> str:
     """Generate HTML report.
 
     Args:
@@ -267,12 +301,27 @@ def generate_html_report(
     # Cost summary
     if sessions:
         shutdowns = [s for s in sessions if s.get("event_type") == "app_shutdown"]
+
+        # For running instances without shutdowns, use the latest heartbeat per session
+        if not shutdowns:
+            heartbeats = [s for s in sessions if s.get("event_type") == "heartbeat"]
+            if heartbeats:
+                sessions_by_start = {}
+                for hb in heartbeats:
+                    start_time = hb.get("app_start_time")
+                    if start_time:
+                        if start_time not in sessions_by_start or hb.get(
+                            "uptime_sec", 0
+                        ) > sessions_by_start[start_time].get("uptime_sec", 0):
+                            sessions_by_start[start_time] = hb
+                shutdowns = list(sessions_by_start.values())
+
         if shutdowns:
             total_uptime_sec = sum(s.get("uptime_sec", 0) for s in shutdowns)
             total_uptime_hrs = total_uptime_sec / 3600
             total_analysis_sec = sum(s.get("analysis_time_sec", 0) for s in shutdowns)
             total_analysis_hrs = total_analysis_sec / 3600
-            hourly_rate = shutdowns[0].get("hourly_rate", DEFAULT_HOURLY_RATE)
+            hourly_rate = shutdowns[0].get("hourly_rate") or DEFAULT_HOURLY_RATE
             total_cost = total_uptime_hrs * hourly_rate
             analysis_count = sum(s.get("analysis_count", 0) for s in shutdowns)
             utilization = (
@@ -281,9 +330,18 @@ def generate_html_report(
                 else 0
             )
 
+            is_running = all(s.get("event_type") == "heartbeat" for s in shutdowns)
+            session_label = (
+                f"Running sessions: {len(shutdowns)}"
+                if is_running
+                else f"App sessions: {len(shutdowns)}"
+            )
+
             html.append("<h2>Cost Summary</h2>")
             html.append("<table>")
-            html.append(f"<tr><td>App sessions</td><td>{len(shutdowns)}</td></tr>")
+            html.append(
+                f"<tr><td>{session_label.split(':')[0]}</td><td>{len(shutdowns)}</td></tr>"
+            )
             html.append(
                 f"<tr><td>Total uptime</td><td>{total_uptime_hrs:.2f} hours</td></tr>"
             )
@@ -305,7 +363,9 @@ def generate_html_report(
         completes = [u for u in usage if u.get("event_type") == "analysis_complete"]
         successful = [c for c in completes if c.get("success", False)]
         total_slides = sum(s.get("slide_count", 0) for s in starts)
-        unique_sessions = len(set(u.get("session_hash") for u in usage if u.get("session_hash")))
+        unique_sessions = len(
+            set(u.get("session_hash") for u in usage if u.get("session_hash"))
+        )
 
         html.append("<h2>Usage Summary</h2>")
         html.append("<table>")
@@ -372,6 +432,98 @@ def send_email(report: str, to_email: str, subject: str, format: str = "text"):
         server.sendmail(from_email, [to_email], msg.as_string())
 
 
+def download_from_hf(repo_id: str, telemetry_dir: Path) -> bool:
+    """Download telemetry data from HuggingFace Dataset repository.
+
+    Args:
+        repo_id: HuggingFace Dataset repository ID
+        telemetry_dir: Local directory to store downloaded files
+
+    Returns:
+        True if download was successful, False otherwise
+    """
+    try:
+        from mosaic.telemetry.storage import TelemetryStorage
+    except ImportError:
+        # Fallback for standalone usage without mosaic installed
+        try:
+            from huggingface_hub import HfApi, hf_hub_download
+        except ImportError:
+            print(
+                "huggingface_hub not installed. Install with: pip install huggingface-hub",
+                file=sys.stderr,
+            )
+            return False
+
+        api = HfApi()
+        daily_dir = telemetry_dir / "daily"
+        daily_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            files = api.list_repo_files(repo_id=repo_id, repo_type="dataset")
+        except Exception as e:
+            print(f"Failed to list files in {repo_id}: {e}", file=sys.stderr)
+            return False
+
+        jsonl_files = [
+            f for f in files if f.startswith("daily/") and f.endswith(".jsonl")
+        ]
+        if not jsonl_files:
+            print(f"No telemetry files found in {repo_id}", file=sys.stderr)
+            return False
+
+        downloaded = 0
+        for remote_path in jsonl_files:
+            try:
+                local_path = hf_hub_download(
+                    repo_id=repo_id,
+                    filename=remote_path,
+                    repo_type="dataset",
+                )
+                filename = os.path.basename(remote_path)
+                target_path = daily_dir / filename
+
+                with open(local_path, "r", encoding="utf-8") as f:
+                    remote_content = f.read()
+
+                if target_path.exists():
+                    with open(target_path, "r", encoding="utf-8") as f:
+                        local_content = f.read()
+                    local_lines = (
+                        set(local_content.strip().split("\n"))
+                        if local_content.strip()
+                        else set()
+                    )
+                    remote_lines = (
+                        remote_content.strip().split("\n")
+                        if remote_content.strip()
+                        else []
+                    )
+                    new_lines = [
+                        line
+                        for line in remote_lines
+                        if line and line not in local_lines
+                    ]
+                    if new_lines:
+                        with open(target_path, "a", encoding="utf-8") as f:
+                            for line in new_lines:
+                                f.write(line + "\n")
+                        print(f"Merged {len(new_lines)} new events into {filename}")
+                else:
+                    with open(target_path, "w", encoding="utf-8") as f:
+                        f.write(remote_content)
+                    print(f"Downloaded: {filename}")
+                downloaded += 1
+            except Exception as e:
+                print(f"Failed to download {remote_path}: {e}", file=sys.stderr)
+
+        return downloaded > 0
+
+    # Use TelemetryStorage if mosaic is available
+    storage = TelemetryStorage(telemetry_dir)
+    return storage.download_from_hf_dataset(repo_id)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate Mosaic telemetry reports",
@@ -406,7 +558,27 @@ def main():
         default="text",
         help="Output format (default: text)",
     )
+    parser.add_argument(
+        "--hf-repo",
+        type=str,
+        help="HuggingFace Dataset repository to pull telemetry from (e.g., PDM-Group/mosaic-telemetry)",
+    )
     args = parser.parse_args()
+
+    # If HF repo specified, download to a clean temp directory
+    if args.hf_repo:
+        import tempfile
+
+        # Use a clean temp directory to avoid mixing with local data
+        temp_dir = Path(tempfile.mkdtemp(prefix="mosaic_telemetry_"))
+        print(f"Downloading telemetry from {args.hf_repo}...")
+        if not download_from_hf(args.hf_repo, temp_dir):
+            print(
+                "Warning: Failed to download some or all telemetry data",
+                file=sys.stderr,
+            )
+        # Use the temp directory for report generation
+        args.telemetry_dir = temp_dir
 
     if not args.telemetry_dir.exists():
         print(f"Telemetry directory not found: {args.telemetry_dir}", file=sys.stderr)
