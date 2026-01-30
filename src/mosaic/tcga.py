@@ -18,6 +18,7 @@ import requests
 from loguru import logger
 
 from mosaic.inference.data import CANCER_TYPE_TO_INT_MAP
+from mosaic.data_directory import get_tcga_cache_directory
 
 # GDC API endpoints
 GDC_DATA_ENDPOINT = "https://api.gdc.cancer.gov/data"
@@ -30,9 +31,6 @@ UUID_PATTERN = re.compile(
 
 # TCGA barcode pattern (e.g., TCGA-A1-A0SB-01Z-00-DX1)
 TCGA_BARCODE_PATTERN = re.compile(r"^TCGA-[A-Z0-9]{2}-[A-Z0-9]{4}(-\S+)?$")
-
-# Default cache directory
-DEFAULT_CACHE_DIR = Path.home() / ".cache" / "mosaic" / "tcga_slides"
 
 # Retry settings for network requests
 # MAX_RETRIES=3: Balance between reliability and responsiveness for transient failures
@@ -111,31 +109,20 @@ def _get_gdc_token() -> str | None:
     return os.environ.get("GDC_TOKEN")
 
 
-def _get_cache_dir() -> Path:
-    """Get the TCGA cache directory.
-
-    Returns:
-        Path to the cache directory (from env var or default).
-    """
-    cache_dir = os.environ.get("MOSAIC_TCGA_CACHE_DIR")
-    if cache_dir:
-        return Path(cache_dir)
-    return DEFAULT_CACHE_DIR
-
-
 def _normalize_cache_dir(cache_dir: Path | None) -> Path:
     """Normalize cache directory, using default if None.
 
     This is a helper to eliminate duplicate cache_dir normalization logic
-    across multiple functions.
+    across multiple functions. Uses the centralized cache directory management
+    from mosaic.data_directory.
 
     Args:
         cache_dir: Optional cache directory
 
     Returns:
-        The provided cache_dir or the default if None
+        The provided cache_dir or the default TCGA cache directory if None
     """
-    return cache_dir if cache_dir is not None else _get_cache_dir()
+    return cache_dir if cache_dir is not None else get_tcga_cache_directory()
 
 
 def _make_request_with_retry(
