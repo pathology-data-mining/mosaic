@@ -1161,6 +1161,24 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     )
                 # Create a mock file-like object for the TCGA slide
                 slides = [Path(tcga_slide_path)]
+
+                # Regenerate settings for the single TCGA slide to avoid issues
+                # with stale settings from previously uploaded slides
+                slide_name = Path(tcga_slide_path).name
+                settings_input_val = pd.DataFrame(
+                    [
+                        [
+                            slide_name,
+                            site_type,
+                            sex,
+                            tissue_site,
+                            cancer_subtype,
+                            ihc_subtype,
+                            seg_config,
+                        ]
+                    ],
+                    columns=SETTINGS_COLUMNS,
+                )
             elif slides is None or len(slides) == 0:
                 raise gr.Error("Please upload at least one slide.")
 
