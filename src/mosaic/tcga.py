@@ -520,8 +520,8 @@ def _get_oncotree_ancestors(code: str) -> list[str]:
 def _find_paladin_subtype_for_tcga(tcga_code: str) -> str | None:
     """Find the best matching Paladin cancer subtype for a TCGA code.
 
-    Checks if the TCGA code or any of its OncoTree descendants/ancestors
-    have Paladin models available.
+    Uses a fast direct match first, then falls back to OncoTree hierarchy
+    lookup only if needed (checking TCGA's ancestors, not all Paladin codes).
 
     Args:
         tcga_code: TCGA project suffix (e.g., "BRCA", "LUAD")
@@ -529,24 +529,23 @@ def _find_paladin_subtype_for_tcga(tcga_code: str) -> str | None:
     Returns:
         Paladin cancer subtype code if found, or None
     """
-    # Direct match - TCGA code has Paladin models
+    # Direct match - TCGA code has Paladin models (most common case)
     if tcga_code in CANCER_TYPE_TO_INT_MAP:
         return tcga_code
 
-    # Check if any Paladin subtype is a descendant of the TCGA code
-    # by checking if TCGA code is an ancestor of the Paladin subtype
-    for paladin_code in CANCER_TYPE_TO_INT_MAP.keys():
-        ancestors = _get_oncotree_ancestors(paladin_code)
-        if tcga_code in ancestors:
-            # Found a Paladin subtype that is a descendant of the TCGA code
-            return paladin_code
-
     # Check if TCGA code is a descendant of any Paladin subtype
+    # This makes only 1 API call (for tcga_code) instead of 183 (for all Paladin codes)
     tcga_ancestors = _get_oncotree_ancestors(tcga_code)
     for ancestor in tcga_ancestors:
         if ancestor in CANCER_TYPE_TO_INT_MAP:
+            logger.info(
+                f"Mapped TCGA '{tcga_code}' to Paladin ancestor '{ancestor}' via OncoTree hierarchy"
+            )
             return ancestor
 
+    # Note: We removed the loop checking if TCGA is an ancestor of Paladin codes,
+    # as that would require 183 API calls. If a TCGA code doesn't match directly
+    # or via its ancestors, we return None (user can still run analysis with "Unknown")
     return None
 
 
