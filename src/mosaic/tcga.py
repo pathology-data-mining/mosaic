@@ -35,8 +35,17 @@ TCGA_BARCODE_PATTERN = re.compile(r"^TCGA-[A-Z0-9]{2}-[A-Z0-9]{4}(-\S+)?$")
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "mosaic" / "tcga_slides"
 
 # Retry settings for network requests
+# MAX_RETRIES=3: Balance between reliability and responsiveness for transient failures
+# INITIAL_BACKOFF_SECONDS=1: Start with 1s, doubles on each retry (1s, 2s, 4s)
 MAX_RETRIES = 3
 INITIAL_BACKOFF_SECONDS = 1
+
+# Network timeout settings (in seconds)
+# API_TIMEOUT: For metadata and query requests (typically small responses)
+# DOWNLOAD_TIMEOUT: For large file downloads (multi-GB slides, can take hours)
+#   Set via MOSAIC_GDC_DOWNLOAD_TIMEOUT env var for very large files
+API_TIMEOUT = 30
+DOWNLOAD_TIMEOUT = int(os.environ.get("MOSAIC_GDC_DOWNLOAD_TIMEOUT", "300"))
 
 # Cache for OncoTree ancestor lookups to avoid repeated API calls
 _oncotree_ancestors_cache: dict[str, list[str]] = {}
@@ -114,6 +123,21 @@ def _get_cache_dir() -> Path:
     return DEFAULT_CACHE_DIR
 
 
+def _normalize_cache_dir(cache_dir: Path | None) -> Path:
+    """Normalize cache directory, using default if None.
+
+    This is a helper to eliminate duplicate cache_dir normalization logic
+    across multiple functions.
+
+    Args:
+        cache_dir: Optional cache directory
+
+    Returns:
+        The provided cache_dir or the default if None
+    """
+    return cache_dir if cache_dir is not None else _get_cache_dir()
+
+
 def _make_request_with_retry(
     method: str,
     url: str,
@@ -121,6 +145,7 @@ def _make_request_with_retry(
     stream: bool = False,
     params: dict | None = None,
     json_data: dict | None = None,
+    timeout: int | None = None,
 ) -> requests.Response:
     """Make an HTTP request with exponential backoff retry logic.
 
@@ -131,6 +156,8 @@ def _make_request_with_retry(
         stream: Whether to stream the response
         params: Optional query parameters
         json_data: Optional JSON body for POST requests
+        timeout: Request timeout in seconds (defaults to API_TIMEOUT for non-streaming,
+                DOWNLOAD_TIMEOUT for streaming requests)
 
     Returns:
         The response object
@@ -144,6 +171,10 @@ def _make_request_with_retry(
     if token:
         headers["X-Auth-Token"] = token
 
+    # Use appropriate timeout based on request type
+    if timeout is None:
+        timeout = DOWNLOAD_TIMEOUT if stream else API_TIMEOUT
+
     backoff = INITIAL_BACKOFF_SECONDS
 
     for attempt in range(MAX_RETRIES):
@@ -154,7 +185,7 @@ def _make_request_with_retry(
                     headers=headers,
                     stream=stream,
                     params=params,
-                    timeout=30,
+                    timeout=timeout,
                 )
             else:
                 response = requests.post(
@@ -162,7 +193,7 @@ def _make_request_with_retry(
                     headers=headers,
                     json=json_data,
                     params=params,
-                    timeout=30,
+                    timeout=timeout,
                 )
 
             # Handle specific HTTP errors
@@ -466,6 +497,9 @@ def _get_oncotree_ancestors(code: str) -> list[str]:
             url = f"https://oncotree.mskcc.org/api/tumorTypes/search/code/{current_code}?exactMatch=true"
             response = requests.get(url, timeout=10)
             if response.status_code != 200:
+                logger.debug(
+                    f"OncoTree API returned status {response.status_code} for code '{current_code}'"
+                )
                 break
 
             data = response.json()
@@ -479,7 +513,16 @@ def _get_oncotree_ancestors(code: str) -> list[str]:
             ancestors.append(parent)
             current_code = parent
 
-        except Exception:
+        except requests.exceptions.RequestException as e:
+            logger.warning(
+                f"OncoTree API request failed for code '{current_code}': {e}. "
+                "Cancer subtype mapping may be incomplete."
+            )
+            break
+        except Exception as e:
+            logger.warning(
+                f"Unexpected error querying OncoTree for code '{current_code}': {e}"
+            )
             break
 
     # Cache the result
@@ -642,8 +685,7 @@ def is_slide_cached(file_uuid: str, cache_dir: Path | None = None) -> bool:
     Returns:
         True if the slide is cached
     """
-    if cache_dir is None:
-        cache_dir = _get_cache_dir()
+    cache_dir = _normalize_cache_dir(cache_dir)
 
     slide_dir = cache_dir / file_uuid
     if not slide_dir.exists():
@@ -667,8 +709,7 @@ def get_cached_slide_path(file_uuid: str, cache_dir: Path | None = None) -> Path
     Returns:
         Path to the cached slide file, or None if not cached
     """
-    if cache_dir is None:
-        cache_dir = _get_cache_dir()
+    cache_dir = _normalize_cache_dir(cache_dir)
 
     slide_dir = cache_dir / file_uuid
 
@@ -704,8 +745,7 @@ def fetch_slide_by_uuid(
     Raises:
         GDCError: If the download fails
     """
-    if cache_dir is None:
-        cache_dir = _get_cache_dir()
+    cache_dir = _normalize_cache_dir(cache_dir)
 
     if token is None:
         token = _get_gdc_token()
@@ -747,8 +787,14 @@ def fetch_slide_by_uuid(
                 if chunk:
                     f.write(chunk)
                     bytes_downloaded += len(chunk)
-                    if progress_callback and file_size:
-                        progress_callback(bytes_downloaded, file_size)
+                    if progress_callback:
+                        if file_size:
+                            # Report progress with percentage
+                            progress_callback(bytes_downloaded, file_size)
+                        else:
+                            # Report bytes downloaded without total (file_size unknown)
+                            # Some progress callbacks can handle this gracefully
+                            progress_callback(bytes_downloaded, bytes_downloaded)
 
         logger.info(f"Download complete: {slide_path}")
         return slide_path
