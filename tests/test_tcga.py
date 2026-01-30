@@ -28,6 +28,10 @@ from mosaic.tcga import (
     _map_gdc_site_to_tissue_site,
     _map_project_id_to_cancer_subtype,
     _map_sample_type_to_site_type,
+    _find_paladin_subtype_for_tcga,
+    _get_oncotree_ancestors,
+    _TCGA_TO_PALADIN_MAP,
+    _oncotree_ancestors_cache,
 )
 
 
@@ -221,6 +225,124 @@ class TestMetadataMapping:
         """Test default sample type mapping."""
         assert _map_sample_type_to_site_type(None) == "Primary"
         assert _map_sample_type_to_site_type("") == "Primary"
+
+
+class TestOncoTreeMapping:
+    """Tests for OncoTree hierarchy and cancer subtype mapping."""
+
+    def test_precomputed_tcga_map_coverage(self):
+        """Test that the precomputed TCGA map has expected common codes."""
+        # Verify some of the most common TCGA codes are in the precomputed map
+        common_codes = ["LUAD", "BRCA", "PRAD", "COAD", "BLCA", "LUSC", "HNSC", "STAD"]
+        for code in common_codes:
+            assert code in _TCGA_TO_PALADIN_MAP, f"{code} should be in precomputed map"
+
+    def test_find_paladin_subtype_direct_match(self):
+        """Test _find_paladin_subtype_for_tcga with direct match in CANCER_TYPE_TO_INT_MAP."""
+        # LUAD is in CANCER_TYPE_TO_INT_MAP and precomputed map
+        result = _find_paladin_subtype_for_tcga("LUAD")
+        assert result == "LUAD"
+
+        # BRCA is in CANCER_TYPE_TO_INT_MAP and precomputed map
+        result = _find_paladin_subtype_for_tcga("BRCA")
+        assert result == "BRCA"
+
+    @patch("mosaic.tcga._get_oncotree_ancestors")
+    def test_find_paladin_subtype_via_ancestors(self, mock_get_ancestors):
+        """Test _find_paladin_subtype_for_tcga using OncoTree ancestor lookup.
+
+        Tests that if TCGA code is not in CANCER_TYPE_TO_INT_MAP,
+        it checks ancestors and returns the first matching Paladin subtype.
+        """
+        # Mock a TCGA code "TESTCODE" that has "LUAD" as an ancestor
+        mock_get_ancestors.return_value = ["LUAD", "NSCLC", "TISSUE"]
+
+        result = _find_paladin_subtype_for_tcga("TESTCODE")
+        assert result == "LUAD"
+        mock_get_ancestors.assert_called_once_with("TESTCODE")
+
+    @patch("mosaic.tcga._get_oncotree_ancestors")
+    def test_find_paladin_subtype_no_match(self, mock_get_ancestors):
+        """Test _find_paladin_subtype_for_tcga with no matching Paladin subtype."""
+        # Mock a TCGA code with no Paladin ancestors
+        mock_get_ancestors.return_value = ["UNKNOWN_PARENT", "TISSUE"]
+
+        result = _find_paladin_subtype_for_tcga("UNKNOWN_CODE")
+        assert result is None
+
+    @patch("mosaic.tcga.requests.get")
+    def test_get_oncotree_ancestors_success(self, mock_requests_get):
+        """Test _get_oncotree_ancestors with successful API calls."""
+        # Clear cache for this test
+        _oncotree_ancestors_cache.clear()
+
+        # Mock the OncoTree API responses
+        # IDC -> BRCA -> TISSUE
+        mock_responses = [
+            # First call for "IDC"
+            Mock(
+                status_code=200,
+                json=lambda: [{"code": "IDC", "parent": "BRCA"}]
+            ),
+            # Second call for "BRCA"
+            Mock(
+                status_code=200,
+                json=lambda: [{"code": "BRCA", "parent": "TISSUE"}]
+            ),
+        ]
+        mock_requests_get.side_effect = mock_responses
+
+        result = _get_oncotree_ancestors("IDC")
+        assert result == ["BRCA"]  # Only returns ancestors, not TISSUE
+
+        # Verify caching
+        assert "IDC" in _oncotree_ancestors_cache
+        assert _oncotree_ancestors_cache["IDC"] == ["BRCA"]
+
+    @patch("mosaic.tcga.requests.get")
+    def test_get_oncotree_ancestors_api_failure(self, mock_requests_get):
+        """Test _get_oncotree_ancestors handles API failures gracefully."""
+        # Clear cache for this test
+        _oncotree_ancestors_cache.clear()
+
+        # Mock API failure
+        mock_requests_get.side_effect = Exception("API error")
+
+        result = _get_oncotree_ancestors("TESTCODE")
+        assert result == []  # Should return empty list on error
+
+    @patch("mosaic.tcga.requests.get")
+    def test_get_oncotree_ancestors_caching(self, mock_requests_get):
+        """Test _get_oncotree_ancestors uses cache to avoid repeated API calls."""
+        # Clear cache for this test
+        _oncotree_ancestors_cache.clear()
+
+        # Mock response - simulate a single-level hierarchy (IDC -> TISSUE)
+        mock_requests_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [{"code": "IDC", "parent": "TISSUE"}]
+        )
+
+        # First call should hit the API
+        result1 = _get_oncotree_ancestors("IDC")
+        initial_call_count = mock_requests_get.call_count
+        assert initial_call_count >= 1  # At least one API call
+
+        # Second call should use cache (no additional API calls)
+        result2 = _get_oncotree_ancestors("IDC")
+        assert mock_requests_get.call_count == initial_call_count  # No additional calls
+        assert result1 == result2
+
+    @patch("mosaic.tcga.requests.get")
+    def test_get_oncotree_ancestors_not_found(self, mock_requests_get):
+        """Test _get_oncotree_ancestors handles 404 responses."""
+        # Clear cache for this test
+        _oncotree_ancestors_cache.clear()
+
+        mock_requests_get.return_value = Mock(status_code=404)
+
+        result = _get_oncotree_ancestors("INVALID_CODE")
+        assert result == []
 
 
 class TestConvertGDCMetadata:
