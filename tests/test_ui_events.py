@@ -95,7 +95,7 @@ class TestGeneratorBehavior:
     @patch("mosaic.ui.app.load_all_models")
     @patch("mosaic.ui.app.analyze_slide")
     @patch("mosaic.ui.app.create_user_directory")
-    def test_intermediate_yields_update_masks_only(
+    def test_single_final_yield_for_batch(
         self,
         mock_create_dir,
         mock_analyze,
@@ -106,7 +106,7 @@ class TestGeneratorBehavior:
         mock_cancer_subtype_maps,
         temp_output_dir,
     ):
-        """Test intermediate yields show only slide masks."""
+        """Test that analyze_slides yields only a single final result for batch."""
         from PIL import Image
 
         cancer_subtype_name_map, reversed_map, cancer_subtypes = (
@@ -158,50 +158,22 @@ class TestGeneratorBehavior:
             temp_output_dir,
         )
 
-        # Skip initial yield (empty state)
-        initial_yield = next(gen)
+        # Generator should produce exactly one yield (final results only)
+        results = list(gen)
+        assert len(results) == 1
 
-        # Get first intermediate yield (after first slide)
-        first_yield = next(gen)
+        final_yield = results[0]
 
-        # Should be tuple with 9 elements (added analyze and clear button states)
-        assert len(first_yield) == 9
+        # Should be tuple with 9 elements
+        assert len(final_yield) == 9
 
-        # First element is settings_input (visible during processing for progress)
-        settings = first_yield[0]
-        assert hasattr(settings, "visible") and settings.visible
+        # Analyze button should be re-enabled
+        analyze_button = final_yield[7]
+        assert hasattr(analyze_button, "interactive") and analyze_button.interactive
 
-        # Second element is slide_masks (should have 1 entry)
-        slide_masks = first_yield[1]
-        assert len(slide_masks) == 1
-
-        # Third element should be AEON results DataFrame (now visible with partial results)
-        aeon_output = first_yield[2]
-        # Should have a DataFrame (not hidden anymore)
-        assert aeon_output is not None
-
-        # Fourth element should be AEON download button (hidden until complete)
-        aeon_download = first_yield[3]
-        # Download button should be hidden during intermediate yields
-        assert hasattr(aeon_download, "visible") and not aeon_download.visible
-
-        # Fifth element should be PALADIN results DataFrame (partial results)
-        paladin_output = first_yield[4]
-        # Should have data (DataFrame with partial results)
-        assert paladin_output is not None
-
-        # Sixth element should be PALADIN download button (hidden until complete)
-        paladin_download = first_yield[5]
-        # Download button should be hidden during intermediate yields
-        assert hasattr(paladin_download, "visible") and not paladin_download.visible
-
-        # Eighth element should be analyze button (disabled during processing)
-        analyze_button = first_yield[7]
-        assert hasattr(analyze_button, "interactive") and not analyze_button.interactive
-
-        # Ninth element should be clear button (disabled during processing)
-        clear_button = first_yield[8]
-        assert hasattr(clear_button, "interactive") and not clear_button.interactive
+        # Clear button should be re-enabled
+        clear_button = final_yield[8]
+        assert hasattr(clear_button, "interactive") and clear_button.interactive
 
     @patch("mosaic.ui.app.load_all_models")
     @patch("mosaic.ui.app.analyze_slide")

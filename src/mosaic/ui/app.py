@@ -9,6 +9,8 @@ It includes functionality for:
 - CSV-based batch processing
 """
 
+import os
+import tempfile
 import threading
 import time
 import uuid
@@ -17,6 +19,7 @@ import gradio as gr
 import pandas as pd
 from pathlib import Path
 from loguru import logger
+from PIL import Image
 
 from mosaic.ui.utils import (
     get_oncotree_code_name,
@@ -42,6 +45,41 @@ from mosaic.tcga import (
 )
 
 current_dir = Path(__file__).parent.parent
+
+
+_GALLERY_MAX_SIZE = 512
+
+# Save masks directly into Gradio's cache directory so that Gradio skips its
+# hash-and-copy step in move_files_to_cache (which reads the entire file from
+# disk to SHA-256 it, then copies it — expensive on network filesystems).
+_GRADIO_CACHE_DIR = Path(
+    os.environ.get("GRADIO_TEMP_DIR") or (Path(tempfile.gettempdir()) / "gradio")
+)
+
+
+def _save_mask_as_jpeg(mask_image, name, quality=75):
+    """Downsample and save a PIL mask image as JPEG for the browser Gallery.
+
+    Gradio re-encodes PIL Image objects as lossless PNG, so passing file paths
+    to the Gallery instead lets Gradio serve the compressed JPEG directly.
+    Images are downsampled to _GALLERY_MAX_SIZE to match the Gallery's rendered
+    thumbnail size (3 columns ~ 250px each).
+
+    Files are saved into Gradio's cache directory to avoid the hash-and-copy
+    overhead in Gradio's postprocessing pipeline.
+    """
+    if not isinstance(mask_image, Image.Image):
+        return None
+    w, h = mask_image.size
+    if w > _GALLERY_MAX_SIZE or h > _GALLERY_MAX_SIZE:
+        scale = _GALLERY_MAX_SIZE / max(w, h)
+        mask_image = mask_image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    cache_subdir = _GRADIO_CACHE_DIR / "mosaic_masks"
+    cache_subdir.mkdir(parents=True, exist_ok=True)
+    path = cache_subdir / name
+    mask_image.convert("RGB").save(path, format="JPEG", quality=quality)
+    return str(path)
+
 
 # Global variables for cancer subtypes (set by download_and_process_models)
 cancer_subtype_name_map = {}
@@ -227,19 +265,6 @@ def analyze_slides(
         gpu_type=GPU_TYPE,
     )
 
-    # Yield initial state to make settings table visible immediately
-    yield (
-        gr.Dataframe(value=settings_input, visible=True),  # Make settings visible
-        [],  # Empty slide masks
-        gr.DataFrame(visible=False),  # Hidden AEON table
-        gr.DownloadButton(visible=False),  # Hidden AEON download
-        None,  # No PALADIN results yet
-        gr.DownloadButton(visible=False),  # Hidden PALADIN download
-        user_dir,  # user_dir_state
-        gr.Button(interactive=False),  # Disable analyze button
-        gr.Button(interactive=False),  # Disable clear button
-    )
-
     # Load models once (for batch) or per-slide (for single)
     # On T4: Keep models loaded globally across all requests (concurrency=1 ensures no conflicts)
     # On high-memory GPUs: Load models per-batch, reload for single slides
@@ -270,9 +295,56 @@ def analyze_slides(
             row = settings_input.iloc[idx]
             slide_name = row["Slide"]
 
-            logger.info(f"[{idx + 1}/{len(slides)}] Processing: {slide_name}")
-            slide_progress = idx / len(slides)
-            progress(slide_progress, desc=f"Analyzing slide {idx + 1}/{len(slides)}")
+            slides_remaining = len(slides) - idx
+            logger.info(
+                f"[{idx + 1}/{len(slides)}] Processing: {slide_name} ({slides_remaining} slides remaining)"
+            )
+
+            # Create a progress wrapper that prefixes all updates with slide info
+            class SlideProgressWrapper:
+                def __init__(self, base_progress, slide_idx, total_slides, slide_name):
+                    self.base_progress = base_progress
+                    self.slide_idx = slide_idx
+                    self.total_slides = total_slides
+                    self.slide_name = slide_name
+                    self.slides_remaining = total_slides - slide_idx
+
+                def __call__(self, current_progress=None, desc=None):
+                    prefix = f"Slide {self.slide_idx + 1}/{self.total_slides}: {self.slide_name}"
+                    if desc:
+                        full_desc = f"{prefix} - {desc}"
+                    else:
+                        full_desc = f"{prefix} ({self.slides_remaining} remaining)"
+
+                    if current_progress is not None:
+                        # Scale progress within this slide's range
+                        slide_start = self.slide_idx / self.total_slides
+                        slide_end = (self.slide_idx + 1) / self.total_slides
+                        scaled_progress = slide_start + (
+                            current_progress * (slide_end - slide_start)
+                        )
+                        self.base_progress(scaled_progress, desc=full_desc)
+                    else:
+                        self.base_progress(
+                            self.slide_idx / self.total_slides, desc=full_desc
+                        )
+
+                # Support for tqdm integration
+                @property
+                def track_tqdm(self):
+                    return True
+
+                # Delegate attribute access to base progress
+                def __getattr__(self, name):
+                    return getattr(self.base_progress, name)
+
+            # Create wrapped progress object
+            slide_progress_wrapper = SlideProgressWrapper(
+                progress, idx, len(slides), slide_name
+            )
+
+            # Initial progress for this slide
+            slide_progress_wrapper()
 
             slide_mask, aeon_results, paladin_results = analyze_slide(
                 slide_path=slide_path,
@@ -284,7 +356,7 @@ def analyze_slides(
                 cancer_subtype_name_map=cancer_subtype_name_map,
                 ihc_subtype=row.get("IHC Subtype", ""),
                 num_workers=4,
-                progress=progress,
+                progress=slide_progress_wrapper,  # Pass wrapped progress
                 request=request,
                 model_cache=model_cache,  # Pre-loaded for batch, None for single
                 analysis_id=analysis_id,  # For telemetry tracking
@@ -292,6 +364,11 @@ def analyze_slides(
             )
 
             if slide_mask is not None:
+                # mask_filename = f"{Path(slide_name).stem}_mask.jpg"
+                # saved = _save_mask_as_jpeg(slide_mask, mask_filename)
+                # if saved is not None:
+                # all_slide_masks.append((saved, slide_name))
+                # else:
                 all_slide_masks.append((slide_mask, slide_name))
             if aeon_results is not None:
                 # Rename "Confidence" column to slide name for proper concatenation
@@ -302,67 +379,6 @@ def analyze_slides(
                     0, "Slide", pd.Series([slide_name] * len(paladin_results))
                 )
                 all_paladin_results.append(paladin_results)
-
-            # Build partial AEON results for display
-            partial_aeon_df = gr.DataFrame(visible=False)
-            if all_aeon_results:
-                partial_aeon = pd.concat(all_aeon_results, axis=1)
-                partial_aeon.reset_index(inplace=True)
-                partial_aeon = partial_aeon.round(3)
-
-                # Convert OncoTree codes to names for display
-                cancer_subtype_names = [
-                    f"{get_oncotree_code_name(code)} ({code})"
-                    for code in partial_aeon["Cancer Subtype"]
-                ]
-                partial_aeon["Cancer Subtype"] = cancer_subtype_names
-
-                partial_aeon_df = gr.DataFrame(
-                    partial_aeon,
-                    visible=True,
-                    column_widths=["4px"] + ["2px"] * (partial_aeon.shape[1] - 1),
-                )
-
-            # Build partial PALADIN results for display
-            partial_paladin_df = None
-            if all_paladin_results:
-                partial_paladin = pd.concat(all_paladin_results, ignore_index=True)
-
-                # Convert OncoTree codes to names for display
-                cancer_subtype_names = [
-                    f"{get_oncotree_code_name(code)} ({code})"
-                    for code in partial_paladin["Cancer Subtype"]
-                ]
-                partial_paladin["Cancer Subtype"] = cancer_subtype_names
-
-                # Ensure Score is numeric before rounding
-                partial_paladin["Score"] = pd.to_numeric(
-                    partial_paladin["Score"], errors="coerce"
-                )
-                partial_paladin["Score"] = partial_paladin["Score"].round(3)
-
-                partial_paladin_df = partial_paladin
-
-            # Yield intermediate update to show progressive results
-            # Download buttons stay hidden until all slides are processed
-            # Make settings visible during processing (for progress bar display)
-            yield (
-                gr.Dataframe(
-                    value=settings_input, visible=True
-                ),  # Settings visible for progress
-                all_slide_masks.copy(),  # Current slide masks
-                partial_aeon_df,  # Partial AEON results (growing)
-                gr.DownloadButton(
-                    visible=False
-                ),  # Download button hidden until complete
-                partial_paladin_df,  # Partial PALADIN results (growing)
-                gr.DownloadButton(
-                    visible=False
-                ),  # Download button hidden until complete
-                user_dir,  # user_dir_state
-                gr.Button(interactive=False),  # Keep analyze button disabled
-                gr.Button(interactive=False),  # Keep clear button disabled
-            )
 
         # Log analysis complete event (successful completion)
         duration_sec = time.time() - start_time
@@ -712,10 +728,18 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     )
                     gr.Examples(
                         examples=[
-                            ["6a0ea716-a5f2-47f3-880b-537a5cdc2324"],  # TCGA-LUAD (Lung) - has Paladin models
-                            ["d65c5d21-6333-4a9e-9a2a-139a122a3c8a"],  # TCGA-COAD (Colon) - has Paladin models
-                            ["1bc2766c-7064-43c7-97cb-5962d3894671"],  # TCGA-PRAD (Prostate) - has Paladin models
-                            ["0d083e4f-0037-462e-b810-3182506f15ba"],  # TCGA-BLCA (Bladder) - has Paladin models
+                            [
+                                "6a0ea716-a5f2-47f3-880b-537a5cdc2324"
+                            ],  # TCGA-LUAD (Lung) - has Paladin models
+                            [
+                                "d65c5d21-6333-4a9e-9a2a-139a122a3c8a"
+                            ],  # TCGA-COAD (Colon) - has Paladin models
+                            [
+                                "1bc2766c-7064-43c7-97cb-5962d3894671"
+                            ],  # TCGA-PRAD (Prostate) - has Paladin models
+                            [
+                                "0d083e4f-0037-462e-b810-3182506f15ba"
+                            ],  # TCGA-BLCA (Bladder) - has Paladin models
                             ["TCGA-86-8074-01Z-00-DX1"],  # TCGA-LUAD barcode (Lung)
                             ["TCGA-AZ-4313-01Z-00-DX1"],  # TCGA-COAD barcode (Colon)
                         ],
@@ -862,14 +886,24 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         # Handle input mode switching
         @input_mode.change(
             inputs=[input_mode],
-            outputs=[input_slides, tcga_input_group],
+            outputs=[input_slides, tcga_input_group, settings_input, settings_csv],
         )
         def switch_input_mode(mode):
             """Switch between file upload and TCGA fetch modes."""
             if mode == "Upload Files":
-                return gr.File(visible=True), gr.Group(visible=False)
+                return (
+                    gr.File(visible=True),
+                    gr.Group(visible=False),
+                    gr.Dataframe(visible=False),
+                    gr.File(visible=False),
+                )
             else:
-                return gr.File(visible=False), gr.Group(visible=True)
+                return (
+                    gr.File(visible=False),
+                    gr.Group(visible=True),
+                    gr.Dataframe(visible=False),
+                    gr.File(visible=False),
+                )
 
         # Handle TCGA slide fetch
         def fetch_tcga_slide(tcga_id, seg_config, progress=gr.Progress()):
@@ -886,14 +920,19 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 tissue_sites = get_tissue_sites()
 
                 # Fetch the slide (will use cache if available)
-                progress(0.2, desc="Fetching slide from TCGA (this may take a while for large files)...")
+                progress(
+                    0.2,
+                    desc="Fetching slide from TCGA (this may take a while for large files)...",
+                )
 
                 def update_progress(downloaded, total):
                     if total > 0:
                         pct = 0.2 + (downloaded / total) * 0.7
                         size_mb = downloaded / (1024 * 1024)
                         total_mb = total / (1024 * 1024)
-                        progress(pct, desc=f"Downloading: {size_mb:.1f} / {total_mb:.1f} MB")
+                        progress(
+                            pct, desc=f"Downloading: {size_mb:.1f} / {total_mb:.1f} MB"
+                        )
 
                 slide_path, file_uuid = fetch_slide(
                     tcga_id,
@@ -933,6 +972,8 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     metadata.tissue_site or "Unknown",  # tissue_site_dropdown
                     cancer_subtype_value,  # cancer_subtype_dropdown
                     gr.Textbox(value=status_msg, visible=True),  # tcga_status
+                    gr.Dataframe(value=None, visible=False),  # settings_input
+                    gr.File(visible=False),  # settings_csv
                 )
 
             except GDCInvalidIDError as e:
@@ -957,6 +998,8 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 tissue_site_dropdown,
                 cancer_subtype_dropdown,
                 tcga_status,
+                settings_input,
+                settings_csv,
             ],
         )
 
@@ -1153,7 +1196,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 clear_button,  # Add clear_button as output to control its state
             ],
             queue=True,
-            show_progress_on=settings_input,
+            show_progress_on=paladin_output_table,
         )
         settings_input.change(
             lambda df: validate_settings(

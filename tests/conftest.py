@@ -51,8 +51,20 @@ class GradioMock(MagicMock):
         button.interactive = kwargs.get("interactive", True)
         return button
 
+    @staticmethod
+    def update(**kwargs):
+        """Mock update() that returns a dict like real Gradio."""
+        return kwargs
+
     Request = MagicMock
     Progress = MagicMock
+
+
+# Mock for gradio.helpers with TrackedIterable
+class GradioHelpersMock(MagicMock):
+    """Mock for gradio.helpers module."""
+
+    TrackedIterable = type("TrackedIterable", (), {"__init__": lambda self, *a: None})
 
 
 # Mock heavy dependencies before any imports
@@ -64,6 +76,7 @@ sys.modules["mussel.utils.segment"] = MagicMock()
 sys.modules["mussel.cli"] = MagicMock()
 sys.modules["mussel.cli.tessellate"] = MagicMock()
 sys.modules["gradio"] = GradioMock()
+sys.modules["gradio.helpers"] = GradioHelpersMock()
 sys.modules["huggingface_hub"] = MagicMock()
 sys.modules["loguru"] = MagicMock()
 

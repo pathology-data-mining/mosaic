@@ -7,10 +7,12 @@ feature extraction, and model inference for cancer subtype and biomarker predict
 import pickle
 import gc
 import time as time_module
+from contextlib import contextmanager
 
 import torch
 import pandas as pd
 import gradio as gr
+from gradio.helpers import TrackedIterable
 from pathlib import Path
 from mussel.models import ModelType
 from mussel.utils import get_features, segment_tissue, filter_features
@@ -29,6 +31,59 @@ from mosaic.hardware import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_NUM_WORKERS,
 )
+
+
+@contextmanager
+def _stage_label(progress, desc, stage_progress=None):
+    """Add a persistent stage label above the tqdm sub-progress bar.
+
+    Appends a TrackedIterable to progress.iterables so it persists
+    alongside tqdm updates, then removes it on exit.
+
+    Args:
+        progress: Gradio progress tracker (may be a SlideProgressWrapper).
+        desc: Description text for the stage label.
+        stage_progress: Raw pipeline-stage fraction (e.g. 0.3). Used to
+            compute an overall job percentage that is shown in the label
+            and set on the TrackedIterable's progress field.
+    """
+    tracked = None
+    iterables = getattr(progress, "iterables", None)
+    if iterables is not None:
+        # Compute overall job progress from the wrapper when available
+        overall = None
+        if stage_progress is not None:
+            try:
+                slide_idx = getattr(progress, "slide_idx", None)
+                total_slides = getattr(progress, "total_slides", None)
+                if (
+                    isinstance(slide_idx, (int, float))
+                    and isinstance(total_slides, (int, float))
+                    and total_slides > 0
+                ):
+                    slide_start = slide_idx / total_slides
+                    slide_range = 1.0 / total_slides
+                    overall = slide_start + stage_progress * slide_range
+                else:
+                    overall = stage_progress
+            except (TypeError, AttributeError):
+                overall = stage_progress
+
+        label = desc
+        if overall is not None:
+            pct = int(overall * 100)
+            label = f"[{pct}%] {desc}"
+
+        tracked = TrackedIterable(None, None, None, label, None, None, overall)
+        iterables.append(tracked)
+    try:
+        yield
+    finally:
+        if tracked is not None and iterables is not None:
+            try:
+                iterables.remove(tracked)
+            except ValueError:
+                pass
 
 
 def _extract_ctranspath_features(
@@ -359,15 +414,16 @@ def _run_inference_pipeline_impl(
 
     try:
         # Step 2: Extract CTransPath features using cached model
-        progress(0.3, desc="Extracting CTransPath features")
-        ctranspath_features, coords = _extract_ctranspath_features(
-            coords,
-            slide_path,
-            attrs,
-            num_workers,
-            model=model_cache.ctranspath_model,
-            timings=timings,
-        )
+        progress(0.3, desc=f"Extracting CTransPath features ({len(coords)} tiles)")
+        with _stage_label(progress, f"Extracting CTransPath features ({len(coords)} tiles)", stage_progress=0.3):
+            ctranspath_features, coords = _extract_ctranspath_features(
+                coords,
+                slide_path,
+                attrs,
+                num_workers,
+                model=model_cache.ctranspath_model,
+                timings=timings,
+            )
 
         # Step 3: Filter features using cached marker classifier
         progress(0.35, desc="Filtering features with marker classifier")
@@ -385,15 +441,16 @@ def _run_inference_pipeline_impl(
             timings["filtered_tile_count"] = len(filtered_coords)
 
         # Step 4: Extract Optimus features using cached model
-        progress(0.4, desc="Extracting Optimus features")
-        features = _extract_optimus_features(
-            filtered_coords,
-            slide_path,
-            attrs,
-            num_workers,
-            model=model_cache.optimus_model,
-            timings=timings,
-        )
+        progress(0.4, desc=f"Extracting Optimus features ({len(filtered_coords)} tiles)")
+        with _stage_label(progress, f"Extracting Optimus features ({len(filtered_coords)} tiles)", stage_progress=0.4):
+            features = _extract_optimus_features(
+                filtered_coords,
+                slide_path,
+                attrs,
+                num_workers,
+                model=model_cache.optimus_model,
+                timings=timings,
+            )
 
         # Step 5: Run Aeon to predict histology if not supplied
         if cancer_subtype == "Unknown":
@@ -600,15 +657,16 @@ def _run_inference_pipeline_with_models(
         Tuple of (aeon_results, paladin_results)
     """
     # Step 1: Extract CTransPath features with PRE-LOADED model
-    progress(0.3, desc="Extracting CTransPath features")
-    ctranspath_features, coords = _extract_ctranspath_features(
-        coords,
-        slide_path,
-        attrs,
-        num_workers,
-        model=model_cache.ctranspath_model,
-        timings=timings,
-    )
+    progress(0.3, desc=f"Extracting CTransPath features ({len(coords)} tiles)")
+    with _stage_label(progress, f"Extracting CTransPath features ({len(coords)} tiles)", stage_progress=0.3):
+        ctranspath_features, coords = _extract_ctranspath_features(
+            coords,
+            slide_path,
+            attrs,
+            num_workers,
+            model=model_cache.ctranspath_model,
+            timings=timings,
+        )
 
     # Step 2: Filter features using pre-loaded marker classifier
     progress(0.35, desc="Filtering features with marker classifier")
@@ -626,15 +684,16 @@ def _run_inference_pipeline_with_models(
         timings["filtered_tile_count"] = len(filtered_coords)
 
     # Step 3: Extract Optimus features with PRE-LOADED model
-    progress(0.5, desc="Extracting Optimus features")
-    features = _extract_optimus_features(
-        filtered_coords,
-        slide_path,
-        attrs,
-        num_workers,
-        model=model_cache.optimus_model,
-        timings=timings,
-    )
+    progress(0.5, desc=f"Extracting Optimus features ({len(filtered_coords)} tiles)")
+    with _stage_label(progress, f"Extracting Optimus features ({len(filtered_coords)} tiles)", stage_progress=0.5):
+        features = _extract_optimus_features(
+            filtered_coords,
+            slide_path,
+            attrs,
+            num_workers,
+            model=model_cache.optimus_model,
+            timings=timings,
+        )
 
     # Step 4: Run Aeon inference with pre-loaded model (if cancer subtype unknown)
     aeon_results = None
@@ -772,7 +831,12 @@ def analyze_slide(
     logger.info("Drawing slide mask")
     progress(0.25, desc="Drawing slide mask")
     slide_mask = draw_slide_mask(
-        slide_path, polygon, outline="black", fill=(255, 0, 0, 80), vis_level=-1
+        slide_path,
+        polygon,
+        outline="black",
+        fill=(255, 0, 0, 80),
+        vis_level=-1,
+        max_size=2048,
     )
     logger.info("Slide mask drawn")
 
