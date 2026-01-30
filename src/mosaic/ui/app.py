@@ -57,16 +57,21 @@ _GRADIO_CACHE_DIR = Path(
 )
 
 
-def _save_mask_as_jpeg(mask_image, name, quality=75):
-    """Downsample and save a PIL mask image as JPEG for the browser Gallery.
+def _save_mask_as_png(mask_image, name):
+    """Downsample and save a PIL mask image as PNG for the browser Gallery.
 
-    Gradio re-encodes PIL Image objects as lossless PNG, so passing file paths
-    to the Gallery instead lets Gradio serve the compressed JPEG directly.
     Images are downsampled to _GALLERY_MAX_SIZE to match the Gallery's rendered
     thumbnail size (3 columns ~ 250px each).
 
     Files are saved into Gradio's cache directory to avoid the hash-and-copy
     overhead in Gradio's postprocessing pipeline.
+
+    Args:
+        mask_image: PIL Image object to save
+        name: Filename for the saved image
+
+    Returns:
+        Path to the saved PNG file, or None if mask_image is invalid
     """
     if not isinstance(mask_image, Image.Image):
         return None
@@ -77,7 +82,7 @@ def _save_mask_as_jpeg(mask_image, name, quality=75):
     cache_subdir = _GRADIO_CACHE_DIR / "mosaic_masks"
     cache_subdir.mkdir(parents=True, exist_ok=True)
     path = cache_subdir / name
-    mask_image.convert("RGB").save(path, format="JPEG", quality=quality)
+    mask_image.save(path, format="PNG")
     return str(path)
 
 
@@ -364,12 +369,12 @@ def analyze_slides(
             )
 
             if slide_mask is not None:
-                # mask_filename = f"{Path(slide_name).stem}_mask.jpg"
-                # saved = _save_mask_as_jpeg(slide_mask, mask_filename)
-                # if saved is not None:
-                # all_slide_masks.append((saved, slide_name))
-                # else:
-                all_slide_masks.append((slide_mask, slide_name))
+                mask_filename = f"{Path(slide_name).stem}_mask.png"
+                saved = _save_mask_as_png(slide_mask, mask_filename)
+                if saved is not None:
+                    all_slide_masks.append((saved, slide_name))
+                else:
+                    all_slide_masks.append((slide_mask, slide_name))
             if aeon_results is not None:
                 # Rename "Confidence" column to slide name for proper concatenation
                 aeon_results = aeon_results.rename(columns={"Confidence": slide_name})
