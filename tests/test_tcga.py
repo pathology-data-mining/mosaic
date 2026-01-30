@@ -30,7 +30,6 @@ from mosaic.tcga import (
     _map_sample_type_to_site_type,
     _find_paladin_subtype_for_tcga,
     _get_oncotree_ancestors,
-    _TCGA_TO_PALADIN_MAP,
     _oncotree_ancestors_cache,
 )
 
@@ -230,20 +229,13 @@ class TestMetadataMapping:
 class TestOncoTreeMapping:
     """Tests for OncoTree hierarchy and cancer subtype mapping."""
 
-    def test_precomputed_tcga_map_coverage(self):
-        """Test that the precomputed TCGA map has expected common codes."""
-        # Verify some of the most common TCGA codes are in the precomputed map
-        common_codes = ["LUAD", "BRCA", "PRAD", "COAD", "BLCA", "LUSC", "HNSC", "STAD"]
-        for code in common_codes:
-            assert code in _TCGA_TO_PALADIN_MAP, f"{code} should be in precomputed map"
-
     def test_find_paladin_subtype_direct_match(self):
         """Test _find_paladin_subtype_for_tcga with direct match in CANCER_TYPE_TO_INT_MAP."""
-        # LUAD is in CANCER_TYPE_TO_INT_MAP and precomputed map
+        # LUAD is in CANCER_TYPE_TO_INT_MAP
         result = _find_paladin_subtype_for_tcga("LUAD")
         assert result == "LUAD"
 
-        # BRCA is in CANCER_TYPE_TO_INT_MAP and precomputed map
+        # BRCA is in CANCER_TYPE_TO_INT_MAP
         result = _find_paladin_subtype_for_tcga("BRCA")
         assert result == "BRCA"
 
