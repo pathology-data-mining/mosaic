@@ -453,7 +453,7 @@ def _run_inference_pipeline_impl(
             )
 
         # Step 5: Run Aeon to predict histology if not supplied
-        if cancer_subtype == "Unknown":
+        if cancer_subtype in ["Unknown", None, ""]:
             progress(0.9, desc="Running Aeon for cancer subtype inference")
             aeon_results = _run_aeon_inference_with_model(
                 features,
@@ -700,7 +700,7 @@ def _run_inference_pipeline_with_models(
     progress(0.7, desc="Running Aeon for cancer subtype inference")
 
     # Check if cancer subtype is unknown
-    if cancer_subtype in ["Unknown", None]:
+    if cancer_subtype in ["Unknown", None, ""]:
         logger.info(
             "Running Aeon inference with PRE-LOADED model (cancer subtype unknown)"
         )
