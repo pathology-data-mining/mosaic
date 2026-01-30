@@ -19,6 +19,9 @@ Usage:
     # Email output (pipe to sendmail or use with cron)
     python scripts/telemetry_report.py /path/to/telemetry --daily --email user@example.com
 
+    # Skip email if report is empty (useful for automated daily reports)
+    python scripts/telemetry_report.py /path/to/telemetry --daily --email user@example.com --skip-empty
+
     # HTML format for email
     python scripts/telemetry_report.py /path/to/telemetry --daily --format html
 
@@ -28,8 +31,8 @@ Usage:
     # Pull from HF and save to specific directory
     python scripts/telemetry_report.py /path/to/telemetry --hf-repo PDM-Group/mosaic-telemetry
 
-Example cron entry (daily report at 8am):
-    0 8 * * * python /app/scripts/telemetry_report.py /data/telemetry --daily --email team@example.com
+Example cron entry (daily report at 8am, skip if empty):
+    0 8 * * * python /app/scripts/telemetry_report.py /data/telemetry --daily --email team@example.com --skip-empty
 """
 
 import argparse
@@ -82,6 +85,29 @@ def load_events(
                         events.append(json.loads(line))
 
     return events
+
+
+def is_report_empty(
+    sessions: list, usage: list, resources: list, failures: list
+) -> bool:
+    """Check if report would be empty (no meaningful data).
+
+    Args:
+        sessions: Session events
+        usage: Usage events
+        resources: Resource events
+        failures: Failure events
+
+    Returns:
+        True if report is empty, False otherwise
+    """
+    # Check if there are any meaningful events
+    has_sessions = bool(sessions)
+    has_usage = bool(usage)
+    has_resources = bool(resources)
+    has_failures = bool(failures)
+
+    return not (has_sessions or has_usage or has_resources or has_failures)
 
 
 def generate_text_report(telemetry_dir: Path, date: Optional[str] = None) -> str:
@@ -563,6 +589,11 @@ def main():
         type=str,
         help="HuggingFace Dataset repository to pull telemetry from (e.g., PDM-Group/mosaic-telemetry)",
     )
+    parser.add_argument(
+        "--skip-empty",
+        action="store_true",
+        help="Skip sending email if report has no data (useful for automated daily reports)",
+    )
     args = parser.parse_args()
 
     # If HF repo specified, download to a clean temp directory
@@ -588,6 +619,17 @@ def main():
     date = args.date
     if args.daily and not date:
         date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # Check if report would be empty before generating
+    if args.skip_empty:
+        sessions = load_events(args.telemetry_dir, "session", date)
+        usage = load_events(args.telemetry_dir, "usage", date)
+        resources = load_events(args.telemetry_dir, "resource", date)
+        failures = load_events(args.telemetry_dir, "failure", date)
+
+        if is_report_empty(sessions, usage, resources, failures):
+            print(f"Skipping empty report for {date or 'all time'}")
+            sys.exit(0)
 
     # Generate report
     if args.format == "html":
