@@ -175,12 +175,26 @@ class TestMetadataMapping:
         assert _map_project_id_to_cancer_subtype("TCGA-COAD") == "COAD"
         assert _map_project_id_to_cancer_subtype("TCGA-BLCA") == "BLCA"
 
-    def test_map_project_id_oncotree_hierarchy(self):
+    @patch("mosaic.tcga._get_oncotree_ancestors")
+    def test_map_project_id_oncotree_hierarchy(self, mock_get_ancestors):
         """Test TCGA project IDs that map via OncoTree hierarchy.
 
-        Note: These tests require network access to OncoTree API.
+        Mocks OncoTree API to test ancestor/descendant matching logic
+        without making real network calls.
         BRCA -> IDC (IDC is a child of BRCA in OncoTree)
         """
+
+        # Mock the OncoTree hierarchy:
+        # IDC is a descendant of BRCA (IDC has BRCA as ancestor)
+        def mock_ancestors(code):
+            if code == "IDC":
+                return ["BRCA", "TISSUE"]  # IDC's ancestors
+            elif code == "BRCA":
+                return ["TISSUE"]  # BRCA's ancestors
+            return []
+
+        mock_get_ancestors.side_effect = mock_ancestors
+
         # TCGA-BRCA should map to IDC (child in OncoTree with Paladin models)
         result = _map_project_id_to_cancer_subtype("TCGA-BRCA")
         # Should find IDC as it's a descendant of BRCA
@@ -225,7 +239,9 @@ class TestConvertGDCMetadata:
                 {
                     "demographic": {"gender": "female"},
                     "primary_site": "Breast",
-                    "project": {"project_id": "TCGA-LUAD"},  # Use LUAD for predictable result
+                    "project": {
+                        "project_id": "TCGA-LUAD"
+                    },  # Use LUAD for predictable result
                     "samples": [{"sample_type": "Primary Tumor"}],
                 }
             ],
@@ -319,9 +335,7 @@ class TestGDCAPIIntegration:
         """Test successful barcode to UUID conversion."""
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "data": {
-                "hits": [{"file_id": "test-uuid-12345", "file_name": "slide.svs"}]
-            }
+            "data": {"hits": [{"file_id": "test-uuid-12345", "file_name": "slide.svs"}]}
         }
         mock_request.return_value = mock_response
 
