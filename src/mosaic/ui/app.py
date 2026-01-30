@@ -458,9 +458,16 @@ def analyze_slides(
         if all_paladin_results
         else pd.DataFrame()
     )
+    # Hide Aeon results when all slides had a user-supplied cancer subtype
+    # (Aeon inference was skipped, so showing a synthetic 100% row is not useful)
+    all_subtypes_known = all(
+        row["Cancer Subtype"] not in ["Unknown", None, ""]
+        for _, row in settings_input.iterrows()
+    )
+
     combined_aeon_results = gr.DataFrame(visible=False)
     aeon_output = gr.DownloadButton(visible=False)
-    if all_aeon_results:
+    if all_aeon_results and not all_subtypes_known:
         combined_aeon_results = pd.concat(all_aeon_results, axis=1)
         combined_aeon_results.reset_index(inplace=True)
 

@@ -275,6 +275,89 @@ class TestGeneratorBehavior:
         assert hasattr(clear_button, "interactive") and clear_button.interactive
 
 
+    @patch("mosaic.ui.app.load_all_models")
+    @patch("mosaic.ui.app.analyze_slide")
+    @patch("mosaic.ui.app.create_user_directory")
+    def test_aeon_hidden_when_cancer_subtype_selected(
+        self,
+        mock_create_dir,
+        mock_analyze,
+        mock_load_models,
+        sample_files_multiple,
+        mock_analyze_slide_results,
+        mock_model_cache,
+        mock_cancer_subtype_maps,
+        temp_output_dir,
+    ):
+        """Test that Aeon table and download are hidden when cancer subtype is selected."""
+        from PIL import Image
+
+        cancer_subtype_name_map, reversed_map, cancer_subtypes = (
+            mock_cancer_subtype_maps
+        )
+        set_cancer_subtype_maps(cancer_subtype_name_map, reversed_map, cancer_subtypes)
+
+        mock_create_dir.return_value = temp_output_dir
+        mock_load_models.return_value = mock_model_cache
+
+        def mock_analyze_side_effect(*args, **kwargs):
+            mask = Image.new("RGB", (100, 100), color="red")
+            # Synthetic Aeon result (user supplied cancer subtype)
+            aeon_results = pd.DataFrame(
+                {"Cancer Subtype": ["LUAD"], "Confidence": [1.0]}
+            )
+            paladin_results = pd.DataFrame(
+                {
+                    "Cancer Subtype": ["LUAD", "LUAD", "LUAD"],
+                    "Biomarker": ["TP53", "KRAS", "EGFR"],
+                    "Score": [0.85, 0.72, 0.63],
+                }
+            )
+            return (mask, aeon_results, paladin_results)
+
+        mock_analyze.side_effect = mock_analyze_side_effect
+
+        # All slides have a known cancer subtype (not "Unknown")
+        settings_df = pd.DataFrame(
+            {
+                "Slide": ["test_slide_1.svs", "test_slide_2.svs", "test_slide_3.svs"],
+                "Site Type": ["Primary", "Primary", "Primary"],
+                "Sex": ["Male", "Female", "Male"],
+                "Tissue Site": ["Lung", "Lung", "Lung"],
+                "Cancer Subtype": ["LUAD", "LUAD", "LUAD"],
+                "IHC Subtype": ["", "", ""],
+                "Segmentation Config": ["Biopsy", "Biopsy", "Biopsy"],
+            }
+        )
+
+        gen = analyze_slides(
+            sample_files_multiple,
+            settings_df,
+            "Primary",
+            "Male",
+            "Lung",
+            "LUAD",
+            "",
+            "Biopsy",
+            temp_output_dir,
+        )
+
+        results = list(gen)
+        final_yield = results[-1]
+
+        # Aeon table (index 2) should be hidden
+        aeon_table = final_yield[2]
+        assert hasattr(aeon_table, "visible") and not aeon_table.visible
+
+        # Aeon download button (index 3) should be hidden
+        aeon_download = final_yield[3]
+        assert hasattr(aeon_download, "visible") and not aeon_download.visible
+
+        # Paladin results should still be visible
+        paladin_download = final_yield[5]
+        assert hasattr(paladin_download, "visible") and paladin_download.visible
+
+
 class TestErrorDisplay:
     """Test error and warning display behavior."""
 
