@@ -50,3 +50,48 @@ def set_data_directory(path):
     global _MODEL_DATA_DIR
     _MODEL_DATA_DIR = Path(path)
     os.environ["MOSAIC_DATA_DIR"] = str(_MODEL_DATA_DIR)
+
+
+# Global variable to store the TCGA cache directory path
+_TCGA_CACHE_DIR = None
+
+# Default TCGA cache directory
+DEFAULT_TCGA_CACHE_DIR = Path.home() / ".cache" / "mosaic" / "tcga_slides"
+
+
+def get_tcga_cache_directory():
+    """Get the directory for caching TCGA slide files.
+
+    Returns the cache directory path from environment variable or default location.
+
+    Returns:
+        Path: Path to the TCGA cache directory
+    """
+    global _TCGA_CACHE_DIR
+    if _TCGA_CACHE_DIR is not None:
+        return _TCGA_CACHE_DIR
+
+    # Check if environment variable is set
+    if "MOSAIC_TCGA_CACHE_DIR" in os.environ:
+        _TCGA_CACHE_DIR = Path(os.environ["MOSAIC_TCGA_CACHE_DIR"])
+    else:
+        _TCGA_CACHE_DIR = DEFAULT_TCGA_CACHE_DIR
+
+    # Ensure the directory exists
+    _TCGA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    return _TCGA_CACHE_DIR
+
+
+def set_tcga_cache_directory(path):
+    """Set the TCGA cache directory path.
+
+    Args:
+        path: Path to the TCGA cache directory
+    """
+    global _TCGA_CACHE_DIR
+    _TCGA_CACHE_DIR = Path(path)
+    os.environ["MOSAIC_TCGA_CACHE_DIR"] = str(_TCGA_CACHE_DIR)
+
+    # Ensure the directory exists
+    _TCGA_CACHE_DIR.mkdir(parents=True, exist_ok=True)

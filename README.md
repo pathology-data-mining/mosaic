@@ -504,6 +504,49 @@ Here are the main Makefile targets:
 - `make profile` - Profile a single slide analysis (usage: `make profile SLIDE=path/to/slide.svs`)
 - `make benchmark` - Run performance benchmarks
 
+## Telemetry & Privacy
+
+Mosaic collects anonymous usage telemetry to help improve the tool. This section explains what data is collected and how to opt out.
+
+### What Data is Collected
+
+When running on HuggingFace Spaces, Mosaic collects the following **anonymous** telemetry data:
+
+- **Application events**: App start/shutdown, analysis start/complete, heartbeat
+- **Analysis metadata**: Number of slides processed, GPU type, duration, success/failure status
+- **Error information**: Error types and messages (no personal data or slide content)
+- **Configuration**: Segmentation config used, cancer subtype settings (no patient data)
+
+### What is NOT Collected
+
+- **No slide content**: Images, pixel data, or pathology results are never uploaded
+- **No patient data**: No PHI, patient identifiers, or clinical information
+- **No file paths**: Local file paths or filenames are not collected
+- **No authentication tokens**: API keys and credentials are never logged
+
+### How to Opt Out
+
+Telemetry is **only active on HuggingFace Spaces** and can be disabled:
+
+1. **Environment Variable** (recommended):
+   ```bash
+   export MOSAIC_TELEMETRY_ENABLED=false
+   ```
+
+2. **Local installations**: Telemetry is automatically disabled for local/Docker deployments
+
+### Data Storage
+
+- Telemetry data is stored in a private HuggingFace dataset (if configured)
+- Data is used only for improving Mosaic's performance and user experience
+- No telemetry data is shared with third parties
+
+### Transparency
+
+- Full telemetry implementation is in `src/mosaic/telemetry/`
+- Review `src/mosaic/telemetry/events.py` to see exactly what is logged
+- All telemetry code is open source and auditable
+
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.

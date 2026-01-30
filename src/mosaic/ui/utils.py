@@ -32,6 +32,7 @@ SETTINGS_COLUMNS = [
 ]
 
 oncotree_code_map = {}
+_oncotree_prefetched = False
 tissue_site_list = None
 
 
@@ -59,11 +60,32 @@ def get_tissue_sites():
     return tissue_site_list
 
 
+def _prefetch_oncotree_codes():
+    """Fetch all OncoTree codes in a single bulk API request.
+
+    Populates the oncotree_code_map cache so that individual
+    get_oncotree_code_name() calls never need to make HTTP requests.
+    """
+    global oncotree_code_map, _oncotree_prefetched
+    if _oncotree_prefetched:
+        return
+    _oncotree_prefetched = True
+    try:
+        url = "https://oncotree.mskcc.org/api/tumorTypes?version=oncotree_2025_04_08"
+        response = requests.get(url, timeout=15)
+        if response.status_code == 200:
+            for entry in response.json():
+                if "code" in entry and "name" in entry:
+                    oncotree_code_map[entry["code"]] = entry["name"]
+    except Exception:
+        pass  # Fall back to per-code lookups
+
+
 def get_oncotree_code_name(code):
     """Retrieve the human-readable name for an OncoTree code.
 
-    Queries the OncoTree API to get the cancer subtype name corresponding
-    to the given code. Results are cached to avoid repeated API calls.
+    On first call, fetches all codes from the OncoTree API in a single
+    bulk request. Subsequent calls use the cached map.
 
     Args:
         code: OncoTree code (e.g., "LUAD", "BRCA")
@@ -72,16 +94,22 @@ def get_oncotree_code_name(code):
         Human-readable cancer subtype name, or "Unknown" if not found
     """
     global oncotree_code_map
-    if code in oncotree_code_map.keys():
+    if not _oncotree_prefetched:
+        _prefetch_oncotree_codes()
+    if code in oncotree_code_map:
         return oncotree_code_map[code]
 
+    # Fallback for codes not in bulk response
     url = f"https://oncotree.mskcc.org/api/tumorTypes/search/code/{code}?exactMatch=true&version=oncotree_2025_04_08"
-    response = requests.get(url)
-    code_name = "Unknown"
-    if response.status_code == 200:
-        data = response.json()
-        if data:
-            code_name = data[0]["name"]
+    try:
+        response = requests.get(url, timeout=10)
+        code_name = "Unknown"
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                code_name = data[0]["name"]
+    except Exception:
+        code_name = "Unknown"
 
     oncotree_code_map[code] = code_name
     return code_name
