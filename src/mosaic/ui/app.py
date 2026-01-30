@@ -964,6 +964,9 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 status_msg = f"Slide fetched: {metadata.filename or slide_path.name}"
                 if metadata.sex or metadata.tissue_site != "Unknown":
                     status_msg += f"\nPre-filled: Sex={metadata.sex or 'N/A'}, Site={metadata.tissue_site}, Subtype={cancer_subtype_value}"
+                status_msg += (
+                    "\nSegmentation Config: TCGA (auto-selected for TCGA slides)"
+                )
 
                 return (
                     str(slide_path),  # tcga_slide_path_state
@@ -971,6 +974,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     metadata.sex,  # sex_dropdown
                     metadata.tissue_site or "Unknown",  # tissue_site_dropdown
                     cancer_subtype_value,  # cancer_subtype_dropdown
+                    "TCGA",  # seg_config_dropdown - Auto-select TCGA config for TCGA slides
                     gr.Textbox(value=status_msg, visible=True),  # tcga_status
                     gr.Dataframe(value=None, visible=False),  # settings_input
                     gr.File(visible=False),  # settings_csv
@@ -997,6 +1001,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 sex_dropdown,
                 tissue_site_dropdown,
                 cancer_subtype_dropdown,
+                seg_config_dropdown,  # Include seg_config_dropdown to auto-select TCGA
                 tcga_status,
                 settings_input,
                 settings_csv,
