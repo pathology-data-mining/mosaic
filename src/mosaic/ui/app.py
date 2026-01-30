@@ -186,6 +186,28 @@ def analyze_slides(
 ):
     global _model_download_thread, _model_download_complete, _core_models_complete
 
+    def _truncate_name(name: str, max_length: int = 40) -> str:
+        """Truncate long filenames for progress display.
+
+        Args:
+            name: Filename to truncate
+            max_length: Maximum length before truncation
+
+        Returns:
+            Truncated filename with ellipsis if needed
+        """
+        if len(name) <= max_length:
+            return name
+        # Keep the extension visible
+        stem = Path(name).stem
+        ext = Path(name).suffix
+        # Reserve space for extension (including dot) and ellipsis (3 chars)
+        available = max_length - len(ext) - 3
+        if available > 0:
+            return f"{stem[:available]}...{ext}"
+        # Edge case: extension itself is very long
+        return f"{name[:max_length-3]}..."
+
     # Initialize telemetry tracking
     from mosaic.telemetry import TelemetryTracker
 
@@ -311,7 +333,8 @@ def analyze_slides(
                     self.base_progress = base_progress
                     self.slide_idx = slide_idx
                     self.total_slides = total_slides
-                    self.slide_name = slide_name
+                    # Truncate long slide names for better progress display
+                    self.slide_name = _truncate_name(slide_name)
                     self.slides_remaining = total_slides - slide_idx
 
                 def __call__(self, current_progress=None, desc=None):
