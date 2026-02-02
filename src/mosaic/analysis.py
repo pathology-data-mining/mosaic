@@ -14,19 +14,9 @@ import pandas as pd
 import gradio as gr
 from gradio.helpers import TrackedIterable
 from pathlib import Path
-from typing import List
-import numpy as np
-import shapely
-import tiffslide
-from PIL import Image, ImageDraw
-from shapely.geometry import MultiPolygon
 from mussel.models import ModelType
 from mussel.utils import get_features, segment_tissue, filter_features
-from mussel.utils.segment import (
-    draw_slide_mask,
-    scale_geometry,
-    _assert_level_downsamples,
-)
+from mussel.utils.segment import draw_slide_mask
 from mussel.cli.tessellate import BiopsySegConfig, ResectionSegConfig, TcgaSegConfig
 from loguru import logger
 from mosaic.inference import run_aeon, run_paladin
@@ -41,109 +31,6 @@ from mosaic.hardware import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_NUM_WORKERS,
 )
-
-
-def draw_slide_mask_thick(
-    slide_path: str,
-    polygons: shapely.Geometry | List[shapely.Geometry],
-    vis_level=0,
-    outline="black",
-    fill=(255, 0, 0, 80),
-    max_size=None,
-    custom_downsample=None,
-    outline_width=3,
-):
-    """
-    Draw slide mask with polygon contours with configurable outline thickness.
-
-    This is a wrapper around mussel's draw_slide_mask that adds support for
-    thicker outlines by redrawing them with PIL's width parameter.
-
-    Args:
-        slide_path: Path to the whole slide image
-        polygons: Shapely geometry or list of geometries to draw
-        vis_level: Visualization level (default: 0)
-        outline: Outline color (default: "black")
-        fill: Fill color as RGBA tuple (default: (255, 0, 0, 80))
-        max_size: Maximum image size (default: None)
-        custom_downsample: Custom downsampling factor (default: None)
-        outline_width: Width of the outline in pixels (default: 3)
-
-    Returns:
-        PIL Image with drawn mask and thicker outlines
-    """
-    wsi = tiffslide.open_slide(slide_path)
-
-    if vis_level < 0:
-        if len(wsi.level_dimensions) == 1:
-            vis_level = 0
-        else:
-            vis_level = wsi.get_best_level_for_downsample(64)
-
-    if type(polygons) != list:
-        polygons = [polygons]
-
-    level_downsamples = _assert_level_downsamples(wsi)
-    downsample = level_downsamples[vis_level]
-    scale = [1 / downsample[0], 1 / downsample[1]]
-    region_size = wsi.level_dimensions[vis_level]
-
-    img = np.array(wsi.read_region((0, 0), vis_level, region_size).convert("RGB"))
-
-    img = Image.fromarray(img)
-
-    draw = ImageDraw.Draw(img, "RGBA")
-
-    # First draw filled polygons
-    for polygon in polygons:
-        scaled_polygon = scale_geometry(polygon, scale[0])
-        if isinstance(polygon, MultiPolygon):
-            for geom in scaled_polygon.geoms:
-                draw.polygon(geom.exterior.coords, outline=None, fill=fill)
-        else:
-            draw.polygon(scaled_polygon.exterior.coords, outline=None, fill=fill)
-
-    # Then draw outlines with specified width
-    for polygon in polygons:
-        scaled_polygon = scale_geometry(polygon, scale[0])
-        if isinstance(polygon, MultiPolygon):
-            for geom in scaled_polygon.geoms:
-                draw.polygon(
-                    geom.exterior.coords,
-                    outline=outline,
-                    fill=None,
-                    width=outline_width,
-                )
-        else:
-            draw.polygon(
-                scaled_polygon.exterior.coords,
-                outline=outline,
-                fill=None,
-                width=outline_width,
-            )
-
-    image_width, image_height = img.size
-    if custom_downsample and custom_downsample > 1:
-        img = img.resize(
-            (
-                int(image_width / custom_downsample),
-                int(image_height / custom_downsample),
-            )
-        )
-
-    if max_size is not None and (image_width > max_size or image_height > max_size):
-        resize_factor = (
-            max_size / image_width
-            if image_width > image_height
-            else max_size / image_height
-        )
-        img = img.resize(
-            (int(image_width * resize_factor), int(image_height * resize_factor))
-        )
-
-    wsi.close()
-
-    return img
 
 
 @contextmanager
@@ -961,7 +848,7 @@ def analyze_slide(
     # Draw slide mask for visualization
     logger.info("Drawing slide mask")
     progress(0.25, desc="Drawing slide mask")
-    slide_mask = draw_slide_mask_thick(
+    slide_mask = draw_slide_mask(
         slide_path,
         polygon,
         outline="black",

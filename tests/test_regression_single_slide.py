@@ -31,7 +31,7 @@ class TestSingleSlideRegression:
         }
 
     @patch("mosaic.analysis.segment_tissue")
-    @patch("mosaic.analysis.draw_slide_mask_thick")
+    @patch("mosaic.analysis.draw_slide_mask")
     @patch("mosaic.model_manager.load_all_models")
     @patch("mosaic.analysis._extract_ctranspath_features")
     @patch("mosaic.analysis.filter_features")
@@ -221,7 +221,7 @@ class TestSingleSlideRegression:
         mock_warning.assert_called_once()
 
     @patch("mosaic.analysis.segment_tissue")
-    @patch("mosaic.analysis.draw_slide_mask_thick")
+    @patch("mosaic.analysis.draw_slide_mask")
     @patch("mosaic.model_manager.load_all_models")
     @patch("mosaic.analysis._extract_ctranspath_features")
     @patch("mosaic.analysis.filter_features")
