@@ -855,7 +855,7 @@ def analyze_slide(
         fill=(255, 0, 0, 80),
         vis_level=-1,
         max_size=2048,
-        outline_width=5,  # Thicker outline for better visibility
+        outline_width=12,  # Balanced thickness: visible in thumbnails without overwhelming
     )
     logger.info("Slide mask drawn")
 
