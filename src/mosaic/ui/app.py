@@ -32,11 +32,17 @@ from mosaic.ui.utils import (
     SETTINGS_COLUMNS,
 )
 from mosaic.analysis import analyze_slide
+from mosaic.data_directory import get_tcga_cache_directory
 from mosaic.model_manager import load_all_models
 from mosaic.hardware import DEFAULT_CONCURRENCY_LIMIT, IS_T4_GPU, GPU_TYPE
 from mosaic.tcga import (
+    compute_settings_hash,
+    download_results_from_hf,
     fetch_slide,
     get_case_metadata,
+    load_analysis_results,
+    save_analysis_results,
+    upload_results_to_hf,
     validate_slide_id,
     GDCError,
     GDCInvalidIDError,
@@ -374,22 +380,91 @@ def analyze_slides(
             # Initial progress for this slide
             slide_progress_wrapper()
 
-            slide_mask, aeon_results, paladin_results = analyze_slide(
-                slide_path=slide_path,
-                seg_config=row["Segmentation Config"],
-                site_type=row["Site Type"],
-                sex=row["Sex"],
-                tissue_site=row.get("Tissue Site", "Unknown"),
-                cancer_subtype=row["Cancer Subtype"],
-                cancer_subtype_name_map=cancer_subtype_name_map,
-                ihc_subtype=row.get("IHC Subtype", ""),
-                num_workers=4,
-                progress=slide_progress_wrapper,  # Pass wrapped progress
-                request=request,
-                model_cache=model_cache,  # Pre-loaded for batch, None for single
-                analysis_id=analysis_id,  # For telemetry tracking
-                session_hash=session_hash,  # For telemetry tracking
-            )
+            # Check if this is a TCGA slide and try to load cached results
+            slide_mask, aeon_results, paladin_results = None, None, None
+            is_tcga_slide = False
+            file_uuid = None
+
+            try:
+                tcga_cache_dir = get_tcga_cache_directory()
+                slide_path_obj = Path(slide_path)
+
+                # Check if slide is under TCGA cache directory
+                if tcga_cache_dir in slide_path_obj.parents:
+                    # Extract UUID from parent directory name
+                    file_uuid = slide_path_obj.parent.name
+                    is_tcga_slide = True
+
+                    # Compute settings hash for this slide
+                    settings_hash = compute_settings_hash(
+                        seg_config=row["Segmentation Config"],
+                        site_type=row["Site Type"],
+                        sex=row["Sex"],
+                        tissue_site=row.get("Tissue Site", "Unknown"),
+                        cancer_subtype=row["Cancer Subtype"],
+                        ihc_subtype=row.get("IHC Subtype", ""),
+                    )
+
+                    # Try to load cached results
+                    cached = load_analysis_results(file_uuid, settings_hash)
+                    if cached is not None:
+                        slide_mask, aeon_results, paladin_results = cached
+                        logger.info(
+                            f"Using cached results for {file_uuid}/{settings_hash}"
+                        )
+                        # Skip analysis, use cached results
+            except Exception as e:
+                logger.debug(f"Failed to check/load cached results: {e}")
+                # Continue with normal analysis on any error
+
+            # If no cached results, run analysis
+            if slide_mask is None or aeon_results is None or paladin_results is None:
+                slide_mask, aeon_results, paladin_results = analyze_slide(
+                    slide_path=slide_path,
+                    seg_config=row["Segmentation Config"],
+                    site_type=row["Site Type"],
+                    sex=row["Sex"],
+                    tissue_site=row.get("Tissue Site", "Unknown"),
+                    cancer_subtype=row["Cancer Subtype"],
+                    cancer_subtype_name_map=cancer_subtype_name_map,
+                    ihc_subtype=row.get("IHC Subtype", ""),
+                    num_workers=4,
+                    progress=slide_progress_wrapper,  # Pass wrapped progress
+                    request=request,
+                    model_cache=model_cache,  # Pre-loaded for batch, None for single
+                    analysis_id=analysis_id,  # For telemetry tracking
+                    session_hash=session_hash,  # For telemetry tracking
+                )
+
+                # Save results to cache if this is a TCGA slide
+                if is_tcga_slide and file_uuid is not None:
+                    try:
+                        settings_hash = compute_settings_hash(
+                            seg_config=row["Segmentation Config"],
+                            site_type=row["Site Type"],
+                            sex=row["Sex"],
+                            tissue_site=row.get("Tissue Site", "Unknown"),
+                            cancer_subtype=row["Cancer Subtype"],
+                            ihc_subtype=row.get("IHC Subtype", ""),
+                        )
+                        save_analysis_results(
+                            file_uuid=file_uuid,
+                            settings_hash=settings_hash,
+                            aeon_results=aeon_results,
+                            paladin_results=paladin_results,
+                            slide_mask=slide_mask,
+                        )
+
+                        # Upload results to HF Dataset for persistence
+                        try:
+                            upload_results_to_hf(file_uuid)
+                        except Exception as upload_error:
+                            logger.debug(
+                                f"Failed to upload results to HF Dataset: {upload_error}"
+                            )
+
+                    except Exception as e:
+                        logger.debug(f"Failed to save analysis results to cache: {e}")
 
             if slide_mask is not None:
                 mask_filename = f"{Path(slide_name).stem}_mask.png"
@@ -951,6 +1026,21 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 tcga_id = validate_slide_id(tcga_id)
                 progress(0.1, desc="Validating slide ID...")
 
+                # Determine file UUID for HF download
+                from mosaic.tcga import is_valid_uuid, query_slide_uuid
+
+                if is_valid_uuid(tcga_id):
+                    file_uuid = tcga_id
+                else:
+                    # For barcodes, we need to query first to get UUID
+                    file_uuid = query_slide_uuid(tcga_id)
+
+                # Try to download cached results from HF Dataset (on demand)
+                try:
+                    download_results_from_hf(file_uuid)
+                except Exception as e:
+                    logger.debug(f"Failed to download HF cache: {e}")
+
                 # Get tissue sites for metadata mapping
                 tissue_sites = get_tissue_sites()
 
@@ -974,7 +1064,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     progress_callback=update_progress,
                 )
 
-                progress(0.9, desc="Extracting metadata...")
+                # Check if metadata is cached
+                from mosaic.tcga import load_metadata_cache
+
+                cached_metadata = load_metadata_cache(file_uuid)
+                if cached_metadata is not None:
+                    progress(0.9, desc="Loading cached metadata...")
+                else:
+                    progress(0.9, desc="Extracting metadata from TCGA...")
 
                 # Get case metadata and convert to Mosaic values
                 metadata = get_case_metadata(file_uuid, tissue_sites)

@@ -415,7 +415,11 @@ def _run_inference_pipeline_impl(
     try:
         # Step 2: Extract CTransPath features using cached model
         progress(0.3, desc=f"Extracting CTransPath features ({len(coords)} tiles)")
-        with _stage_label(progress, f"Extracting CTransPath features ({len(coords)} tiles)", stage_progress=0.3):
+        with _stage_label(
+            progress,
+            f"Extracting CTransPath features ({len(coords)} tiles)",
+            stage_progress=0.3,
+        ):
             ctranspath_features, coords = _extract_ctranspath_features(
                 coords,
                 slide_path,
@@ -441,8 +445,14 @@ def _run_inference_pipeline_impl(
             timings["filtered_tile_count"] = len(filtered_coords)
 
         # Step 4: Extract Optimus features using cached model
-        progress(0.4, desc=f"Extracting Optimus features ({len(filtered_coords)} tiles)")
-        with _stage_label(progress, f"Extracting Optimus features ({len(filtered_coords)} tiles)", stage_progress=0.4):
+        progress(
+            0.4, desc=f"Extracting Optimus features ({len(filtered_coords)} tiles)"
+        )
+        with _stage_label(
+            progress,
+            f"Extracting Optimus features ({len(filtered_coords)} tiles)",
+            stage_progress=0.4,
+        ):
             features = _extract_optimus_features(
                 filtered_coords,
                 slide_path,
@@ -658,7 +668,11 @@ def _run_inference_pipeline_with_models(
     """
     # Step 1: Extract CTransPath features with PRE-LOADED model
     progress(0.3, desc=f"Extracting CTransPath features ({len(coords)} tiles)")
-    with _stage_label(progress, f"Extracting CTransPath features ({len(coords)} tiles)", stage_progress=0.3):
+    with _stage_label(
+        progress,
+        f"Extracting CTransPath features ({len(coords)} tiles)",
+        stage_progress=0.3,
+    ):
         ctranspath_features, coords = _extract_ctranspath_features(
             coords,
             slide_path,
@@ -685,7 +699,11 @@ def _run_inference_pipeline_with_models(
 
     # Step 3: Extract Optimus features with PRE-LOADED model
     progress(0.5, desc=f"Extracting Optimus features ({len(filtered_coords)} tiles)")
-    with _stage_label(progress, f"Extracting Optimus features ({len(filtered_coords)} tiles)", stage_progress=0.5):
+    with _stage_label(
+        progress,
+        f"Extracting Optimus features ({len(filtered_coords)} tiles)",
+        stage_progress=0.5,
+    ):
         features = _extract_optimus_features(
             filtered_coords,
             slide_path,

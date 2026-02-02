@@ -18,6 +18,15 @@ from mosaic.tcga import (
     get_cached_slide_path,
     fetch_slide_by_uuid,
     fetch_slide,
+    save_metadata_cache,
+    load_metadata_cache,
+    compute_settings_hash,
+    save_analysis_results,
+    load_analysis_results,
+    upload_results_to_hf,
+    download_results_from_hf,
+    METADATA_CACHE_FILENAME,
+    METADATA_CACHE_VERSION,
     TCGAMetadata,
     GDCError,
     GDCInvalidIDError,
@@ -272,15 +281,9 @@ class TestOncoTreeMapping:
         # IDC -> BRCA -> TISSUE
         mock_responses = [
             # First call for "IDC"
-            Mock(
-                status_code=200,
-                json=lambda: [{"code": "IDC", "parent": "BRCA"}]
-            ),
+            Mock(status_code=200, json=lambda: [{"code": "IDC", "parent": "BRCA"}]),
             # Second call for "BRCA"
-            Mock(
-                status_code=200,
-                json=lambda: [{"code": "BRCA", "parent": "TISSUE"}]
-            ),
+            Mock(status_code=200, json=lambda: [{"code": "BRCA", "parent": "TISSUE"}]),
         ]
         mock_requests_get.side_effect = mock_responses
 
@@ -311,8 +314,7 @@ class TestOncoTreeMapping:
 
         # Mock response - simulate a single-level hierarchy (IDC -> TISSUE)
         mock_requests_get.return_value = Mock(
-            status_code=200,
-            json=lambda: [{"code": "IDC", "parent": "TISSUE"}]
+            status_code=200, json=lambda: [{"code": "IDC", "parent": "TISSUE"}]
         )
 
         # First call should hit the API
@@ -627,6 +629,534 @@ class TestErrorClasses:
         """Test GDCInvalidIDError."""
         error = GDCInvalidIDError("Invalid ID")
         assert isinstance(error, GDCError)
+
+
+class TestMetadataCache:
+    """Tests for metadata caching functionality."""
+
+    def test_save_and_load_roundtrip(self, tmp_path):
+        """Test saving and loading metadata cache round-trip."""
+        file_uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        metadata = TCGAMetadata(
+            sex="Male",
+            tissue_site="Breast",
+            cancer_subtype="BRCA",
+            site_type="Primary",
+            filename="test.svs",
+            file_size=1024000,
+        )
+
+        save_metadata_cache(file_uuid, metadata, cache_dir=tmp_path)
+        loaded = load_metadata_cache(file_uuid, cache_dir=tmp_path)
+
+        assert loaded is not None
+        assert loaded.sex == "Male"
+        assert loaded.tissue_site == "Breast"
+        assert loaded.cancer_subtype == "BRCA"
+        assert loaded.site_type == "Primary"
+        assert loaded.filename == "test.svs"
+        assert loaded.file_size == 1024000
+
+    def test_load_missing_cache_returns_none(self, tmp_path):
+        """Test loading non-existent cache returns None."""
+        file_uuid = "missing-uuid"
+        loaded = load_metadata_cache(file_uuid, cache_dir=tmp_path)
+        assert loaded is None
+
+    def test_load_corrupt_json_returns_none(self, tmp_path):
+        """Test loading corrupt JSON returns None."""
+        file_uuid = "corrupt-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        cache_path = slide_dir / METADATA_CACHE_FILENAME
+        cache_path.write_text("not valid json{{{")
+
+        loaded = load_metadata_cache(file_uuid, cache_dir=tmp_path)
+        assert loaded is None
+
+    def test_load_wrong_version_returns_none(self, tmp_path):
+        """Test loading wrong version cache returns None."""
+        file_uuid = "old-version-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        cache_path = slide_dir / METADATA_CACHE_FILENAME
+        import json
+
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "cache_version": METADATA_CACHE_VERSION + 1,
+                    "sex": "Male",
+                    "tissue_site": "Breast",
+                    "cancer_subtype": "BRCA",
+                    "site_type": "Primary",
+                }
+            )
+        )
+
+        loaded = load_metadata_cache(file_uuid, cache_dir=tmp_path)
+        assert loaded is None
+
+    def test_roundtrip_with_none_values(self, tmp_path):
+        """Test round-trip with None values."""
+        file_uuid = "none-values-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        metadata = TCGAMetadata(
+            sex=None,
+            tissue_site=None,
+            cancer_subtype=None,
+            site_type=None,
+            filename=None,
+            file_size=None,
+        )
+
+        save_metadata_cache(file_uuid, metadata, cache_dir=tmp_path)
+        loaded = load_metadata_cache(file_uuid, cache_dir=tmp_path)
+
+        assert loaded is not None
+        assert loaded.sex is None
+        assert loaded.tissue_site is None
+        assert loaded.cancer_subtype is None
+        assert loaded.site_type is None
+
+    def test_save_no_slide_dir_is_noop(self, tmp_path):
+        """Test saving when slide directory doesn't exist is a no-op."""
+        file_uuid = "no-dir-uuid"
+        metadata = TCGAMetadata(
+            sex="Male",
+            tissue_site="Breast",
+            cancer_subtype="BRCA",
+            site_type="Primary",
+        )
+
+        # Should not raise exception
+        save_metadata_cache(file_uuid, metadata, cache_dir=tmp_path)
+
+        # Should not have created file
+        cache_path = tmp_path / file_uuid / METADATA_CACHE_FILENAME
+        assert not cache_path.exists()
+
+    def test_save_permission_error_is_silent(self, tmp_path, monkeypatch):
+        """Test that permission errors during save are silent."""
+        file_uuid = "perm-error-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        metadata = TCGAMetadata(
+            sex="Male",
+            tissue_site="Breast",
+            cancer_subtype="BRCA",
+            site_type="Primary",
+        )
+
+        # Mock open to raise PermissionError
+        import builtins
+
+        original_open = builtins.open
+
+        def mock_open(*args, **kwargs):
+            if "metadata.json" in str(args[0]) and "w" in str(kwargs.get("mode", "")):
+                raise PermissionError("No permission")
+            return original_open(*args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", mock_open)
+
+        # Should not raise exception
+        save_metadata_cache(file_uuid, metadata, cache_dir=tmp_path)
+
+
+class TestAnalysisResultsCache:
+    """Tests for analysis results caching functionality."""
+
+    def test_save_and_load_roundtrip(self, tmp_path):
+        """Test saving and loading analysis results round-trip."""
+        import pandas as pd
+        from PIL import Image
+
+        file_uuid = "results-uuid"
+        settings_hash = "abc123def456"
+
+        # Create test data
+        aeon_results = pd.DataFrame(
+            {"Confidence": [0.95, 0.85]}, index=["BRCA", "LUAD"]
+        )
+        aeon_results.index.name = "Cancer Subtype"
+
+        paladin_results = pd.DataFrame(
+            {"Biomarker": ["HER2", "ER"], "Probability": [0.9, 0.8]}
+        )
+
+        slide_mask = Image.new("RGB", (100, 100), color="red")
+
+        # Save
+        save_analysis_results(
+            file_uuid,
+            settings_hash,
+            aeon_results,
+            paladin_results,
+            slide_mask,
+            cache_dir=tmp_path,
+        )
+
+        # Load
+        loaded = load_analysis_results(file_uuid, settings_hash, cache_dir=tmp_path)
+
+        assert loaded is not None
+        loaded_mask, loaded_aeon, loaded_paladin = loaded
+
+        # Check aeon results
+        assert loaded_aeon is not None
+        assert loaded_aeon.index.name == "Cancer Subtype"
+        assert list(loaded_aeon.index) == ["BRCA", "LUAD"]
+        assert list(loaded_aeon["Confidence"]) == [0.95, 0.85]
+
+        # Check paladin results
+        assert loaded_paladin is not None
+        assert list(loaded_paladin["Biomarker"]) == ["HER2", "ER"]
+        assert list(loaded_paladin["Probability"]) == [0.9, 0.8]
+
+        # Check mask
+        assert loaded_mask is not None
+        assert loaded_mask.size == (100, 100)
+
+    def test_load_missing_dir_returns_none(self, tmp_path):
+        """Test loading from missing directory returns None."""
+        loaded = load_analysis_results(
+            "missing-uuid", "missing-hash", cache_dir=tmp_path
+        )
+        assert loaded is None
+
+    def test_load_partial_results_returns_none(self, tmp_path):
+        """Test loading partial results returns None."""
+        import pandas as pd
+
+        file_uuid = "partial-uuid"
+        settings_hash = "partial-hash"
+        results_dir = tmp_path / file_uuid / "results" / settings_hash
+        results_dir.mkdir(parents=True)
+
+        # Only save aeon results, missing others
+        aeon_results = pd.DataFrame({"Confidence": [0.95]}, index=["BRCA"])
+        aeon_path = results_dir / "aeon_results.csv"
+        aeon_results.to_csv(aeon_path, index=True)
+
+        loaded = load_analysis_results(file_uuid, settings_hash, cache_dir=tmp_path)
+        assert loaded is None
+
+    def test_settings_hash_deterministic(self):
+        """Test that settings hash is deterministic."""
+        seg_config = {"threshold": 0.5, "min_size": 100}
+        hash1 = compute_settings_hash(
+            seg_config, "Primary", "Male", "Breast", "BRCA", "HER2+"
+        )
+        hash2 = compute_settings_hash(
+            seg_config, "Primary", "Male", "Breast", "BRCA", "HER2+"
+        )
+        assert hash1 == hash2
+        assert len(hash1) == 12  # 12 hex characters
+
+    def test_settings_hash_varies_with_input(self):
+        """Test that settings hash varies with different inputs."""
+        seg_config = {"threshold": 0.5, "min_size": 100}
+
+        hash1 = compute_settings_hash(
+            seg_config, "Primary", "Male", "Breast", "BRCA", None
+        )
+        hash2 = compute_settings_hash(
+            seg_config, "Metastatic", "Male", "Breast", "BRCA", None
+        )
+        hash3 = compute_settings_hash(
+            seg_config, "Primary", "Female", "Breast", "BRCA", None
+        )
+
+        assert hash1 != hash2
+        assert hash1 != hash3
+        assert hash2 != hash3
+
+    def test_save_with_none_components(self, tmp_path):
+        """Test saving with None components skips those files."""
+        file_uuid = "none-components-uuid"
+        settings_hash = "none-hash"
+
+        save_analysis_results(
+            file_uuid, settings_hash, None, None, None, cache_dir=tmp_path
+        )
+
+        results_dir = tmp_path / file_uuid / "results" / settings_hash
+        assert results_dir.exists()
+
+        # No files should be created
+        assert not (results_dir / "aeon_results.csv").exists()
+        assert not (results_dir / "paladin_results.csv").exists()
+        assert not (results_dir / "slide_mask.png").exists()
+
+    def test_aeon_index_restored(self, tmp_path):
+        """Test that aeon results index is properly restored."""
+        import pandas as pd
+        from PIL import Image
+
+        file_uuid = "index-uuid"
+        settings_hash = "index-hash"
+
+        aeon_results = pd.DataFrame({"Confidence": [0.95]}, index=["BRCA"])
+        aeon_results.index.name = "Cancer Subtype"
+
+        paladin_results = pd.DataFrame({"Biomarker": ["HER2"]})
+        slide_mask = Image.new("RGB", (50, 50))
+
+        save_analysis_results(
+            file_uuid,
+            settings_hash,
+            aeon_results,
+            paladin_results,
+            slide_mask,
+            cache_dir=tmp_path,
+        )
+
+        loaded = load_analysis_results(file_uuid, settings_hash, cache_dir=tmp_path)
+        _, loaded_aeon, _ = loaded
+
+        # Index should be restored from first column
+        assert loaded_aeon.index.name is not None
+        assert list(loaded_aeon.index) == ["BRCA"]
+
+
+class TestHFDatasetSync:
+    """Tests for HuggingFace Dataset sync functionality."""
+
+    def test_upload_results_calls_hf_api(self, tmp_path, monkeypatch):
+        """Test that upload_results_to_hf calls HF API correctly."""
+        import json
+
+        file_uuid = "upload-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        # Create metadata file
+        metadata_path = slide_dir / METADATA_CACHE_FILENAME
+        metadata_path.write_text(json.dumps({"cache_version": 1, "sex": "Male"}))
+
+        # Create results directory
+        results_dir = slide_dir / "results" / "hash1"
+        results_dir.mkdir(parents=True)
+        (results_dir / "aeon_results.csv").write_text("test")
+
+        # Mock HfApi - need to patch where it's used (inside the function)
+        mock_api = MagicMock()
+
+        def mock_hf_api():
+            return mock_api
+
+        # Mock the import statement inside upload_results_to_hf
+        import sys
+        from types import ModuleType
+
+        mock_hf_hub = ModuleType("huggingface_hub")
+        mock_hf_hub.HfApi = mock_hf_api
+        sys.modules["huggingface_hub"] = mock_hf_hub
+
+        monkeypatch.setenv("MOSAIC_TCGA_CACHE_HF_REPO", "test-org/test-repo")
+
+        try:
+            upload_results_to_hf(file_uuid, cache_dir=tmp_path)
+
+            # Verify API was called
+            assert mock_api.upload_file.call_count >= 1
+        finally:
+            # Clean up mock
+            if "huggingface_hub" in sys.modules:
+                del sys.modules["huggingface_hub"]
+
+    def test_upload_noop_without_env_var(self, tmp_path, monkeypatch):
+        """Test that upload is no-op when env var not set."""
+        monkeypatch.delenv("MOSAIC_TCGA_CACHE_HF_REPO", raising=False)
+
+        file_uuid = "noop-uuid"
+
+        # Should not raise exception
+        upload_results_to_hf(file_uuid, cache_dir=tmp_path)
+
+    def test_download_results_populates_cache(self, tmp_path, monkeypatch):
+        """Test that download_results_from_hf populates local cache."""
+        file_uuid = "download-uuid"
+
+        # Mock HfApi
+        mock_api = MagicMock()
+        mock_api.list_repo_files.return_value = [
+            f"{file_uuid}/metadata.json",
+            f"{file_uuid}/results/hash1/aeon_results.csv",
+        ]
+
+        def mock_hf_api():
+            return mock_api
+
+        # Mock hf_hub_download to return temp file
+        def mock_download(repo_id, filename, repo_type):
+            temp_file = tmp_path / "temp" / filename.replace("/", "_")
+            temp_file.parent.mkdir(parents=True, exist_ok=True)
+            temp_file.write_text("test content")
+            return str(temp_file)
+
+        # Mock the imports
+        import sys
+        from types import ModuleType
+
+        mock_hf_hub = ModuleType("huggingface_hub")
+        mock_hf_hub.HfApi = mock_hf_api
+        mock_hf_hub.hf_hub_download = mock_download
+        sys.modules["huggingface_hub"] = mock_hf_hub
+
+        monkeypatch.setenv("MOSAIC_TCGA_CACHE_HF_REPO", "test-org/test-repo")
+
+        try:
+            result = download_results_from_hf(file_uuid, cache_dir=tmp_path)
+
+            assert result is True
+            # Verify files were copied to cache
+            assert (tmp_path / file_uuid / "metadata.json").exists()
+        finally:
+            # Clean up mock
+            if "huggingface_hub" in sys.modules:
+                del sys.modules["huggingface_hub"]
+
+    def test_download_noop_without_env_var(self, tmp_path, monkeypatch):
+        """Test that download is no-op when env var not set."""
+        monkeypatch.delenv("MOSAIC_TCGA_CACHE_HF_REPO", raising=False)
+
+        result = download_results_from_hf("test-uuid", cache_dir=tmp_path)
+        assert result is False
+
+    def test_download_handles_api_error_gracefully(self, tmp_path, monkeypatch):
+        """Test that download handles API errors gracefully."""
+        # Mock HfApi to raise exception
+        mock_api = MagicMock()
+        mock_api.list_repo_files.side_effect = Exception("API error")
+
+        def mock_hf_api():
+            return mock_api
+
+        # Mock the import
+        import sys
+        from types import ModuleType
+
+        mock_hf_hub = ModuleType("huggingface_hub")
+        mock_hf_hub.HfApi = mock_hf_api
+        sys.modules["huggingface_hub"] = mock_hf_hub
+
+        monkeypatch.setenv("MOSAIC_TCGA_CACHE_HF_REPO", "test-org/test-repo")
+
+        try:
+            result = download_results_from_hf("test-uuid", cache_dir=tmp_path)
+            assert result is False
+        finally:
+            # Clean up mock
+            if "huggingface_hub" in sys.modules:
+                del sys.modules["huggingface_hub"]
+
+
+class TestGetCaseMetadataWithCache:
+    """Tests for get_case_metadata with caching."""
+
+    @patch("mosaic.tcga.get_slide_metadata")
+    def test_cache_hit_skips_api(self, mock_get_metadata, tmp_path):
+        """Test that cache hit skips API call."""
+        file_uuid = "cached-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        # Pre-populate cache
+        metadata = TCGAMetadata(
+            sex="Male",
+            tissue_site="Breast",
+            cancer_subtype="BRCA",
+            site_type="Primary",
+        )
+        save_metadata_cache(file_uuid, metadata, cache_dir=tmp_path)
+
+        # Call get_case_metadata
+        result = get_case_metadata(file_uuid, ["Breast"], cache_dir=tmp_path)
+
+        # API should not have been called
+        mock_get_metadata.assert_not_called()
+
+        # Result should match cached metadata
+        assert result.sex == "Male"
+        assert result.cancer_subtype == "BRCA"
+
+    @patch("mosaic.tcga.get_slide_metadata")
+    @patch("mosaic.tcga.convert_gdc_metadata_to_mosaic")
+    def test_cache_miss_fetches_and_saves(
+        self, mock_convert, mock_get_metadata, tmp_path
+    ):
+        """Test that cache miss fetches from API and saves."""
+        file_uuid = "uncached-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        mock_get_metadata.return_value = {"file_name": "test.svs"}
+        mock_convert.return_value = TCGAMetadata(
+            sex="Female",
+            tissue_site="Lung",
+            cancer_subtype="LUAD",
+            site_type="Primary",
+        )
+
+        result = get_case_metadata(file_uuid, ["Lung"], cache_dir=tmp_path)
+
+        # API should have been called
+        mock_get_metadata.assert_called_once()
+
+        # Result should match API response
+        assert result.sex == "Female"
+
+        # Cache should have been saved
+        cached = load_metadata_cache(file_uuid, cache_dir=tmp_path)
+        assert cached is not None
+        assert cached.sex == "Female"
+
+
+class TestTCGACacheDirHFSpaces:
+    """Test TCGA cache directory detection on HF Spaces."""
+
+    def test_tcga_cache_dir_uses_data_on_hf_spaces(self, monkeypatch, tmp_path):
+        """Test that HF Spaces uses /data for persistent storage."""
+        from mosaic.data_directory import get_tcga_cache_directory
+
+        # Mock HF Spaces environment
+        monkeypatch.setenv("SPACE_ID", "test-space-id")
+
+        # Create mock /data directory
+        mock_data_dir = tmp_path / "data"
+        mock_data_dir.mkdir()
+
+        # Mock Path("/data") to return our temp directory
+        import mosaic.data_directory
+
+        original_path = Path
+
+        class MockPath:
+            def __new__(cls, path_str):
+                if path_str == "/data":
+                    return mock_data_dir
+                return original_path(path_str)
+
+        monkeypatch.setattr(mosaic.data_directory, "Path", MockPath)
+
+        # Reset global cache
+        mosaic.data_directory._TCGA_CACHE_DIR = None
+
+        # Get cache directory
+        cache_dir = get_tcga_cache_directory()
+
+        # Should use /data/mosaic_tcga_slides on HF Spaces
+        assert "mosaic_tcga_slides" in str(cache_dir)
 
 
 # Optional: Integration test with real GDC API (marked as slow)
