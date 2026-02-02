@@ -747,14 +747,14 @@ slide2.tif,Metastatic,Male,Lung,LUAD,Biopsy
 - **TCGA Barcode**: Standard TCGA format (e.g., `TCGA-E2-A1LS-01Z-00-DX1`)
 
 **Example Slide IDs (Public Access, with Paladin biomarker models):**
-| ID | Cancer Type | Format |
-|----|-------------|--------|
-| `6a0ea716-a5f2-47f3-880b-537a5cdc2324` | Lung Adenocarcinoma (LUAD) | UUID |
-| `d65c5d21-6333-4a9e-9a2a-139a122a3c8a` | Colon Adenocarcinoma (COAD) | UUID |
-| `1bc2766c-7064-43c7-97cb-5962d3894671` | Prostate Adenocarcinoma (PRAD) | UUID |
-| `0d083e4f-0037-462e-b810-3182506f15ba` | Bladder Cancer (BLCA) | UUID |
-| `TCGA-86-8074-01Z-00-DX1` | Lung Adenocarcinoma (LUAD) | Barcode |
-| `TCGA-AZ-4313-01Z-00-DX1` | Colon Adenocarcinoma (COAD) | Barcode |
+| ID | Cancer Type |
+|----|-------------|
+| `TCGA-86-8074-01Z-00-DX1` | Lung Adenocarcinoma (LUAD) |
+| `TCGA-AZ-4313-01Z-00-DX1` | Colon Adenocarcinoma (COAD) |
+| `TCGA-EJ-7123-01Z-00-DX1` | Prostate Adenocarcinoma (PRAD) |
+| `TCGA-G2-A2ES-01Z-00-DX1` | Bladder Cancer (BLCA) |
+| `TCGA-HU-A4GJ-01Z-00-DX1` | Stomach Adenocarcinoma (STAD) |
+| `TCGA-EY-A1GK-01Z-00-DX1` | Endometrial Carcinoma (UCEC) |
 
 **How It Works:**
 1. Slides are downloaded from the GDC (Genomic Data Commons) API
@@ -838,20 +838,12 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     )
                     gr.Examples(
                         examples=[
-                            [
-                                "6a0ea716-a5f2-47f3-880b-537a5cdc2324"
-                            ],  # TCGA-LUAD (Lung) - has Paladin models
-                            [
-                                "d65c5d21-6333-4a9e-9a2a-139a122a3c8a"
-                            ],  # TCGA-COAD (Colon) - has Paladin models
-                            [
-                                "1bc2766c-7064-43c7-97cb-5962d3894671"
-                            ],  # TCGA-PRAD (Prostate) - has Paladin models
-                            [
-                                "0d083e4f-0037-462e-b810-3182506f15ba"
-                            ],  # TCGA-BLCA (Bladder) - has Paladin models
-                            ["TCGA-86-8074-01Z-00-DX1"],  # TCGA-LUAD barcode (Lung)
-                            ["TCGA-AZ-4313-01Z-00-DX1"],  # TCGA-COAD barcode (Colon)
+                            ["TCGA-86-8074-01Z-00-DX1"],  # LUAD (Lung)
+                            ["TCGA-AZ-4313-01Z-00-DX1"],  # COAD (Colon)
+                            ["TCGA-EJ-7123-01Z-00-DX1"],  # PRAD (Prostate)
+                            ["TCGA-G2-A2ES-01Z-00-DX1"],  # BLCA (Bladder)
+                            ["TCGA-HU-A4GJ-01Z-00-DX1"],  # STAD (Stomach)
+                            ["TCGA-EY-A1GK-01Z-00-DX1"],  # UCEC (Endometrial)
                         ],
                         inputs=tcga_id_input,
                         label="Example TCGA Slide IDs (click to use)",
@@ -926,6 +918,11 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     clear_button = gr.Button("Clear")
                     analyze_button = gr.Button("Analyze", variant="primary")
             with gr.Column():
+                gr.Markdown(
+                    """
+                    **Tissue Segmentation Masks**: Cyan outlines show detected tissue regions. Red fill indicates tissue area.
+                    """
+                )
                 slide_masks = gr.Gallery(
                     label="Slide Masks (tissue segmentation)",
                     columns=3,
