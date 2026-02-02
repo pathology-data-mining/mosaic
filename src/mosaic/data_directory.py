@@ -7,7 +7,6 @@ model data files, checking environment variables and falling back to local paths
 import os
 from pathlib import Path
 
-
 # Global variable to store the model data directory path
 _MODEL_DATA_DIR = None
 

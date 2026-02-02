@@ -414,7 +414,10 @@ def analyze_slides(
                         )
                         # Skip analysis, use cached results
             except Exception as e:
-                logger.debug(f"Failed to check/load cached results: {e}")
+                logger.warning(
+                    f"Failed to check/load cached results for slide: {e}. "
+                    f"Proceeding with fresh analysis."
+                )
                 # Continue with normal analysis on any error
 
             # If no cached results, run analysis
@@ -459,12 +462,16 @@ def analyze_slides(
                         try:
                             upload_results_to_hf(file_uuid)
                         except Exception as upload_error:
-                            logger.debug(
-                                f"Failed to upload results to HF Dataset: {upload_error}"
+                            logger.warning(
+                                f"Failed to upload results to HF Dataset for {file_uuid}: {upload_error}. "
+                                f"Results are cached locally but not synced to HF."
                             )
 
                     except Exception as e:
-                        logger.debug(f"Failed to save analysis results to cache: {e}")
+                        logger.warning(
+                            f"Failed to save analysis results to cache for {file_uuid}: {e}. "
+                            f"Results are still valid but won't be cached for future use."
+                        )
 
             if slide_mask is not None:
                 mask_filename = f"{Path(slide_name).stem}_mask.png"
@@ -642,8 +649,7 @@ def launch_gradio(server_name, server_port, share):
 
         # Comprehensive documentation section
         with gr.Accordion("📖 Documentation & Help", open=False):
-            gr.Markdown(
-                """
+            gr.Markdown("""
 ## Quick Start Guide
 
 **Single Slide Analysis:**
@@ -809,8 +815,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 - **Slow processing**: Large slides take longer; be patient
 - **Upload failed**: Check file format (.svs, .tiff, .tif only)
 - **No results**: Ensure slide contains sufficient tissue
-            """
-            )
+            """)
 
         with gr.Row():
             with gr.Column():
@@ -918,11 +923,9 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     clear_button = gr.Button("Clear")
                     analyze_button = gr.Button("Analyze", variant="primary")
             with gr.Column():
-                gr.Markdown(
-                    """
+                gr.Markdown("""
                     **Tissue Segmentation Masks**: Cyan outlines show detected tissue regions. Red fill indicates tissue area.
-                    """
-                )
+                    """)
                 slide_masks = gr.Gallery(
                     label="Slide Masks (tissue segmentation)",
                     columns=3,
@@ -1036,7 +1039,10 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 try:
                     download_results_from_hf(file_uuid)
                 except Exception as e:
-                    logger.debug(f"Failed to download HF cache: {e}")
+                    logger.warning(
+                        f"Failed to download HF cache for {file_uuid}: {e}. "
+                        f"Will analyze from scratch if no local cache exists."
+                    )
 
                 # Get tissue sites for metadata mapping
                 tissue_sites = get_tissue_sites()

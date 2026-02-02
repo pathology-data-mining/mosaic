@@ -652,8 +652,9 @@ def save_metadata_cache(
 ) -> None:
     """Save TCGAMetadata to cache as JSON.
 
-    Best-effort operation that catches all exceptions silently. Creates a
-    metadata.json file in the slide's cache directory.
+    Best-effort operation that handles expected errors gracefully while
+    surfacing unexpected errors. Creates a metadata.json file in the slide's
+    cache directory.
 
     Args:
         file_uuid: The file UUID
@@ -665,7 +666,10 @@ def save_metadata_cache(
         slide_dir = cache_dir / file_uuid
 
         if not slide_dir.exists():
-            return  # No slide directory, silently skip
+            logger.debug(
+                f"Slide directory does not exist for {file_uuid}, skipping metadata cache save"
+            )
+            return
 
         cache_path = slide_dir / METADATA_CACHE_FILENAME
         cache_data = {
@@ -678,9 +682,25 @@ def save_metadata_cache(
 
         logger.debug(f"Saved metadata cache for {file_uuid}")
 
+    except (PermissionError, OSError) as e:
+        # Filesystem issues - warn but don't fail
+        logger.warning(
+            f"Cannot save metadata cache for {file_uuid}: {e}. "
+            f"Cache disabled for this slide. Check permissions and disk space."
+        )
+    except (TypeError, KeyError, AttributeError) as e:
+        # Data structure errors - these indicate bugs
+        logger.error(
+            f"Failed to save metadata cache for {file_uuid} due to data error: {e}. "
+            f"This may indicate a bug in metadata conversion.",
+            exc_info=True,
+        )
     except Exception as e:
-        # Best-effort, log but don't fail
-        logger.debug(f"Failed to save metadata cache for {file_uuid}: {e}")
+        # Truly unexpected errors
+        logger.error(
+            f"Unexpected error saving metadata cache for {file_uuid}: {e}",
+            exc_info=True,
+        )
 
 
 def load_metadata_cache(
@@ -704,6 +724,7 @@ def load_metadata_cache(
         cache_path = slide_dir / METADATA_CACHE_FILENAME
 
         if not cache_path.exists():
+            logger.debug(f"No cached metadata found for {file_uuid}")
             return None
 
         with open(cache_path, encoding="utf-8") as f:
@@ -711,8 +732,10 @@ def load_metadata_cache(
 
         # Check version
         if cache_data.get("cache_version") != METADATA_CACHE_VERSION:
-            logger.debug(
-                f"Metadata cache version mismatch for {file_uuid}, ignoring cache"
+            logger.info(
+                f"Metadata cache version mismatch for {file_uuid} "
+                f"(found {cache_data.get('cache_version')}, expected {METADATA_CACHE_VERSION}). "
+                f"Ignoring stale cache."
             )
             return None
 
@@ -720,8 +743,29 @@ def load_metadata_cache(
         cache_data.pop("cache_version", None)
         return TCGAMetadata(**cache_data)
 
+    except json.JSONDecodeError as e:
+        logger.warning(
+            f"Corrupted metadata cache for {file_uuid}: {e}. "
+            f"Falling back to API. Consider deleting: {cache_path}"
+        )
+        return None
+    except (KeyError, TypeError) as e:
+        logger.warning(
+            f"Invalid metadata cache structure for {file_uuid}: {e}. "
+            f"Falling back to API. Cache file may be from incompatible version."
+        )
+        return None
+    except (PermissionError, OSError) as e:
+        logger.warning(
+            f"Cannot read metadata cache for {file_uuid}: {e}. "
+            f"Check file permissions. Falling back to API."
+        )
+        return None
     except Exception as e:
-        logger.debug(f"Failed to load metadata cache for {file_uuid}: {e}")
+        logger.error(
+            f"Unexpected error loading metadata cache for {file_uuid}: {e}",
+            exc_info=True,
+        )
         return None
 
 
@@ -779,8 +823,8 @@ def save_analysis_results(
     - paladin_results.csv (no index)
     - slide_mask.png
 
-    Best-effort operation that catches all exceptions silently.
-    Skips None components.
+    Best-effort operation that handles expected errors gracefully while
+    surfacing unexpected errors. Skips None components.
 
     Args:
         file_uuid: The file UUID
@@ -810,11 +854,32 @@ def save_analysis_results(
             mask_path = results_dir / "slide_mask.png"
             slide_mask.save(mask_path)
 
-        logger.debug(f"Saved analysis results for {file_uuid}/{settings_hash}")
+        logger.info(
+            f"Successfully cached analysis results for {file_uuid}/{settings_hash}"
+        )
 
+    except OSError as e:
+        # Filesystem issues - user needs to know
+        if e.errno == 28:  # ENOSPC - No space left on device
+            logger.error(
+                f"CRITICAL: Cannot cache analysis results for {file_uuid}/{settings_hash} - "
+                f"DISK FULL. Results will need to be re-analyzed (30-120s). Free up disk space."
+            )
+        else:
+            logger.error(
+                f"Filesystem error saving analysis results for {file_uuid}/{settings_hash}: {e}. "
+                f"Results will need to be re-analyzed if accessed again."
+            )
+    except PermissionError as e:
+        logger.error(
+            f"Permission denied saving analysis results for {file_uuid}/{settings_hash}: {e}. "
+            f"Check directory permissions: {results_dir}"
+        )
     except Exception as e:
-        logger.debug(
-            f"Failed to save analysis results for {file_uuid}/{settings_hash}: {e}"
+        logger.error(
+            f"Unexpected error saving analysis results for {file_uuid}/{settings_hash}: {e}. "
+            f"Results will need to be re-analyzed.",
+            exc_info=True,
         )
 
 
@@ -840,6 +905,7 @@ def load_analysis_results(
         results_dir = cache_dir / file_uuid / "results" / settings_hash
 
         if not results_dir.exists():
+            logger.debug(f"No cached results for {file_uuid}/{settings_hash}")
             return None
 
         # Load all three files
@@ -847,8 +913,15 @@ def load_analysis_results(
         paladin_path = results_dir / "paladin_results.csv"
         mask_path = results_dir / "slide_mask.png"
 
-        # All must exist for a valid cache hit
+        # All must exist for a valid cache hit (atomic all-or-nothing)
         if not (aeon_path.exists() and paladin_path.exists() and mask_path.exists()):
+            missing = [
+                p.name for p in [aeon_path, paladin_path, mask_path] if not p.exists()
+            ]
+            logger.warning(
+                f"Incomplete cache for {file_uuid}/{settings_hash} (missing: {missing}). "
+                f"Falling back to re-analysis."
+            )
             return None
 
         # Load aeon results (restore index)
@@ -860,13 +933,35 @@ def load_analysis_results(
         # Load slide mask
         slide_mask = Image.open(mask_path)
 
-        logger.debug(f"Loaded cached analysis results for {file_uuid}/{settings_hash}")
+        logger.info(
+            f"Successfully loaded cached results for {file_uuid}/{settings_hash}"
+        )
         return slide_mask, aeon_results, paladin_results
 
-    except Exception as e:
-        logger.debug(
-            f"Failed to load analysis results for {file_uuid}/{settings_hash}: {e}"
+    except (pd.errors.ParserError, ValueError) as e:
+        logger.warning(
+            f"Corrupted CSV cache for {file_uuid}/{settings_hash}: {e}. "
+            f"Falling back to re-analysis. Consider deleting: {results_dir}"
         )
+        return None
+    except Exception as e:
+        # Catch PIL errors and others
+        error_type = type(e).__name__
+        if "Image" in error_type or "PIL" in error_type:
+            logger.warning(
+                f"Corrupted image cache for {file_uuid}/{settings_hash}: {e}. "
+                f"Falling back to re-analysis. Consider deleting: {mask_path}"
+            )
+        elif isinstance(e, (PermissionError, OSError)):
+            logger.warning(
+                f"Cannot read cached results for {file_uuid}/{settings_hash}: {e}. "
+                f"Check file permissions. Falling back to re-analysis."
+            )
+        else:
+            logger.error(
+                f"Unexpected error loading cached results for {file_uuid}/{settings_hash}: {e}",
+                exc_info=True,
+            )
         return None
 
 
@@ -928,12 +1023,43 @@ def upload_results_to_hf(file_uuid: str, cache_dir: Path | None = None) -> None:
                             repo_type="dataset",
                         )
 
-            logger.info(f"Uploaded analysis results for {file_uuid} to HF Dataset")
+            logger.info(
+                f"Uploaded analysis results for {file_uuid} to HF Dataset {hf_repo}"
+            )
 
     except ImportError:
-        logger.warning("huggingface_hub not installed, cannot upload to HF Dataset")
+        logger.warning(
+            "huggingface_hub package not installed. Cannot upload to HF Dataset. "
+            "Install with: pip install huggingface_hub"
+        )
     except Exception as e:
-        logger.warning(f"Failed to upload results for {file_uuid} to HF: {e}")
+        # Provide specific error messages for common failure modes
+        error_msg = str(e).lower()
+        if "401" in error_msg or "unauthorized" in error_msg:
+            logger.error(
+                f"HF Dataset upload failed for {file_uuid}: Authentication error. "
+                f"Check that HF_TOKEN environment variable is set and valid. Error: {e}"
+            )
+        elif "403" in error_msg or "forbidden" in error_msg:
+            logger.error(
+                f"HF Dataset upload failed for {file_uuid}: Permission denied. "
+                f"Check that you have write access to {hf_repo}. Error: {e}"
+            )
+        elif "429" in error_msg or "rate limit" in error_msg:
+            logger.warning(
+                f"HF Dataset upload rate limited for {file_uuid}. "
+                f"Results cached locally but not synced to HF. Will retry on next upload. Error: {e}"
+            )
+        elif "timeout" in error_msg or "timed out" in error_msg:
+            logger.warning(
+                f"HF Dataset upload timed out for {file_uuid}. "
+                f"Check network connection. Results cached locally. Error: {e}"
+            )
+        else:
+            logger.error(
+                f"Failed to upload results for {file_uuid} to HF Dataset {hf_repo}: {e}",
+                exc_info=True,
+            )
 
 
 def download_results_from_hf(file_uuid: str, cache_dir: Path | None = None) -> bool:
@@ -968,7 +1094,22 @@ def download_results_from_hf(file_uuid: str, cache_dir: Path | None = None) -> b
         try:
             repo_files = api.list_repo_files(repo_id=hf_repo, repo_type="dataset")
         except Exception as e:
-            logger.debug(f"Failed to list HF repo files: {e}")
+            error_msg = str(e).lower()
+            if "401" in error_msg or "unauthorized" in error_msg:
+                logger.error(
+                    f"HF authentication failed when listing repo files for {hf_repo}. "
+                    f"Check HF_TOKEN. Error: {e}"
+                )
+            elif "404" in error_msg or "not found" in error_msg:
+                logger.error(
+                    f"HF Dataset repo '{hf_repo}' not found. "
+                    f"Check MOSAIC_TCGA_CACHE_HF_REPO value. Error: {e}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to list HF repo files for {hf_repo}: {e}. "
+                    f"Falling back to local cache only."
+                )
             return False
 
         # Filter files matching this UUID
@@ -981,6 +1122,7 @@ def download_results_from_hf(file_uuid: str, cache_dir: Path | None = None) -> b
 
         # Download each matching file
         downloaded_count = 0
+        failed_files = []
         for repo_path in matching_files:
             try:
                 # Download to temporary location first
@@ -1003,8 +1145,15 @@ def download_results_from_hf(file_uuid: str, cache_dir: Path | None = None) -> b
                 downloaded_count += 1
 
             except Exception as e:
-                logger.debug(f"Failed to download {repo_path}: {e}")
+                failed_files.append(repo_path)
+                logger.warning(f"Failed to download {repo_path} from HF: {e}")
                 continue
+
+        if failed_files:
+            logger.warning(
+                f"Failed to download {len(failed_files)}/{len(matching_files)} "
+                f"files for {file_uuid} from HF"
+            )
 
         if downloaded_count > 0:
             logger.info(
@@ -1015,10 +1164,16 @@ def download_results_from_hf(file_uuid: str, cache_dir: Path | None = None) -> b
         return False
 
     except ImportError:
-        logger.debug("huggingface_hub not installed, cannot download from HF Dataset")
+        logger.warning(
+            "huggingface_hub package not installed. Cannot download from HF Dataset. "
+            "Install with: pip install huggingface_hub"
+        )
         return False
     except Exception as e:
-        logger.debug(f"Failed to download results for {file_uuid} from HF: {e}")
+        logger.error(
+            f"Unexpected error downloading results for {file_uuid} from HF: {e}",
+            exc_info=True,
+        )
         return False
 
 

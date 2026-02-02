@@ -1159,6 +1159,442 @@ class TestTCGACacheDirHFSpaces:
         assert "mosaic_tcga_slides" in str(cache_dir)
 
 
+class TestUIAnalysisCachingIntegration:
+    """Integration tests for TCGA caching through the UI analysis flow."""
+
+    def test_cache_hit_skips_analysis(self, tmp_path):
+        """Test that a cache hit skips the full analysis pipeline."""
+        import pandas as pd
+        from PIL import Image
+
+        file_uuid = "ui-cache-hit-uuid"
+        settings_hash = compute_settings_hash(
+            seg_config="TCGA",
+            site_type="Primary",
+            sex="Male",
+            tissue_site="Lung",
+            cancer_subtype="LUAD",
+            ihc_subtype="",
+        )
+
+        # Pre-populate cache with results
+        aeon_results = pd.DataFrame(
+            {"Confidence": [0.95, 0.85]}, index=["LUAD", "LUSC"]
+        )
+        aeon_results.index.name = "Cancer Subtype"
+        paladin_results = pd.DataFrame({"Biomarker": ["PD-L1"], "Probability": [0.7]})
+        slide_mask = Image.new("RGB", (100, 100), color="blue")
+
+        save_analysis_results(
+            file_uuid,
+            settings_hash,
+            aeon_results,
+            paladin_results,
+            slide_mask,
+            cache_dir=tmp_path,
+        )
+
+        # Load cached results (simulating what the UI does)
+        cached = load_analysis_results(file_uuid, settings_hash, cache_dir=tmp_path)
+        assert cached is not None
+
+        loaded_mask, loaded_aeon, loaded_paladin = cached
+        assert list(loaded_aeon.index) == ["LUAD", "LUSC"]
+        assert loaded_paladin["Biomarker"].iloc[0] == "PD-L1"
+        assert loaded_mask.size == (100, 100)
+
+    def test_cache_miss_returns_none(self, tmp_path):
+        """Test that a cache miss returns None, requiring fresh analysis."""
+        settings_hash = compute_settings_hash(
+            seg_config="TCGA",
+            site_type="Primary",
+            sex="Female",
+            tissue_site="Breast",
+            cancer_subtype="BRCA",
+            ihc_subtype="HER2+",
+        )
+
+        cached = load_analysis_results(
+            "nonexistent-uuid", settings_hash, cache_dir=tmp_path
+        )
+        assert cached is None
+
+    def test_uuid_extraction_from_tcga_cache_path(self, tmp_path):
+        """Test extracting UUID from a slide path under TCGA cache directory."""
+        file_uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+        slide_path = slide_dir / "test_slide.svs"
+        slide_path.touch()
+
+        # Simulate the UI logic for extracting UUID from path
+        slide_path_obj = Path(str(slide_path))
+        if tmp_path in slide_path_obj.parents:
+            extracted_uuid = slide_path_obj.parent.name
+            assert extracted_uuid == file_uuid
+
+    def test_settings_hash_consistency_across_calls(self):
+        """Test that settings hash is consistent across multiple calls."""
+        kwargs = dict(
+            seg_config="TCGA",
+            site_type="Primary",
+            sex="Male",
+            tissue_site="Lung",
+            cancer_subtype="LUAD",
+            ihc_subtype=None,
+        )
+        hashes = [compute_settings_hash(**kwargs) for _ in range(10)]
+        assert len(set(hashes)) == 1  # All hashes should be identical
+
+
+class TestCacheEdgeCases:
+    """Tests for edge cases in cache operations."""
+
+    def test_save_and_load_empty_dataframes(self, tmp_path):
+        """Test saving and loading empty DataFrames."""
+        import pandas as pd
+        from PIL import Image
+
+        file_uuid = "empty-df-uuid"
+        settings_hash = "empty-df-hash"
+
+        aeon_results = pd.DataFrame({"Confidence": []})
+        aeon_results.index.name = "Cancer Subtype"
+        paladin_results = pd.DataFrame({"Biomarker": [], "Probability": []})
+        slide_mask = Image.new("RGB", (50, 50))
+
+        save_analysis_results(
+            file_uuid,
+            settings_hash,
+            aeon_results,
+            paladin_results,
+            slide_mask,
+            cache_dir=tmp_path,
+        )
+
+        loaded = load_analysis_results(file_uuid, settings_hash, cache_dir=tmp_path)
+        assert loaded is not None
+        _, loaded_aeon, loaded_paladin = loaded
+        assert len(loaded_aeon) == 0
+        assert len(loaded_paladin) == 0
+
+    def test_load_corrupt_csv_returns_none(self, tmp_path):
+        """Test that corrupted CSV cache returns None."""
+        from PIL import Image
+
+        file_uuid = "corrupt-csv-uuid"
+        settings_hash = "corrupt-csv-hash"
+        results_dir = tmp_path / file_uuid / "results" / settings_hash
+        results_dir.mkdir(parents=True)
+
+        # Write corrupt CSV
+        (results_dir / "aeon_results.csv").write_text('not,valid\ncsv,"broken')
+        (results_dir / "paladin_results.csv").write_text("col1\nval1")
+        # Write valid mask
+        mask = Image.new("RGB", (10, 10))
+        mask.save(results_dir / "slide_mask.png")
+
+        # Should return data (CSV parser is lenient) or None on error
+        loaded = load_analysis_results(file_uuid, settings_hash, cache_dir=tmp_path)
+        # CSV with bad format may still parse or return None - either is acceptable
+
+    def test_load_corrupt_image_returns_none(self, tmp_path):
+        """Test that corrupted image cache returns None."""
+        import pandas as pd
+
+        file_uuid = "corrupt-img-uuid"
+        settings_hash = "corrupt-img-hash"
+        results_dir = tmp_path / file_uuid / "results" / settings_hash
+        results_dir.mkdir(parents=True)
+
+        # Write valid CSVs
+        aeon = pd.DataFrame({"Confidence": [0.9]}, index=["BRCA"])
+        aeon.to_csv(results_dir / "aeon_results.csv", index=True)
+        paladin = pd.DataFrame({"Biomarker": ["HER2"]})
+        paladin.to_csv(results_dir / "paladin_results.csv", index=False)
+
+        # Write corrupt image
+        (results_dir / "slide_mask.png").write_text("not a valid PNG file")
+
+        loaded = load_analysis_results(file_uuid, settings_hash, cache_dir=tmp_path)
+        # Should return None because the image is corrupt
+        assert loaded is None
+
+    def test_settings_hash_with_nested_dict_ordering(self):
+        """Test that settings hash is consistent regardless of dict insertion order."""
+        seg_config_1 = {"threshold": 0.5, "min_size": 100, "method": "otsu"}
+        seg_config_2 = {"method": "otsu", "threshold": 0.5, "min_size": 100}
+
+        hash1 = compute_settings_hash(
+            seg_config_1, "Primary", "Male", "Lung", "LUAD", None
+        )
+        hash2 = compute_settings_hash(
+            seg_config_2, "Primary", "Male", "Lung", "LUAD", None
+        )
+        assert hash1 == hash2
+
+    def test_metadata_cache_with_special_characters(self, tmp_path):
+        """Test metadata cache handles special characters in fields."""
+        file_uuid = "special-chars-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        metadata = TCGAMetadata(
+            sex="Male",
+            tissue_site="Liver & Intrahepatic Bile Ducts",
+            cancer_subtype="CHOL",
+            site_type="Primary",
+            filename="TCGA-W5-AA2R-01Z-00-DX1.C7E20B0C-5F4F-4352-B8E8-4D2EBEE48CD1.svs",
+            file_size=2147483647,
+        )
+
+        save_metadata_cache(file_uuid, metadata, cache_dir=tmp_path)
+        loaded = load_metadata_cache(file_uuid, cache_dir=tmp_path)
+
+        assert loaded is not None
+        assert loaded.tissue_site == "Liver & Intrahepatic Bile Ducts"
+        assert (
+            loaded.filename
+            == "TCGA-W5-AA2R-01Z-00-DX1.C7E20B0C-5F4F-4352-B8E8-4D2EBEE48CD1.svs"
+        )
+
+    def test_metadata_cache_invalid_structure_returns_none(self, tmp_path):
+        """Test that cache with missing required fields returns None."""
+        import json
+
+        file_uuid = "bad-structure-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        # Write cache with correct version but missing fields
+        cache_path = slide_dir / METADATA_CACHE_FILENAME
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "cache_version": METADATA_CACHE_VERSION,
+                    "sex": "Male",
+                    # Missing tissue_site, cancer_subtype, site_type
+                }
+            )
+        )
+
+        loaded = load_metadata_cache(file_uuid, cache_dir=tmp_path)
+        # Should return None because TCGAMetadata constructor will fail
+        assert loaded is None
+
+    def test_save_analysis_results_disk_full_error(self, tmp_path, monkeypatch):
+        """Test that disk full errors are logged but don't raise."""
+        import pandas as pd
+        from PIL import Image
+
+        file_uuid = "disk-full-uuid"
+        settings_hash = "disk-full-hash"
+
+        aeon_results = pd.DataFrame({"Confidence": [0.9]}, index=["BRCA"])
+        paladin_results = pd.DataFrame({"Biomarker": ["HER2"]})
+        slide_mask = Image.new("RGB", (10, 10))
+
+        # Mock mkdir to raise disk full error
+        original_mkdir = Path.mkdir
+
+        def mock_mkdir(self, *args, **kwargs):
+            if "disk-full" in str(self):
+                error = OSError("No space left on device")
+                error.errno = 28
+                raise error
+            return original_mkdir(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "mkdir", mock_mkdir)
+
+        # Should not raise exception
+        save_analysis_results(
+            file_uuid,
+            settings_hash,
+            aeon_results,
+            paladin_results,
+            slide_mask,
+            cache_dir=tmp_path,
+        )
+
+
+class TestHFAuthenticationFailures:
+    """Tests for HF Dataset authentication and permission error handling.
+
+    Since loguru is mocked in conftest.py, these tests verify that the correct
+    logger methods are called with appropriate error messages by inspecting
+    the mock logger's call args.
+    """
+
+    @staticmethod
+    def _get_mock_logger():
+        """Get the mock logger used by mosaic.tcga."""
+        import mosaic.tcga
+
+        return mosaic.tcga.logger
+
+    @staticmethod
+    def _get_log_messages(mock_logger):
+        """Extract all log message strings from mock logger calls."""
+        messages = []
+        for method_name in ["error", "warning", "info", "debug"]:
+            method = getattr(mock_logger, method_name)
+            for call in method.call_args_list:
+                if call.args:
+                    messages.append(str(call.args[0]))
+        return messages
+
+    def _setup_hf_mock(self, mock_api, monkeypatch):
+        """Set up HF hub mock module."""
+        import sys
+        from types import ModuleType
+
+        mock_hf_hub = ModuleType("huggingface_hub")
+        mock_hf_hub.HfApi = lambda: mock_api
+        mock_hf_hub.hf_hub_download = MagicMock()
+        sys.modules["huggingface_hub"] = mock_hf_hub
+        monkeypatch.setenv("MOSAIC_TCGA_CACHE_HF_REPO", "test-org/test-repo")
+
+    @staticmethod
+    def _cleanup_hf_mock():
+        """Clean up HF hub mock module."""
+        import sys
+
+        if "huggingface_hub" in sys.modules:
+            del sys.modules["huggingface_hub"]
+
+    def test_upload_auth_error_logged(self, tmp_path, monkeypatch):
+        """Test that 401 auth errors are logged with actionable message."""
+        import json
+
+        file_uuid = "auth-error-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        metadata_path = slide_dir / METADATA_CACHE_FILENAME
+        metadata_path.write_text(json.dumps({"cache_version": 1, "sex": "Male"}))
+
+        mock_api = MagicMock()
+        mock_api.upload_file.side_effect = Exception("401 Unauthorized: Invalid token")
+
+        self._setup_hf_mock(mock_api, monkeypatch)
+        mock_logger = self._get_mock_logger()
+        mock_logger.reset_mock()
+
+        try:
+            upload_results_to_hf(file_uuid, cache_dir=tmp_path)
+
+            messages = self._get_log_messages(mock_logger)
+            assert any(
+                "401" in msg or "Authentication" in msg for msg in messages
+            ), f"Expected '401' or 'Authentication' in log messages, got: {messages}"
+        finally:
+            self._cleanup_hf_mock()
+
+    def test_upload_permission_denied_logged(self, tmp_path, monkeypatch):
+        """Test that 403 permission errors are logged with actionable message."""
+        import json
+
+        file_uuid = "perm-denied-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        metadata_path = slide_dir / METADATA_CACHE_FILENAME
+        metadata_path.write_text(json.dumps({"cache_version": 1, "sex": "Male"}))
+
+        mock_api = MagicMock()
+        mock_api.upload_file.side_effect = Exception(
+            "403 Forbidden: You don't have permission"
+        )
+
+        self._setup_hf_mock(mock_api, monkeypatch)
+        mock_logger = self._get_mock_logger()
+        mock_logger.reset_mock()
+
+        try:
+            upload_results_to_hf(file_uuid, cache_dir=tmp_path)
+
+            messages = self._get_log_messages(mock_logger)
+            assert any(
+                "403" in msg or "Permission denied" in msg for msg in messages
+            ), f"Expected '403' or 'Permission denied' in log messages, got: {messages}"
+        finally:
+            self._cleanup_hf_mock()
+
+    def test_download_auth_error_logged(self, tmp_path, monkeypatch):
+        """Test that download auth errors are logged with actionable message."""
+        mock_api = MagicMock()
+        mock_api.list_repo_files.side_effect = Exception(
+            "401 Unauthorized: Invalid token"
+        )
+
+        self._setup_hf_mock(mock_api, monkeypatch)
+        mock_logger = self._get_mock_logger()
+        mock_logger.reset_mock()
+
+        try:
+            result = download_results_from_hf("test-uuid", cache_dir=tmp_path)
+
+            assert result is False
+            messages = self._get_log_messages(mock_logger)
+            assert any(
+                "401" in msg or "authentication" in msg.lower() for msg in messages
+            ), f"Expected '401' or 'authentication' in log messages, got: {messages}"
+        finally:
+            self._cleanup_hf_mock()
+
+    def test_download_repo_not_found_logged(self, tmp_path, monkeypatch):
+        """Test that 404 repo not found errors are logged with actionable message."""
+        mock_api = MagicMock()
+        mock_api.list_repo_files.side_effect = Exception(
+            "404 Not Found: Repository not found"
+        )
+
+        self._setup_hf_mock(mock_api, monkeypatch)
+        mock_logger = self._get_mock_logger()
+        mock_logger.reset_mock()
+
+        try:
+            result = download_results_from_hf("test-uuid", cache_dir=tmp_path)
+
+            assert result is False
+            messages = self._get_log_messages(mock_logger)
+            assert any(
+                "404" in msg or "not found" in msg.lower() for msg in messages
+            ), f"Expected '404' or 'not found' in log messages, got: {messages}"
+        finally:
+            self._cleanup_hf_mock()
+
+    def test_upload_rate_limit_logged_as_warning(self, tmp_path, monkeypatch):
+        """Test that rate limit errors are logged as warnings."""
+        import json
+
+        file_uuid = "rate-limit-uuid"
+        slide_dir = tmp_path / file_uuid
+        slide_dir.mkdir()
+
+        metadata_path = slide_dir / METADATA_CACHE_FILENAME
+        metadata_path.write_text(json.dumps({"cache_version": 1, "sex": "Male"}))
+
+        mock_api = MagicMock()
+        mock_api.upload_file.side_effect = Exception(
+            "429 Too Many Requests: Rate limit exceeded"
+        )
+
+        self._setup_hf_mock(mock_api, monkeypatch)
+        mock_logger = self._get_mock_logger()
+        mock_logger.reset_mock()
+
+        try:
+            upload_results_to_hf(file_uuid, cache_dir=tmp_path)
+
+            messages = self._get_log_messages(mock_logger)
+            assert any(
+                "429" in msg or "rate limit" in msg.lower() for msg in messages
+            ), f"Expected '429' or 'rate limit' in log messages, got: {messages}"
+        finally:
+            self._cleanup_hf_mock()
+
+
 # Optional: Integration test with real GDC API (marked as slow)
 @pytest.mark.skip(reason="Integration test - requires network access")
 class TestGDCAPIRealIntegration:

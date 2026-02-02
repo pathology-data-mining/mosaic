@@ -846,16 +846,24 @@ def analyze_slide(
     progress(0.2, desc="Tissue segmented")
 
     # Draw slide mask for visualization
+    # The mask shows detected tissue regions with:
+    # - Cyan outline: Provides high contrast against H&E tissue (pink eosin, purple hematoxylin)
+    #                 More visible than black, especially on darker tissue regions
+    # - Semi-transparent red fill: Shows tissue area without obscuring underlying detail (alpha=80)
+    # - 12px outline width: Scaled for thumbnail visibility
+    #   * Generated at 2048px max size
+    #   * Downsampled to 512px for gallery thumbnails (4x reduction)
+    #   * 12px → 3px in thumbnails (clearly visible without being overwhelming)
     logger.info("Drawing slide mask")
     progress(0.25, desc="Drawing slide mask")
     slide_mask = draw_slide_mask(
         slide_path,
         polygon,
-        outline="cyan",  # Cyan provides excellent contrast against H&E tissue (pink/purple)
+        outline="cyan",
         fill=(255, 0, 0, 80),
         vis_level=-1,
         max_size=2048,
-        outline_width=12,  # Balanced thickness: visible in thumbnails without overwhelming
+        outline_width=12,
     )
     logger.info("Slide mask drawn")
 
