@@ -851,7 +851,7 @@ def analyze_slide(
     slide_mask = draw_slide_mask(
         slide_path,
         polygon,
-        outline="black",
+        outline="cyan",  # Cyan provides excellent contrast against H&E tissue (pink/purple)
         fill=(255, 0, 0, 80),
         vis_level=-1,
         max_size=2048,
