@@ -18,13 +18,22 @@ COPY .git/ ./.git/
 COPY src/ ./src/
 COPY data/*.csv data/metadata/ ./data/
 
-# Create venv and install with dependencies using GH_TOKEN secret
-# Use BuildKit secret mount to securely pass GH_TOKEN
-RUN --mount=type=secret,id=GH_TOKEN \
+# Create venv and install with dependencies using SSH or GH_TOKEN secret
+# Prioritize SSH if available (GitHub Actions), fallback to GH_TOKEN (local builds)
+RUN --mount=type=ssh \
+    --mount=type=secret,id=GH_TOKEN \
     uv venv && \
-    if [ -f /run/secrets/GH_TOKEN ]; then \
+    mkdir -p ~/.ssh && \
+    ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null && \
+    if [ -S "/run/buildkit/ssh_agent.sock" ] || [ -n "$SSH_AUTH_SOCK" ]; then \
+        echo "Using SSH authentication for private repos"; \
+    elif [ -f /run/secrets/GH_TOKEN ]; then \
+        echo "Using GH_TOKEN authentication for private repos" && \
         export GH_TOKEN=$(cat /run/secrets/GH_TOKEN) && \
-        git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"; \
+        git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/" && \
+        git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "git@github.com:"; \
+    else \
+        echo "Warning: No authentication method found - private repo access may fail"; \
     fi && \
     uv pip install -e .
 
