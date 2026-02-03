@@ -770,7 +770,7 @@ def load_metadata_cache(
 
 
 def compute_settings_hash(
-    seg_config: dict,
+    seg_config: str | dict,
     site_type: str,
     sex: str,
     tissue_site: str,
@@ -783,7 +783,9 @@ def compute_settings_hash(
     truncated to 12 hex characters for compact directory names.
 
     Args:
-        seg_config: Tissue segmentation configuration dict
+        seg_config: Tissue segmentation configuration. Either a string preset
+            ("Biopsy", "Resection", "TCGA") or a dict with custom parameters.
+            Both are JSON-serialized for consistent hashing.
         site_type: "Primary" or "Metastatic"
         sex: Patient sex
         tissue_site: Anatomical tissue site
@@ -1069,6 +1071,10 @@ def download_results_from_hf(file_uuid: str, cache_dir: Path | None = None) -> b
     Uses MOSAIC_TCGA_CACHE_HF_REPO env var. Returns False if not set.
     Best-effort operation that returns False on any error.
 
+    Optimization: Uses path-scoped listing (list_repo_tree with path_in_repo)
+    to avoid listing the entire repository, which becomes a latency/memory
+    bottleneck as the dataset grows.
+
     Args:
         file_uuid: The file UUID
         cache_dir: Optional cache directory (uses default if not provided)
@@ -1090,31 +1096,48 @@ def download_results_from_hf(file_uuid: str, cache_dir: Path | None = None) -> b
 
         api = HfApi()
 
-        # List all files in the repo for this UUID
+        # List only files under the specific UUID path (not the entire repo)
+        # This avoids O(N) scaling as the dataset grows to thousands of slides
         try:
-            repo_files = api.list_repo_files(repo_id=hf_repo, repo_type="dataset")
+            repo_items = list(
+                api.list_repo_tree(
+                    repo_id=hf_repo,
+                    path_in_repo=file_uuid,
+                    recursive=True,
+                    repo_type="dataset",
+                )
+            )
         except Exception as e:
             error_msg = str(e).lower()
             if "401" in error_msg or "unauthorized" in error_msg:
                 logger.error(
-                    f"HF authentication failed when listing repo files for {hf_repo}. "
+                    f"HF authentication failed when listing files for {file_uuid}. "
                     f"Check HF_TOKEN. Error: {e}"
                 )
             elif "404" in error_msg or "not found" in error_msg:
-                logger.error(
-                    f"HF Dataset repo '{hf_repo}' not found. "
-                    f"Check MOSAIC_TCGA_CACHE_HF_REPO value. Error: {e}"
-                )
+                # 404 could mean either repo not found OR path not found
+                # Try to distinguish by checking if it's a path-specific 404
+                if file_uuid in str(e):
+                    logger.debug(f"No cached results found in HF for {file_uuid}")
+                else:
+                    logger.error(
+                        f"HF Dataset repo '{hf_repo}' not found. "
+                        f"Check MOSAIC_TCGA_CACHE_HF_REPO value. Error: {e}"
+                    )
+                return False
             else:
                 logger.warning(
-                    f"Failed to list HF repo files for {hf_repo}: {e}. "
+                    f"Failed to list files for {file_uuid} in HF repo: {e}. "
                     f"Falling back to local cache only."
                 )
-            return False
+                return False
 
-        # Filter files matching this UUID
-        uuid_prefix = f"{file_uuid}/"
-        matching_files = [f for f in repo_files if f.startswith(uuid_prefix)]
+        # Extract file paths (filter out folders, keep only RepoFile objects)
+        matching_files = []
+        for item in repo_items:
+            # RepoFile has a 'path' attribute, RepoFolder doesn't have file content
+            if hasattr(item, "path") and not item.path.endswith("/"):
+                matching_files.append(item.path)
 
         if not matching_files:
             logger.debug(f"No cached results found in HF for {file_uuid}")
@@ -1133,7 +1156,14 @@ def download_results_from_hf(file_uuid: str, cache_dir: Path | None = None) -> b
                 )
 
                 # Determine local path (remove UUID prefix)
-                relative_path = repo_path[len(uuid_prefix) :]
+                # repo_path is like "uuid/metadata.json" or "uuid/results/hash/file.csv"
+                uuid_prefix = f"{file_uuid}/"
+                if repo_path.startswith(uuid_prefix):
+                    relative_path = repo_path[len(uuid_prefix) :]
+                else:
+                    # Shouldn't happen with path_in_repo, but be defensive
+                    relative_path = repo_path
+
                 local_path = slide_dir / relative_path
                 local_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -989,9 +989,15 @@ class TestHFDatasetSync:
 
         # Mock HfApi
         mock_api = MagicMock()
-        mock_api.list_repo_files.return_value = [
-            f"{file_uuid}/metadata.json",
-            f"{file_uuid}/results/hash1/aeon_results.csv",
+
+        # Mock RepoFile objects that list_repo_tree returns
+        class MockRepoFile:
+            def __init__(self, path):
+                self.path = path
+
+        mock_api.list_repo_tree.return_value = [
+            MockRepoFile(f"{file_uuid}/metadata.json"),
+            MockRepoFile(f"{file_uuid}/results/hash1/aeon_results.csv"),
         ]
 
         def mock_hf_api():
@@ -1037,7 +1043,7 @@ class TestHFDatasetSync:
         """Test that download handles API errors gracefully."""
         # Mock HfApi to raise exception
         mock_api = MagicMock()
-        mock_api.list_repo_files.side_effect = Exception("API error")
+        mock_api.list_repo_tree.side_effect = Exception("API error")
 
         def mock_hf_api():
             return mock_api
@@ -1523,7 +1529,7 @@ class TestHFAuthenticationFailures:
     def test_download_auth_error_logged(self, tmp_path, monkeypatch):
         """Test that download auth errors are logged with actionable message."""
         mock_api = MagicMock()
-        mock_api.list_repo_files.side_effect = Exception(
+        mock_api.list_repo_tree.side_effect = Exception(
             "401 Unauthorized: Invalid token"
         )
 
@@ -1545,7 +1551,7 @@ class TestHFAuthenticationFailures:
     def test_download_repo_not_found_logged(self, tmp_path, monkeypatch):
         """Test that 404 repo not found errors are logged with actionable message."""
         mock_api = MagicMock()
-        mock_api.list_repo_files.side_effect = Exception(
+        mock_api.list_repo_tree.side_effect = Exception(
             "404 Not Found: Repository not found"
         )
 
