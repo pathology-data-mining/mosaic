@@ -272,15 +272,9 @@ class TestOncoTreeMapping:
         # IDC -> BRCA -> TISSUE
         mock_responses = [
             # First call for "IDC"
-            Mock(
-                status_code=200,
-                json=lambda: [{"code": "IDC", "parent": "BRCA"}]
-            ),
+            Mock(status_code=200, json=lambda: [{"code": "IDC", "parent": "BRCA"}]),
             # Second call for "BRCA"
-            Mock(
-                status_code=200,
-                json=lambda: [{"code": "BRCA", "parent": "TISSUE"}]
-            ),
+            Mock(status_code=200, json=lambda: [{"code": "BRCA", "parent": "TISSUE"}]),
         ]
         mock_requests_get.side_effect = mock_responses
 
@@ -311,8 +305,7 @@ class TestOncoTreeMapping:
 
         # Mock response - simulate a single-level hierarchy (IDC -> TISSUE)
         mock_requests_get.return_value = Mock(
-            status_code=200,
-            json=lambda: [{"code": "IDC", "parent": "TISSUE"}]
+            status_code=200, json=lambda: [{"code": "IDC", "parent": "TISSUE"}]
         )
 
         # First call should hit the API

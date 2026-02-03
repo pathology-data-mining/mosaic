@@ -34,6 +34,7 @@ from mosaic.ui.utils import (
 from mosaic.analysis import analyze_slide
 from mosaic.model_manager import load_all_models
 from mosaic.hardware import DEFAULT_CONCURRENCY_LIMIT, IS_T4_GPU, GPU_TYPE
+from mosaic.telemetry import extract_user_info
 from mosaic.tcga import (
     fetch_slide,
     get_case_metadata,
@@ -216,6 +217,9 @@ def analyze_slides(
     start_time = time.time()
     session_hash = request.session_hash if request else None
 
+    # Extract user info for telemetry (HF Spaces only)
+    user_info = extract_user_info(request, tracker.config.is_hf_spaces)
+
     # Wait for core models download to complete (Paladin models can continue in background)
     if _model_download_thread is not None and not _core_models_complete:
         logger.info("Waiting for core models to download...")
@@ -290,6 +294,8 @@ def analyze_slides(
         cancer_subtype=cancer_subtype,
         seg_config=seg_config,
         gpu_type=GPU_TYPE,
+        is_logged_in=user_info.is_logged_in,
+        hf_username=user_info.username,
     )
 
     # Load models once (for batch) or per-slide (for single)
@@ -418,6 +424,8 @@ def analyze_slides(
             duration_sec=duration_sec,
             success=True,
             gpu_type=GPU_TYPE,
+            is_logged_in=user_info.is_logged_in,
+            hf_username=user_info.username,
         )
 
         # Upload telemetry immediately after analysis to ensure data is saved
@@ -436,6 +444,8 @@ def analyze_slides(
             session_hash=session_hash,
             slide_count=len(slides) if slides else 0,
             gpu_type=GPU_TYPE,
+            is_logged_in=user_info.is_logged_in,
+            hf_username=user_info.username,
         )
         raise
 
