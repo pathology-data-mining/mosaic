@@ -876,10 +876,9 @@ def save_analysis_results(
             f"Check directory permissions: {results_dir}"
         )
     except Exception as e:
-        logger.error(
+        logger.exception(
             f"Unexpected error saving analysis results for {file_uuid}/{settings_hash}: {e}. "
-            f"Results will need to be re-analyzed.",
-            exc_info=True,
+            f"Results will need to be re-analyzed."
         )
 
 
