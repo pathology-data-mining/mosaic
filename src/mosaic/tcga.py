@@ -869,11 +869,6 @@ def save_analysis_results(
                 f"Filesystem error saving analysis results for {file_uuid}/{settings_hash}: {e}. "
                 f"Results will need to be re-analyzed if accessed again."
             )
-    except PermissionError as e:
-        logger.error(
-            f"Permission denied saving analysis results for {file_uuid}/{settings_hash}: {e}. "
-            f"Check directory permissions: {results_dir}"
-        )
     except Exception as e:
         logger.exception(
             f"Unexpected error saving analysis results for {file_uuid}/{settings_hash}: {e}. "
