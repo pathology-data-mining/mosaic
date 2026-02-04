@@ -1137,6 +1137,7 @@ class TestTCGACacheDirHFSpaces:
 
     def test_tcga_cache_dir_uses_data_on_hf_spaces(self, monkeypatch, tmp_path):
         """Test that HF Spaces uses /data for persistent storage."""
+        from mosaic import data_directory
         from mosaic.data_directory import get_tcga_cache_directory
 
         # Mock HF Spaces environment
@@ -1147,8 +1148,6 @@ class TestTCGACacheDirHFSpaces:
         mock_data_dir.mkdir()
 
         # Mock Path("/data") to return our temp directory
-        import mosaic.data_directory
-
         original_path = Path
 
         class MockPath:
@@ -1157,10 +1156,10 @@ class TestTCGACacheDirHFSpaces:
                     return mock_data_dir
                 return original_path(path_str)
 
-        monkeypatch.setattr(mosaic.data_directory, "Path", MockPath)
+        monkeypatch.setattr(data_directory, "Path", MockPath)
 
         # Reset global cache
-        mosaic.data_directory._TCGA_CACHE_DIR = None
+        data_directory._TCGA_CACHE_DIR = None
 
         # Get cache directory
         cache_dir = get_tcga_cache_directory()
@@ -1304,9 +1303,11 @@ class TestCacheEdgeCases:
         mask = Image.new("RGB", (10, 10))
         mask.save(results_dir / "slide_mask.png")
 
-        # Should return data (CSV parser is lenient) or None on error
         loaded = load_analysis_results(file_uuid, settings_hash, cache_dir=tmp_path)
-        # CSV with bad format may still parse or return None - either is acceptable
+        # Should return None on CSV parse error or valid tuple if parser is lenient
+        assert loaded is None or (
+            isinstance(loaded, tuple) and len(loaded) == 3
+        ), "Expected None or valid 3-tuple"
 
     def test_load_corrupt_image_returns_none(self, tmp_path):
         """Test that corrupted image cache returns None."""
