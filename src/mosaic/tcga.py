@@ -933,7 +933,8 @@ def load_analysis_results(
         paladin_results = pd.read_csv(paladin_path)
 
         # Load slide mask
-        slide_mask = Image.open(mask_path)
+        with Image.open(mask_path) as im:
+            slide_mask = im.copy()
 
         logger.info(
             f"Successfully loaded cached results for {file_uuid}/{settings_hash}"
