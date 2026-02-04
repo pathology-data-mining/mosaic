@@ -1055,9 +1055,8 @@ def upload_results_to_hf(file_uuid: str, cache_dir: Path | None = None) -> None:
                 f"Check network connection. Results cached locally. Error: {e}"
             )
         else:
-            logger.error(
-                f"Failed to upload results for {file_uuid} to HF Dataset {hf_repo}: {e}",
-                exc_info=True,
+            logger.exception(
+                f"Failed to upload results for {file_uuid} to HF Dataset {hf_repo}: {e}"
             )
 
 
