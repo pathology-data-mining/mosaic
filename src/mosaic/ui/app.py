@@ -32,11 +32,17 @@ from mosaic.ui.utils import (
     SETTINGS_COLUMNS,
 )
 from mosaic.analysis import analyze_slide
+from mosaic.data_directory import get_tcga_cache_directory
 from mosaic.model_manager import load_all_models
 from mosaic.hardware import DEFAULT_CONCURRENCY_LIMIT, IS_T4_GPU, GPU_TYPE
 from mosaic.tcga import (
+    compute_settings_hash,
+    download_results_from_hf,
     fetch_slide,
     get_case_metadata,
+    load_analysis_results,
+    save_analysis_results,
+    upload_results_to_hf,
     validate_slide_id,
     GDCError,
     GDCInvalidIDError,
@@ -374,22 +380,98 @@ def analyze_slides(
             # Initial progress for this slide
             slide_progress_wrapper()
 
-            slide_mask, aeon_results, paladin_results = analyze_slide(
-                slide_path=slide_path,
-                seg_config=row["Segmentation Config"],
-                site_type=row["Site Type"],
-                sex=row["Sex"],
-                tissue_site=row.get("Tissue Site", "Unknown"),
-                cancer_subtype=row["Cancer Subtype"],
-                cancer_subtype_name_map=cancer_subtype_name_map,
-                ihc_subtype=row.get("IHC Subtype", ""),
-                num_workers=4,
-                progress=slide_progress_wrapper,  # Pass wrapped progress
-                request=request,
-                model_cache=model_cache,  # Pre-loaded for batch, None for single
-                analysis_id=analysis_id,  # For telemetry tracking
-                session_hash=session_hash,  # For telemetry tracking
-            )
+            # Check if this is a TCGA slide and try to load cached results
+            slide_mask, aeon_results, paladin_results = None, None, None
+            is_tcga_slide = False
+            file_uuid = None
+
+            try:
+                tcga_cache_dir = get_tcga_cache_directory()
+                slide_path_obj = Path(slide_path)
+
+                # Check if slide is under TCGA cache directory
+                if tcga_cache_dir in slide_path_obj.parents:
+                    # Extract UUID from parent directory name
+                    file_uuid = slide_path_obj.parent.name
+                    is_tcga_slide = True
+
+                    # Compute settings hash for this slide
+                    settings_hash = compute_settings_hash(
+                        seg_config=row["Segmentation Config"],
+                        site_type=row["Site Type"],
+                        sex=row["Sex"],
+                        tissue_site=row.get("Tissue Site", "Unknown"),
+                        cancer_subtype=row["Cancer Subtype"],
+                        ihc_subtype=row.get("IHC Subtype", ""),
+                    )
+
+                    # Try to load cached results
+                    cached = load_analysis_results(file_uuid, settings_hash)
+                    if cached is not None:
+                        slide_mask, aeon_results, paladin_results = cached
+                        logger.info(
+                            f"Using cached results for {file_uuid}/{settings_hash}"
+                        )
+                        # Skip analysis, use cached results
+            except Exception as e:
+                logger.warning(
+                    f"Failed to check/load cached results for slide: {e}. "
+                    f"Proceeding with fresh analysis."
+                )
+                # Continue with normal analysis on any error
+
+            # If no cached results, run analysis
+            if slide_mask is None or aeon_results is None or paladin_results is None:
+                slide_mask, aeon_results, paladin_results = analyze_slide(
+                    slide_path=slide_path,
+                    seg_config=row["Segmentation Config"],
+                    site_type=row["Site Type"],
+                    sex=row["Sex"],
+                    tissue_site=row.get("Tissue Site", "Unknown"),
+                    cancer_subtype=row["Cancer Subtype"],
+                    cancer_subtype_name_map=cancer_subtype_name_map,
+                    ihc_subtype=row.get("IHC Subtype", ""),
+                    num_workers=4,
+                    progress=slide_progress_wrapper,  # Pass wrapped progress
+                    request=request,
+                    model_cache=model_cache,  # Pre-loaded for batch, None for single
+                    analysis_id=analysis_id,  # For telemetry tracking
+                    session_hash=session_hash,  # For telemetry tracking
+                )
+
+                # Save results to cache if this is a TCGA slide
+                if is_tcga_slide and file_uuid is not None:
+                    try:
+                        settings_hash = compute_settings_hash(
+                            seg_config=row["Segmentation Config"],
+                            site_type=row["Site Type"],
+                            sex=row["Sex"],
+                            tissue_site=row.get("Tissue Site", "Unknown"),
+                            cancer_subtype=row["Cancer Subtype"],
+                            ihc_subtype=row.get("IHC Subtype", ""),
+                        )
+                        save_analysis_results(
+                            file_uuid=file_uuid,
+                            settings_hash=settings_hash,
+                            aeon_results=aeon_results,
+                            paladin_results=paladin_results,
+                            slide_mask=slide_mask,
+                        )
+
+                        # Upload results to HF Dataset for persistence
+                        try:
+                            upload_results_to_hf(file_uuid)
+                        except Exception as upload_error:
+                            logger.warning(
+                                f"Failed to upload results to HF Dataset for {file_uuid}: {upload_error}. "
+                                f"Results are cached locally but not synced to HF."
+                            )
+
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to save analysis results to cache for {file_uuid}: {e}. "
+                            f"Results are still valid but won't be cached for future use."
+                        )
 
             if slide_mask is not None:
                 mask_filename = f"{Path(slide_name).stem}_mask.png"
@@ -567,8 +649,7 @@ def launch_gradio(server_name, server_port, share):
 
         # Comprehensive documentation section
         with gr.Accordion("📖 Documentation & Help", open=False):
-            gr.Markdown(
-                """
+            gr.Markdown("""
 ## Quick Start Guide
 
 **Single Slide Analysis:**
@@ -672,14 +753,14 @@ slide2.tif,Metastatic,Male,Lung,LUAD,Biopsy
 - **TCGA Barcode**: Standard TCGA format (e.g., `TCGA-E2-A1LS-01Z-00-DX1`)
 
 **Example Slide IDs (Public Access, with Paladin biomarker models):**
-| ID | Cancer Type | Format |
-|----|-------------|--------|
-| `6a0ea716-a5f2-47f3-880b-537a5cdc2324` | Lung Adenocarcinoma (LUAD) | UUID |
-| `d65c5d21-6333-4a9e-9a2a-139a122a3c8a` | Colon Adenocarcinoma (COAD) | UUID |
-| `1bc2766c-7064-43c7-97cb-5962d3894671` | Prostate Adenocarcinoma (PRAD) | UUID |
-| `0d083e4f-0037-462e-b810-3182506f15ba` | Bladder Cancer (BLCA) | UUID |
-| `TCGA-86-8074-01Z-00-DX1` | Lung Adenocarcinoma (LUAD) | Barcode |
-| `TCGA-AZ-4313-01Z-00-DX1` | Colon Adenocarcinoma (COAD) | Barcode |
+| ID | Cancer Type |
+|----|-------------|
+| `TCGA-86-8074-01Z-00-DX1` | Lung Adenocarcinoma (LUAD) |
+| `TCGA-AZ-4313-01Z-00-DX1` | Colon Adenocarcinoma (COAD) |
+| `TCGA-EJ-7123-01Z-00-DX1` | Prostate Adenocarcinoma (PRAD) |
+| `TCGA-G2-A2ES-01Z-00-DX1` | Bladder Cancer (BLCA) |
+| `TCGA-HU-A4GJ-01Z-00-DX1` | Stomach Adenocarcinoma (STAD) |
+| `TCGA-EY-A1GK-01Z-00-DX1` | Endometrial Carcinoma (UCEC) |
 
 **How It Works:**
 1. Slides are downloaded from the GDC (Genomic Data Commons) API
@@ -734,8 +815,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 - **Slow processing**: Large slides take longer; be patient
 - **Upload failed**: Check file format (.svs, .tiff, .tif only)
 - **No results**: Ensure slide contains sufficient tissue
-            """
-            )
+            """)
 
         with gr.Row():
             with gr.Column():
@@ -763,20 +843,12 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     )
                     gr.Examples(
                         examples=[
-                            [
-                                "6a0ea716-a5f2-47f3-880b-537a5cdc2324"
-                            ],  # TCGA-LUAD (Lung) - has Paladin models
-                            [
-                                "d65c5d21-6333-4a9e-9a2a-139a122a3c8a"
-                            ],  # TCGA-COAD (Colon) - has Paladin models
-                            [
-                                "1bc2766c-7064-43c7-97cb-5962d3894671"
-                            ],  # TCGA-PRAD (Prostate) - has Paladin models
-                            [
-                                "0d083e4f-0037-462e-b810-3182506f15ba"
-                            ],  # TCGA-BLCA (Bladder) - has Paladin models
-                            ["TCGA-86-8074-01Z-00-DX1"],  # TCGA-LUAD barcode (Lung)
-                            ["TCGA-AZ-4313-01Z-00-DX1"],  # TCGA-COAD barcode (Colon)
+                            ["TCGA-86-8074-01Z-00-DX1"],  # LUAD (Lung)
+                            ["TCGA-AZ-4313-01Z-00-DX1"],  # COAD (Colon)
+                            ["TCGA-EJ-7123-01Z-00-DX1"],  # PRAD (Prostate)
+                            ["TCGA-G2-A2ES-01Z-00-DX1"],  # BLCA (Bladder)
+                            ["TCGA-HU-A4GJ-01Z-00-DX1"],  # STAD (Stomach)
+                            ["TCGA-EY-A1GK-01Z-00-DX1"],  # UCEC (Endometrial)
                         ],
                         inputs=tcga_id_input,
                         label="Example TCGA Slide IDs (click to use)",
@@ -851,6 +923,9 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     clear_button = gr.Button("Clear")
                     analyze_button = gr.Button("Analyze", variant="primary")
             with gr.Column():
+                gr.Markdown("""
+                    **Tissue Segmentation Masks**: Cyan outlines show detected tissue regions. Red fill indicates tissue area.
+                    """)
                 slide_masks = gr.Gallery(
                     label="Slide Masks (tissue segmentation)",
                     columns=3,
@@ -951,6 +1026,24 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 tcga_id = validate_slide_id(tcga_id)
                 progress(0.1, desc="Validating slide ID...")
 
+                # Determine file UUID for HF download
+                from mosaic.tcga import is_valid_uuid, query_slide_uuid
+
+                if is_valid_uuid(tcga_id):
+                    file_uuid = tcga_id
+                else:
+                    # For barcodes, we need to query first to get UUID
+                    file_uuid = query_slide_uuid(tcga_id)
+
+                # Try to download cached results from HF Dataset (on demand)
+                try:
+                    download_results_from_hf(file_uuid)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to download HF cache for {file_uuid}: {e}. "
+                        f"Will analyze from scratch if no local cache exists."
+                    )
+
                 # Get tissue sites for metadata mapping
                 tissue_sites = get_tissue_sites()
 
@@ -974,7 +1067,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     progress_callback=update_progress,
                 )
 
-                progress(0.9, desc="Extracting metadata...")
+                # Check if metadata is cached
+                from mosaic.tcga import load_metadata_cache
+
+                cached_metadata = load_metadata_cache(file_uuid)
+                if cached_metadata is not None:
+                    progress(0.9, desc="Loading cached metadata...")
+                else:
+                    progress(0.9, desc="Extracting metadata from TCGA...")
 
                 # Get case metadata and convert to Mosaic values
                 metadata = get_case_metadata(file_uuid, tissue_sites)

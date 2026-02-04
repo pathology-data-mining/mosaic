@@ -7,7 +7,6 @@ model data files, checking environment variables and falling back to local paths
 import os
 from pathlib import Path
 
-
 # Global variable to store the model data directory path
 _MODEL_DATA_DIR = None
 
@@ -62,7 +61,10 @@ DEFAULT_TCGA_CACHE_DIR = Path.home() / ".cache" / "mosaic" / "tcga_slides"
 def get_tcga_cache_directory():
     """Get the directory for caching TCGA slide files.
 
-    Returns the cache directory path from environment variable or default location.
+    Returns the cache directory path with priority:
+    1. MOSAIC_TCGA_CACHE_DIR environment variable
+    2. HuggingFace Spaces persistent storage (/data/mosaic_tcga_slides)
+    3. Default: ~/.cache/mosaic/tcga_slides
 
     Returns:
         Path: Path to the TCGA cache directory
@@ -71,9 +73,17 @@ def get_tcga_cache_directory():
     if _TCGA_CACHE_DIR is not None:
         return _TCGA_CACHE_DIR
 
-    # Check if environment variable is set
+    # 1. Check if environment variable is set
     if "MOSAIC_TCGA_CACHE_DIR" in os.environ:
         _TCGA_CACHE_DIR = Path(os.environ["MOSAIC_TCGA_CACHE_DIR"])
+    # 2. HF Spaces persistent storage
+    elif os.environ.get("SPACE_ID"):
+        persistent = Path("/data")
+        if persistent.exists() and os.access(persistent, os.W_OK):
+            _TCGA_CACHE_DIR = persistent / "mosaic_tcga_slides"
+        else:
+            _TCGA_CACHE_DIR = DEFAULT_TCGA_CACHE_DIR
+    # 3. Default location
     else:
         _TCGA_CACHE_DIR = DEFAULT_TCGA_CACHE_DIR
 

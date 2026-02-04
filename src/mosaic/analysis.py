@@ -415,7 +415,11 @@ def _run_inference_pipeline_impl(
     try:
         # Step 2: Extract CTransPath features using cached model
         progress(0.3, desc=f"Extracting CTransPath features ({len(coords)} tiles)")
-        with _stage_label(progress, f"Extracting CTransPath features ({len(coords)} tiles)", stage_progress=0.3):
+        with _stage_label(
+            progress,
+            f"Extracting CTransPath features ({len(coords)} tiles)",
+            stage_progress=0.3,
+        ):
             ctranspath_features, coords = _extract_ctranspath_features(
                 coords,
                 slide_path,
@@ -441,8 +445,14 @@ def _run_inference_pipeline_impl(
             timings["filtered_tile_count"] = len(filtered_coords)
 
         # Step 4: Extract Optimus features using cached model
-        progress(0.4, desc=f"Extracting Optimus features ({len(filtered_coords)} tiles)")
-        with _stage_label(progress, f"Extracting Optimus features ({len(filtered_coords)} tiles)", stage_progress=0.4):
+        progress(
+            0.4, desc=f"Extracting Optimus features ({len(filtered_coords)} tiles)"
+        )
+        with _stage_label(
+            progress,
+            f"Extracting Optimus features ({len(filtered_coords)} tiles)",
+            stage_progress=0.4,
+        ):
             features = _extract_optimus_features(
                 filtered_coords,
                 slide_path,
@@ -658,7 +668,11 @@ def _run_inference_pipeline_with_models(
     """
     # Step 1: Extract CTransPath features with PRE-LOADED model
     progress(0.3, desc=f"Extracting CTransPath features ({len(coords)} tiles)")
-    with _stage_label(progress, f"Extracting CTransPath features ({len(coords)} tiles)", stage_progress=0.3):
+    with _stage_label(
+        progress,
+        f"Extracting CTransPath features ({len(coords)} tiles)",
+        stage_progress=0.3,
+    ):
         ctranspath_features, coords = _extract_ctranspath_features(
             coords,
             slide_path,
@@ -685,7 +699,11 @@ def _run_inference_pipeline_with_models(
 
     # Step 3: Extract Optimus features with PRE-LOADED model
     progress(0.5, desc=f"Extracting Optimus features ({len(filtered_coords)} tiles)")
-    with _stage_label(progress, f"Extracting Optimus features ({len(filtered_coords)} tiles)", stage_progress=0.5):
+    with _stage_label(
+        progress,
+        f"Extracting Optimus features ({len(filtered_coords)} tiles)",
+        stage_progress=0.5,
+    ):
         features = _extract_optimus_features(
             filtered_coords,
             slide_path,
@@ -828,15 +846,24 @@ def analyze_slide(
     progress(0.2, desc="Tissue segmented")
 
     # Draw slide mask for visualization
+    # The mask shows detected tissue regions with:
+    # - Cyan outline: Provides high contrast against H&E tissue (pink eosin, purple hematoxylin)
+    #                 More visible than black, especially on darker tissue regions
+    # - Semi-transparent red fill: Shows tissue area without obscuring underlying detail (alpha=80)
+    # - 12px outline width: Scaled for thumbnail visibility
+    #   * Generated at 2048px max size
+    #   * Downsampled to 512px for gallery thumbnails (4x reduction)
+    #   * 12px → 3px in thumbnails (clearly visible without being overwhelming)
     logger.info("Drawing slide mask")
     progress(0.25, desc="Drawing slide mask")
     slide_mask = draw_slide_mask(
         slide_path,
         polygon,
-        outline="black",
+        outline="cyan",
         fill=(255, 0, 0, 80),
         vis_level=-1,
         max_size=2048,
+        outline_width=12,
     )
     logger.info("Slide mask drawn")
 

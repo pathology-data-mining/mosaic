@@ -274,7 +274,6 @@ class TestGeneratorBehavior:
         clear_button = final_yield[8]
         assert hasattr(clear_button, "interactive") and clear_button.interactive
 
-
     @patch("mosaic.ui.app.load_all_models")
     @patch("mosaic.ui.app.analyze_slide")
     @patch("mosaic.ui.app.create_user_directory")

@@ -7,15 +7,19 @@ This module provides functionality to:
 - Convert GDC metadata values to Mosaic-compatible values
 """
 
+import hashlib
+import json
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
+import pandas as pd
 import requests
 from loguru import logger
+from PIL import Image
 
 from mosaic.inference.data import CANCER_TYPE_TO_INT_MAP
 from mosaic.data_directory import get_tcga_cache_directory
@@ -47,6 +51,10 @@ DOWNLOAD_TIMEOUT = int(os.environ.get("MOSAIC_GDC_DOWNLOAD_TIMEOUT", "300"))
 
 # Cache for OncoTree ancestor lookups to avoid repeated API calls
 _oncotree_ancestors_cache: dict[str, list[str]] = {}
+
+# Metadata cache settings
+METADATA_CACHE_FILENAME = "metadata.json"
+METADATA_CACHE_VERSION = 1
 
 
 @dataclass
@@ -639,17 +647,575 @@ def convert_gdc_metadata_to_mosaic(
     )
 
 
+def save_metadata_cache(
+    file_uuid: str, metadata: TCGAMetadata, cache_dir: Path | None = None
+) -> None:
+    """Save TCGAMetadata to cache as JSON.
+
+    Best-effort operation that handles expected errors gracefully while
+    surfacing unexpected errors. Creates a metadata.json file in the slide's
+    cache directory.
+
+    Args:
+        file_uuid: The file UUID
+        metadata: TCGAMetadata object to cache
+        cache_dir: Optional cache directory (uses default if not provided)
+    """
+    try:
+        cache_dir = _normalize_cache_dir(cache_dir)
+        slide_dir = cache_dir / file_uuid
+
+        if not slide_dir.exists():
+            logger.debug(
+                f"Slide directory does not exist for {file_uuid}, skipping metadata cache save"
+            )
+            return
+
+        cache_path = slide_dir / METADATA_CACHE_FILENAME
+        cache_data = {
+            "cache_version": METADATA_CACHE_VERSION,
+            **asdict(metadata),
+        }
+
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, indent=2)
+
+        logger.debug(f"Saved metadata cache for {file_uuid}")
+
+    except (PermissionError, OSError) as e:
+        # Filesystem issues - warn but don't fail
+        logger.warning(
+            f"Cannot save metadata cache for {file_uuid}: {e}. "
+            f"Cache disabled for this slide. Check permissions and disk space."
+        )
+    except (TypeError, KeyError, AttributeError) as e:
+        # Data structure errors - these indicate bugs
+        logger.exception(
+            f"Failed to save metadata cache for {file_uuid} due to data error: {e}. "
+            f"This may indicate a bug in metadata conversion."
+        )
+    except Exception as e:
+        # Truly unexpected errors
+        logger.exception(
+            f"Unexpected error saving metadata cache for {file_uuid}: {e}"
+        )
+
+
+def load_metadata_cache(
+    file_uuid: str, cache_dir: Path | None = None
+) -> TCGAMetadata | None:
+    """Load cached TCGAMetadata from JSON.
+
+    Returns None if cache is missing, corrupt, or has wrong version.
+    Caller should fall back to API fetch on None.
+
+    Args:
+        file_uuid: The file UUID
+        cache_dir: Optional cache directory (uses default if not provided)
+
+    Returns:
+        TCGAMetadata if cache is valid, None otherwise
+    """
+    try:
+        cache_dir = _normalize_cache_dir(cache_dir)
+        slide_dir = cache_dir / file_uuid
+        cache_path = slide_dir / METADATA_CACHE_FILENAME
+
+        if not cache_path.exists():
+            logger.debug(f"No cached metadata found for {file_uuid}")
+            return None
+
+        with open(cache_path, encoding="utf-8") as f:
+            cache_data = json.load(f)
+
+        # Check version
+        if cache_data.get("cache_version") != METADATA_CACHE_VERSION:
+            logger.info(
+                f"Metadata cache version mismatch for {file_uuid} "
+                f"(found {cache_data.get('cache_version')}, expected {METADATA_CACHE_VERSION}). "
+                f"Ignoring stale cache."
+            )
+            return None
+
+        # Reconstruct TCGAMetadata (remove cache_version key)
+        cache_data.pop("cache_version", None)
+        return TCGAMetadata(**cache_data)
+
+    except json.JSONDecodeError as e:
+        logger.warning(
+            f"Corrupted metadata cache for {file_uuid}: {e}. "
+            f"Falling back to API. Consider deleting: {cache_path}"
+        )
+        return None
+    except (KeyError, TypeError) as e:
+        logger.warning(
+            f"Invalid metadata cache structure for {file_uuid}: {e}. "
+            f"Falling back to API. Cache file may be from incompatible version."
+        )
+        return None
+    except (PermissionError, OSError) as e:
+        logger.warning(
+            f"Cannot read metadata cache for {file_uuid}: {e}. "
+            f"Check file permissions. Falling back to API."
+        )
+        return None
+    except Exception as e:
+        logger.exception(
+            f"Unexpected error loading metadata cache for {file_uuid}: {e}"
+        )
+        return None
+
+
+def compute_settings_hash(
+    seg_config: str | dict,
+    site_type: str,
+    sex: str,
+    tissue_site: str,
+    cancer_subtype: str,
+    ihc_subtype: str | None,
+) -> str:
+    """Compute a deterministic hash of analysis settings.
+
+    Uses SHA-256 hash of JSON-serialized sorted settings dict,
+    truncated to 12 hex characters for compact directory names.
+
+    Args:
+        seg_config: Tissue segmentation configuration. Either a string preset
+            ("Biopsy", "Resection", "TCGA") or a dict with custom parameters.
+            Both are JSON-serialized for consistent hashing.
+        site_type: "Primary" or "Metastatic"
+        sex: Patient sex
+        tissue_site: Anatomical tissue site
+        cancer_subtype: Cancer subtype code
+        ihc_subtype: IHC subtype (optional)
+
+    Returns:
+        12-character hex string hash
+    """
+    settings_dict = {
+        "seg_config": seg_config,
+        "site_type": site_type,
+        "sex": sex,
+        "tissue_site": tissue_site,
+        "cancer_subtype": cancer_subtype,
+        "ihc_subtype": ihc_subtype,
+    }
+
+    # Sort keys for deterministic JSON
+    settings_json = json.dumps(settings_dict, sort_keys=True)
+    hash_obj = hashlib.sha256(settings_json.encode("utf-8"))
+    return hash_obj.hexdigest()[:12]
+
+
+def save_analysis_results(
+    file_uuid: str,
+    settings_hash: str,
+    aeon_results: pd.DataFrame | None,
+    paladin_results: pd.DataFrame | None,
+    slide_mask: Image.Image | None,
+    cache_dir: Path | None = None,
+) -> None:
+    """Save analysis results to cache.
+
+    Creates results/{settings_hash}/ directory and saves:
+    - aeon_results.csv (with index)
+    - paladin_results.csv (no index)
+    - slide_mask.png
+
+    Best-effort operation that handles expected errors gracefully while
+    surfacing unexpected errors. Skips None components.
+
+    Args:
+        file_uuid: The file UUID
+        settings_hash: Hash of analysis settings
+        aeon_results: Aeon cancer subtype predictions DataFrame
+        paladin_results: Paladin biomarker predictions DataFrame
+        slide_mask: Tissue segmentation mask PIL Image
+        cache_dir: Optional cache directory (uses default if not provided)
+    """
+    try:
+        cache_dir = _normalize_cache_dir(cache_dir)
+        results_dir = cache_dir / file_uuid / "results" / settings_hash
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save aeon results (with index - "Cancer Subtype")
+        if aeon_results is not None:
+            aeon_path = results_dir / "aeon_results.csv"
+            aeon_results.to_csv(aeon_path, index=True)
+
+        # Save paladin results (no index)
+        if paladin_results is not None:
+            paladin_path = results_dir / "paladin_results.csv"
+            paladin_results.to_csv(paladin_path, index=False)
+
+        # Save slide mask
+        if slide_mask is not None:
+            mask_path = results_dir / "slide_mask.png"
+            slide_mask.save(mask_path)
+
+        logger.info(
+            f"Successfully cached analysis results for {file_uuid}/{settings_hash}"
+        )
+
+    except OSError as e:
+        # Filesystem issues - user needs to know
+        if e.errno == 28:  # ENOSPC - No space left on device
+            logger.error(
+                f"CRITICAL: Cannot cache analysis results for {file_uuid}/{settings_hash} - "
+                f"DISK FULL. Results will need to be re-analyzed (30-120s). Free up disk space."
+            )
+        else:
+            logger.error(
+                f"Filesystem error saving analysis results for {file_uuid}/{settings_hash}: {e}. "
+                f"Results will need to be re-analyzed if accessed again."
+            )
+    except PermissionError as e:
+        logger.error(
+            f"Permission denied saving analysis results for {file_uuid}/{settings_hash}: {e}. "
+            f"Check directory permissions: {results_dir}"
+        )
+    except Exception as e:
+        logger.exception(
+            f"Unexpected error saving analysis results for {file_uuid}/{settings_hash}: {e}. "
+            f"Results will need to be re-analyzed."
+        )
+
+
+def load_analysis_results(
+    file_uuid: str, settings_hash: str, cache_dir: Path | None = None
+) -> tuple[Image.Image | None, pd.DataFrame | None, pd.DataFrame | None] | None:
+    """Load cached analysis results.
+
+    Returns tuple of (slide_mask, aeon_results, paladin_results) or None
+    if any error occurs. Restores aeon_results index to "Cancer Subtype".
+
+    Args:
+        file_uuid: The file UUID
+        settings_hash: Hash of analysis settings
+        cache_dir: Optional cache directory (uses default if not provided)
+
+    Returns:
+        Tuple of (slide_mask, aeon_results, paladin_results) if all files
+        exist and are valid, None otherwise
+    """
+    try:
+        cache_dir = _normalize_cache_dir(cache_dir)
+        results_dir = cache_dir / file_uuid / "results" / settings_hash
+
+        if not results_dir.exists():
+            logger.debug(f"No cached results for {file_uuid}/{settings_hash}")
+            return None
+
+        # Load all three files
+        aeon_path = results_dir / "aeon_results.csv"
+        paladin_path = results_dir / "paladin_results.csv"
+        mask_path = results_dir / "slide_mask.png"
+
+        # All must exist for a valid cache hit (atomic all-or-nothing)
+        if not (aeon_path.exists() and paladin_path.exists() and mask_path.exists()):
+            missing = [
+                p.name for p in [aeon_path, paladin_path, mask_path] if not p.exists()
+            ]
+            logger.warning(
+                f"Incomplete cache for {file_uuid}/{settings_hash} (missing: {missing}). "
+                f"Falling back to re-analysis."
+            )
+            return None
+
+        # Load aeon results (restore index)
+        aeon_results = pd.read_csv(aeon_path, index_col=0)
+
+        # Load paladin results
+        paladin_results = pd.read_csv(paladin_path)
+
+        # Load slide mask
+        with Image.open(mask_path) as im:
+            slide_mask = im.copy()
+
+        logger.info(
+            f"Successfully loaded cached results for {file_uuid}/{settings_hash}"
+        )
+        return slide_mask, aeon_results, paladin_results
+
+    except (pd.errors.ParserError, ValueError) as e:
+        logger.warning(
+            f"Corrupted CSV cache for {file_uuid}/{settings_hash}: {e}. "
+            f"Falling back to re-analysis. Consider deleting: {results_dir}"
+        )
+        return None
+    except Exception as e:
+        # Catch PIL errors and others
+        error_type = type(e).__name__
+        if "Image" in error_type or "PIL" in error_type:
+            logger.warning(
+                f"Corrupted image cache for {file_uuid}/{settings_hash}: {e}. "
+                f"Falling back to re-analysis. Consider deleting: {mask_path}"
+            )
+        elif isinstance(e, (PermissionError, OSError)):
+            logger.warning(
+                f"Cannot read cached results for {file_uuid}/{settings_hash}: {e}. "
+                f"Check file permissions. Falling back to re-analysis."
+            )
+        else:
+            logger.exception(
+                f"Unexpected error loading cached results for {file_uuid}/{settings_hash}: {e}"
+            )
+        return None
+
+
+def upload_results_to_hf(file_uuid: str, cache_dir: Path | None = None) -> None:
+    """Upload cached results for a slide to HuggingFace Dataset.
+
+    Uploads metadata.json and all files under results/ for this UUID.
+    Uses MOSAIC_TCGA_CACHE_HF_REPO env var. No-op if not set.
+    Best-effort operation that logs warnings on failure.
+
+    Args:
+        file_uuid: The file UUID
+        cache_dir: Optional cache directory (uses default if not provided)
+    """
+    # Check if HF repo is configured
+    hf_repo = os.environ.get("MOSAIC_TCGA_CACHE_HF_REPO")
+    if not hf_repo:
+        return  # No-op if env var not set
+
+    try:
+        from huggingface_hub import HfApi
+
+        cache_dir = _normalize_cache_dir(cache_dir)
+        slide_dir = cache_dir / file_uuid
+
+        if not slide_dir.exists():
+            logger.debug(f"No slide directory to upload for {file_uuid}")
+            return
+
+        api = HfApi()
+
+        # Upload metadata.json if it exists
+        metadata_path = slide_dir / METADATA_CACHE_FILENAME
+        if metadata_path.exists():
+            api.upload_file(
+                path_or_fileobj=str(metadata_path),
+                path_in_repo=f"{file_uuid}/{METADATA_CACHE_FILENAME}",
+                repo_id=hf_repo,
+                repo_type="dataset",
+            )
+            logger.debug(f"Uploaded metadata for {file_uuid} to HF")
+
+        # Upload all results directories
+        results_dir = slide_dir / "results"
+        if results_dir.exists():
+            for settings_hash_dir in results_dir.iterdir():
+                if not settings_hash_dir.is_dir():
+                    continue
+
+                settings_hash = settings_hash_dir.name
+
+                # Upload each file in this settings directory
+                for result_file in settings_hash_dir.iterdir():
+                    if result_file.is_file():
+                        api.upload_file(
+                            path_or_fileobj=str(result_file),
+                            path_in_repo=f"{file_uuid}/results/{settings_hash}/{result_file.name}",
+                            repo_id=hf_repo,
+                            repo_type="dataset",
+                        )
+
+            logger.info(
+                f"Uploaded analysis results for {file_uuid} to HF Dataset {hf_repo}"
+            )
+
+    except ImportError:
+        logger.warning(
+            "huggingface_hub package not installed. Cannot upload to HF Dataset. "
+            "Install with: pip install huggingface_hub"
+        )
+    except Exception as e:
+        # Provide specific error messages for common failure modes
+        error_msg = str(e).lower()
+        if "401" in error_msg or "unauthorized" in error_msg:
+            logger.error(
+                f"HF Dataset upload failed for {file_uuid}: Authentication error. "
+                f"Check that HF_TOKEN environment variable is set and valid. Error: {e}"
+            )
+        elif "403" in error_msg or "forbidden" in error_msg:
+            logger.error(
+                f"HF Dataset upload failed for {file_uuid}: Permission denied. "
+                f"Check that you have write access to {hf_repo}. Error: {e}"
+            )
+        elif "429" in error_msg or "rate limit" in error_msg:
+            logger.warning(
+                f"HF Dataset upload rate limited for {file_uuid}. "
+                f"Results cached locally but not synced to HF. Will retry on next upload. Error: {e}"
+            )
+        elif "timeout" in error_msg or "timed out" in error_msg:
+            logger.warning(
+                f"HF Dataset upload timed out for {file_uuid}. "
+                f"Check network connection. Results cached locally. Error: {e}"
+            )
+        else:
+            logger.exception(
+                f"Failed to upload results for {file_uuid} to HF Dataset {hf_repo}: {e}"
+            )
+
+
+def download_results_from_hf(file_uuid: str, cache_dir: Path | None = None) -> bool:
+    """Download cached results for a slide from HuggingFace Dataset.
+
+    Downloads matching files from HF Dataset repo to local cache.
+    Uses MOSAIC_TCGA_CACHE_HF_REPO env var. Returns False if not set.
+    Best-effort operation that returns False on any error.
+
+    Optimization: Uses path-scoped listing (list_repo_tree with path_in_repo)
+    to avoid listing the entire repository, which becomes a latency/memory
+    bottleneck as the dataset grows.
+
+    Args:
+        file_uuid: The file UUID
+        cache_dir: Optional cache directory (uses default if not provided)
+
+    Returns:
+        True if any files were downloaded, False otherwise
+    """
+    # Check if HF repo is configured
+    hf_repo = os.environ.get("MOSAIC_TCGA_CACHE_HF_REPO")
+    if not hf_repo:
+        return False  # No-op if env var not set
+
+    try:
+        from huggingface_hub import HfApi, hf_hub_download
+
+        cache_dir = _normalize_cache_dir(cache_dir)
+        slide_dir = cache_dir / file_uuid
+        slide_dir.mkdir(parents=True, exist_ok=True)
+
+        api = HfApi()
+
+        # List only files under the specific UUID path (not the entire repo)
+        # This avoids O(N) scaling as the dataset grows to thousands of slides
+        try:
+            repo_items = list(
+                api.list_repo_tree(
+                    repo_id=hf_repo,
+                    path_in_repo=file_uuid,
+                    recursive=True,
+                    repo_type="dataset",
+                )
+            )
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "401" in error_msg or "unauthorized" in error_msg:
+                logger.error(
+                    f"HF authentication failed when listing files for {file_uuid}. "
+                    f"Check HF_TOKEN. Error: {e}"
+                )
+            elif "404" in error_msg or "not found" in error_msg:
+                # 404 could mean either repo not found OR path not found
+                # Try to distinguish by checking if it's a path-specific 404
+                if file_uuid in str(e):
+                    logger.debug(f"No cached results found in HF for {file_uuid}")
+                else:
+                    logger.error(
+                        f"HF Dataset repo '{hf_repo}' not found. "
+                        f"Check MOSAIC_TCGA_CACHE_HF_REPO value. Error: {e}"
+                    )
+                return False
+            else:
+                logger.warning(
+                    f"Failed to list files for {file_uuid} in HF repo: {e}. "
+                    f"Falling back to local cache only."
+                )
+                return False
+
+        # Extract file paths (filter out folders, keep only RepoFile objects)
+        matching_files = []
+        for item in repo_items:
+            # RepoFile has a 'path' attribute, RepoFolder doesn't have file content
+            if hasattr(item, "path") and not item.path.endswith("/"):
+                matching_files.append(item.path)
+
+        if not matching_files:
+            logger.debug(f"No cached results found in HF for {file_uuid}")
+            return False
+
+        # Download each matching file
+        downloaded_count = 0
+        failed_files = []
+        for repo_path in matching_files:
+            try:
+                # Download to temporary location first
+                downloaded_path = hf_hub_download(
+                    repo_id=hf_repo,
+                    filename=repo_path,
+                    repo_type="dataset",
+                )
+
+                # Determine local path (remove UUID prefix)
+                # repo_path is like "uuid/metadata.json" or "uuid/results/hash/file.csv"
+                uuid_prefix = f"{file_uuid}/"
+                if repo_path.startswith(uuid_prefix):
+                    relative_path = repo_path[len(uuid_prefix) :]
+                else:
+                    # Shouldn't happen with path_in_repo, but be defensive
+                    relative_path = repo_path
+
+                local_path = slide_dir / relative_path
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Copy to cache directory
+                import shutil
+
+                shutil.copy2(downloaded_path, local_path)
+
+                downloaded_count += 1
+
+            except Exception as e:
+                failed_files.append(repo_path)
+                logger.warning(f"Failed to download {repo_path} from HF: {e}")
+                continue
+
+        if failed_files:
+            logger.warning(
+                f"Failed to download {len(failed_files)}/{len(matching_files)} "
+                f"files for {file_uuid} from HF"
+            )
+
+        if downloaded_count > 0:
+            logger.info(
+                f"Downloaded {downloaded_count} cached files for {file_uuid} from HF Dataset"
+            )
+            return True
+
+        return False
+
+    except ImportError:
+        logger.warning(
+            "huggingface_hub package not installed. Cannot download from HF Dataset. "
+            "Install with: pip install huggingface_hub"
+        )
+        return False
+    except Exception as e:
+        logger.exception(
+            f"Unexpected error downloading results for {file_uuid} from HF: {e}"
+        )
+        return False
+
+
 def get_case_metadata(
     file_uuid: str,
     supported_tissue_sites: list[str],
     token: str | None = None,
+    cache_dir: Path | None = None,
 ) -> TCGAMetadata:
     """Get clinical metadata for a slide file and convert to Mosaic format.
+
+    Checks local cache first, falls back to GDC API if not cached.
 
     Args:
         file_uuid: The file UUID
         supported_tissue_sites: List of supported tissue site names for validation
         token: Optional GDC authentication token
+        cache_dir: Optional cache directory (uses default if not provided)
 
     Returns:
         TCGAMetadata with pre-filled values for UI dropdowns
@@ -657,8 +1223,20 @@ def get_case_metadata(
     Raises:
         GDCError: If the query fails
     """
+    # Try to load from cache first
+    cached_metadata = load_metadata_cache(file_uuid, cache_dir)
+    if cached_metadata is not None:
+        logger.debug(f"Using cached metadata for {file_uuid}")
+        return cached_metadata
+
+    # Cache miss, fetch from API
     raw_metadata = get_slide_metadata(file_uuid, token)
-    return convert_gdc_metadata_to_mosaic(raw_metadata, supported_tissue_sites)
+    metadata = convert_gdc_metadata_to_mosaic(raw_metadata, supported_tissue_sites)
+
+    # Save to cache for next time
+    save_metadata_cache(file_uuid, metadata, cache_dir)
+
+    return metadata
 
 
 def is_slide_cached(file_uuid: str, cache_dir: Path | None = None) -> bool:
