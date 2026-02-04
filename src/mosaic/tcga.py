@@ -957,9 +957,8 @@ def load_analysis_results(
                 f"Check file permissions. Falling back to re-analysis."
             )
         else:
-            logger.error(
-                f"Unexpected error loading cached results for {file_uuid}/{settings_hash}: {e}",
-                exc_info=True,
+            logger.exception(
+                f"Unexpected error loading cached results for {file_uuid}/{settings_hash}: {e}"
             )
         return None
 
