@@ -1198,9 +1198,8 @@ def download_results_from_hf(file_uuid: str, cache_dir: Path | None = None) -> b
         )
         return False
     except Exception as e:
-        logger.error(
-            f"Unexpected error downloading results for {file_uuid} from HF: {e}",
-            exc_info=True,
+        logger.exception(
+            f"Unexpected error downloading results for {file_uuid} from HF: {e}"
         )
         return False
 
