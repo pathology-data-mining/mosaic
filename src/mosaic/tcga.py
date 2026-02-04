@@ -690,16 +690,14 @@ def save_metadata_cache(
         )
     except (TypeError, KeyError, AttributeError) as e:
         # Data structure errors - these indicate bugs
-        logger.error(
+        logger.exception(
             f"Failed to save metadata cache for {file_uuid} due to data error: {e}. "
-            f"This may indicate a bug in metadata conversion.",
-            exc_info=True,
+            f"This may indicate a bug in metadata conversion."
         )
     except Exception as e:
         # Truly unexpected errors
-        logger.error(
-            f"Unexpected error saving metadata cache for {file_uuid}: {e}",
-            exc_info=True,
+        logger.exception(
+            f"Unexpected error saving metadata cache for {file_uuid}: {e}"
         )
 
 
