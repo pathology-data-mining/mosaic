@@ -760,9 +760,8 @@ def load_metadata_cache(
         )
         return None
     except Exception as e:
-        logger.error(
-            f"Unexpected error loading metadata cache for {file_uuid}: {e}",
-            exc_info=True,
+        logger.exception(
+            f"Unexpected error loading metadata cache for {file_uuid}: {e}"
         )
         return None
 
