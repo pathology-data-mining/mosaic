@@ -33,14 +33,13 @@ RUN --mount=type=ssh \
     elif [ -f /run/secrets/GH_TOKEN ]; then \
         echo "Using GH_TOKEN authentication for private repos" && \
         export GH_TOKEN=$(cat /run/secrets/GH_TOKEN) && \
-        TMP_GITCONFIG=$(mktemp) && \
-        git config --file "$TMP_GITCONFIG" url."https://${GH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/" && \
-        git config --file "$TMP_GITCONFIG" url."https://${GH_TOKEN}@github.com/".insteadOf "git@github.com:"; \
+        git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/" && \
+        git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "git@github.com:"; \
     else \
         echo "Warning: No authentication method found - private repo access may fail"; \
     fi && \
-    GIT_CONFIG_GLOBAL="${TMP_GITCONFIG:-}" uv pip install -e . && \
-    if [ -n "${TMP_GITCONFIG:-}" ]; then rm -f "$TMP_GITCONFIG"; fi
+    uv pip install -e . && \
+    rm -f ~/.gitconfig
 
 # Create non-root user for runtime
 RUN useradd -m -u 1000 user && \
