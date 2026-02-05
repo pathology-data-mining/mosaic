@@ -33,13 +33,12 @@ RUN --mount=type=ssh \
     elif [ -f /run/secrets/GH_TOKEN ]; then \
         echo "Using GH_TOKEN authentication for private repos" && \
         export GH_TOKEN=$(cat /run/secrets/GH_TOKEN) && \
-        git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/" && \
-        git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "git@github.com:"; \
+        sed -i "s|ssh://git@github.com/|https://${GH_TOKEN}@github.com/|g" pyproject.toml; \
     else \
         echo "Warning: No authentication method found - private repo access may fail"; \
     fi && \
     uv pip install -e . && \
-    rm -f ~/.gitconfig
+    git checkout -- pyproject.toml 2>/dev/null || true
 
 # Create non-root user for runtime
 RUN useradd -m -u 1000 user && \
