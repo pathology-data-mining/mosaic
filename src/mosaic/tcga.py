@@ -1166,13 +1166,18 @@ def download_results_from_hf(file_uuid: str, cache_dir: Path | None = None) -> b
 
             except Exception as e:
                 failed_files.append(repo_path)
-                logger.warning(f"Failed to download {repo_path} from HF: {e}")
+                # 404s are expected for files not yet cached - use debug level
+                if "404" in str(e) or "not found" in str(e):
+                    logger.debug(f"No cached file found at {repo_path} in HF")
+                else:
+                    logger.warning(f"Failed to download {repo_path} from HF: {e}")
                 continue
 
-        if failed_files:
-            logger.warning(
-                f"Failed to download {len(failed_files)}/{len(matching_files)} "
-                f"files for {file_uuid} from HF"
+        if failed_files and len(failed_files) != len(matching_files):
+            # Only warn if not all files failed (some succeeded)
+            logger.debug(
+                f"Only {len(matching_files) - len(failed_files)}/{len(matching_files)} "
+                f"files cached for {file_uuid} from HF"
             )
 
         if downloaded_count > 0:
