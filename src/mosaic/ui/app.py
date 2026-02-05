@@ -298,29 +298,15 @@ def analyze_slides(
         gpu_type=GPU_TYPE,
     )
 
-    # Load models once (for batch) or per-slide (for single)
-    # On T4: Keep models loaded globally across all requests (concurrency=1 ensures no conflicts)
-    # On high-memory GPUs: Load models per-batch, reload for single slides
+    # Defer model loading until needed - skip GPU loading if all slides have cached results
+    # On T4: Reuse global cache if already loaded, otherwise load on first cache miss
+    # On high-memory GPUs: Load on first cache miss for batch, per-slide for single
     global _global_model_cache
     model_cache = None
 
-    if IS_T4_GPU:
-        # T4: Use global cache to keep models loaded across requests
-        if _global_model_cache is None:
-            logger.info("T4: Loading models once (will persist across all requests)")
-            progress(0.0, desc="Loading models (one-time initialization)")
-            _global_model_cache = load_all_models(
-                use_gpu=True, aggressive_memory_mgmt=None
-            )
-        else:
-            logger.info(f"T4: Reusing pre-loaded models from global cache")
+    if IS_T4_GPU and _global_model_cache is not None:
+        logger.info("T4: Reusing pre-loaded models from global cache")
         model_cache = _global_model_cache
-    elif len(slides) > 1:
-        logger.info(f"Batch mode: Loading models once for {len(slides)} slides")
-        progress(0.0, desc=f"Loading models for batch processing")
-        model_cache = load_all_models(use_gpu=True, aggressive_memory_mgmt=None)
-    else:
-        logger.info("Single-slide mode: models loaded within analyze_slide")
 
     try:
         # Process all slides with unified analyze_slide function
@@ -422,6 +408,29 @@ def analyze_slides(
 
             # If no cached results, run analysis
             if slide_mask is None or aeon_results is None or paladin_results is None:
+                # Lazy model loading: load on first cache miss
+                if model_cache is None:
+                    if IS_T4_GPU:
+                        logger.info(
+                            "T4: Loading models once (will persist across all requests)"
+                        )
+                        progress(0.0, desc="Loading models (one-time initialization)")
+                        _global_model_cache = load_all_models(
+                            use_gpu=True, aggressive_memory_mgmt=None
+                        )
+                        model_cache = _global_model_cache
+                    elif len(slides) > 1:
+                        logger.info(
+                            f"Batch mode: Loading models once for {len(slides)} slides"
+                        )
+                        progress(
+                            0.0, desc="Loading models for batch processing"
+                        )
+                        model_cache = load_all_models(
+                            use_gpu=True, aggressive_memory_mgmt=None
+                        )
+                    # else: single-slide mode - analyze_slide handles its own model loading
+
                 slide_mask, aeon_results, paladin_results = analyze_slide(
                     slide_path=slide_path,
                     seg_config=row["Segmentation Config"],
