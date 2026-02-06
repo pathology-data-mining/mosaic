@@ -165,7 +165,9 @@ def extract_user_info(request, is_hf_spaces: bool = False) -> UserInfo:
 
         # Decode base64 payload (add padding if needed)
         payload = parts[1]
-        payload += "=" * (4 - len(payload) % 4)
+        pad_len = (4 - (len(payload) % 4)) % 4
+        if pad_len:
+            payload += "=" * pad_len
         decoded = base64.urlsafe_b64decode(payload)
         token_data = json.loads(decoded)
 
