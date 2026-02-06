@@ -9,6 +9,7 @@ This module provides helper utilities:
 """
 
 import base64
+import binascii
 import hashlib
 import json
 import re
@@ -16,6 +17,8 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Dict, Optional
+
+from loguru import logger
 
 
 @contextmanager
@@ -130,7 +133,7 @@ def extract_user_info(request, is_hf_spaces: bool = False) -> UserInfo:
         UserInfo with is_logged_in and username (or defaults if extraction fails)
 
     Example:
-        user_info = extract_user_info(request, IS_ZEROGPU)
+        user_info = extract_user_info(request, IS_HF_SPACES)
         if user_info.is_logged_in:
             print(f"User: {user_info.username}")
     """
@@ -171,9 +174,9 @@ def extract_user_info(request, is_hf_spaces: bool = False) -> UserInfo:
             username = token_data["onBehalfOf"]["user"]
             return UserInfo(is_logged_in=True, username=username)
 
-    except Exception:
-        # Silently fail and return default UserInfo
-        # (Logging happens at call site if needed)
-        pass
+    except (json.JSONDecodeError, binascii.Error, UnicodeDecodeError, ValueError) as e:
+        logger.warning(f"Failed to decode JWT token from request: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error extracting user info: {e}")
 
     return UserInfo()

@@ -108,6 +108,37 @@ class TestUsageEvent:
         assert data["slide_count"] == 3
         assert data["session_hash"] is None
 
+    def test_user_info_fields(self):
+        """Test is_logged_in and hf_username fields in UsageEvent."""
+        event = UsageEvent(
+            event_type="analysis_start",
+            analysis_id="test-123",
+            session_hash=None,
+            slide_count=1,
+            is_logged_in=True,
+            hf_username="testuser",
+        )
+
+        assert event.is_logged_in is True
+        assert event.hf_username == "testuser"
+
+        data = event.to_dict()
+        assert data["is_logged_in"] is True
+        assert data["hf_username"] == "testuser"
+
+    def test_user_info_fields_default_none(self):
+        """Test that user info fields default to None in to_dict()."""
+        event = UsageEvent(
+            event_type="analysis_start",
+            analysis_id="test-123",
+            session_hash=None,
+            slide_count=1,
+        )
+
+        data = event.to_dict()
+        assert data["is_logged_in"] is None
+        assert data["hf_username"] is None
+
 
 class TestResourceEvent:
     """Tests for ResourceEvent."""
@@ -146,6 +177,20 @@ class TestResourceEvent:
         data = event.to_dict()
         assert data["total_duration_sec"] == 100.0
         assert data["tile_count"] == 500
+
+    def test_user_info_fields(self):
+        """Test is_logged_in and hf_username fields in ResourceEvent."""
+        event = ResourceEvent(
+            analysis_id="test-123",
+            session_hash=None,
+            total_duration_sec=100.0,
+            is_logged_in=True,
+            hf_username="testuser",
+        )
+
+        data = event.to_dict()
+        assert data["is_logged_in"] is True
+        assert data["hf_username"] == "testuser"
 
 
 class TestFailureEvent:
@@ -189,6 +234,20 @@ class TestFailureEvent:
         data = event.to_dict()
         assert data["error_type"] == "MemoryError"
         assert data["error_stage"] == "ctranspath"
+
+    def test_user_info_fields(self):
+        """Test is_logged_in and hf_username fields in FailureEvent."""
+        event = FailureEvent(
+            error_type="ValueError",
+            error_message="test error",
+            error_stage="upload",
+            is_logged_in=False,
+            hf_username=None,
+        )
+
+        data = event.to_dict()
+        assert data["is_logged_in"] is False
+        assert data["hf_username"] is None
 
 
 class TestEventIdGeneration:

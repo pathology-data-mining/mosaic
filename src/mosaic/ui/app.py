@@ -33,7 +33,7 @@ from mosaic.ui.utils import (
 )
 from mosaic.analysis import analyze_slide
 from mosaic.model_manager import load_all_models
-from mosaic.hardware import DEFAULT_CONCURRENCY_LIMIT, IS_T4_GPU, GPU_TYPE
+from mosaic.hardware import DEFAULT_CONCURRENCY_LIMIT, IS_HF_SPACES, IS_T4_GPU, GPU_TYPE
 from mosaic.telemetry import extract_user_info
 from mosaic.tcga import (
     fetch_slide,
@@ -218,7 +218,7 @@ def analyze_slides(
     session_hash = request.session_hash if request else None
 
     # Extract user info for telemetry (HF Spaces only)
-    user_info = extract_user_info(request, tracker.config.is_hf_spaces)
+    user_info = extract_user_info(request, IS_HF_SPACES)
 
     # Wait for core models download to complete (Paladin models can continue in background)
     if _model_download_thread is not None and not _core_models_complete:

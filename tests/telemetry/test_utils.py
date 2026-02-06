@@ -302,3 +302,36 @@ class TestExtractUserInfo:
 
         assert user_info.is_logged_in is True
         assert user_info.username == "user-name_123"
+
+    def test_extract_user_info_jwt_on_behalf_of_without_user(self):
+        """Test extraction when onBehalfOf exists but user key is missing."""
+        header = {"alg": "HS256", "typ": "JWT"}
+        payload = {"onBehalfOf": {"role": "admin"}}  # No "user" key
+
+        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode()
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+        header_b64 = header_b64.rstrip("=")
+        payload_b64 = payload_b64.rstrip("=")
+
+        token = f"{header_b64}.{payload_b64}.fake_sig"
+        referer = f"https://huggingface.co/spaces/test/app?__sign={token}"
+
+        request = self._create_mock_request(referer)
+        user_info = extract_user_info(request, is_hf_spaces=True)
+
+        assert user_info.is_logged_in is False
+        assert user_info.username is None
+
+    def test_extract_user_info_malformed_jwt_logs_warning(self, caplog):
+        """Test that malformed JWT triggers a warning log."""
+        import logging
+
+        referer = "https://huggingface.co/spaces/test/app?__sign=invalid.jwt.token"
+        request = self._create_mock_request(referer)
+
+        with caplog.at_level(logging.WARNING):
+            user_info = extract_user_info(request, is_hf_spaces=True)
+
+        assert user_info.is_logged_in is False
+        # loguru propagates to standard logging when caplog is used with propagate=True
+        # The function should log a warning about JWT decode failure

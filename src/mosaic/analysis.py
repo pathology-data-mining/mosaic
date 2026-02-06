@@ -26,6 +26,7 @@ from mosaic.telemetry import extract_user_info
 # Import centralized hardware detection
 from mosaic.hardware import (
     spaces,
+    IS_HF_SPACES,
     IS_ZEROGPU,
     IS_T4_GPU,
     GPU_TYPE,
@@ -808,7 +809,7 @@ def analyze_slide(
         raise gr.Error("Please upload a slide.")
 
     # Extract user info for telemetry (HF Spaces only)
-    user_info = extract_user_info(request, IS_ZEROGPU)
+    user_info = extract_user_info(request, IS_HF_SPACES)
 
     # Initialize telemetry for resource tracking
     slide_start_time = time_module.time()

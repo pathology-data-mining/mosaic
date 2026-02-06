@@ -232,7 +232,7 @@ class TelemetryTracker:
             duration_sec: Analysis duration (for analysis_complete only)
             success: Whether analysis succeeded (for analysis_complete only)
             is_logged_in: True if HF user logged in
-            hf_username: Raw HF username (HF Spaces only)
+            hf_username: HF username (HF Spaces only)
         """
         if not self._is_enabled():
             return
@@ -298,7 +298,7 @@ class TelemetryTracker:
             gpu_type: GPU type string
             peak_gpu_memory_gb: Peak GPU memory usage in GB
             is_logged_in: True if HF user logged in
-            hf_username: Raw HF username (HF Spaces only)
+            hf_username: HF username (HF Spaces only)
         """
         if not self._is_enabled():
             return
@@ -349,7 +349,7 @@ class TelemetryTracker:
             slide_count: Number of slides if known
             gpu_type: GPU type string
             is_logged_in: True if HF user logged in
-            hf_username: Raw HF username (HF Spaces only)
+            hf_username: HF username (HF Spaces only)
         """
         if not self._is_enabled():
             return
