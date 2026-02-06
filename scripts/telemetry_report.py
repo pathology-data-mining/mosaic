@@ -241,6 +241,44 @@ def generate_text_report(telemetry_dir: Path, date: Optional[str] = None) -> str
                 lines.append(f"  {sc}: {count}")
             lines.append("")
 
+    # User summary (from usage events)
+    all_events = usage + resources + failures
+    logged_in_events = [e for e in all_events if e.get("is_logged_in")]
+    anonymous_events = [e for e in all_events if not e.get("is_logged_in")]
+    if logged_in_events or anonymous_events:
+        lines.append("=== USER SUMMARY ===")
+        lines.append(
+            f"Logged-in users: {len(set(e.get('hf_username') for e in logged_in_events if e.get('hf_username')))}"
+        )
+        lines.append(
+            f"Anonymous sessions: {len(set(e.get('session_hash') for e in anonymous_events if e.get('session_hash')))}"
+        )
+        lines.append("")
+
+        # Per-user breakdown from analysis_start events
+        user_starts = [
+            u
+            for u in usage
+            if u.get("event_type") == "analysis_start" and u.get("hf_username")
+        ]
+        if user_starts:
+            user_stats = {}
+            for u in user_starts:
+                name = u["hf_username"]
+                if name not in user_stats:
+                    user_stats[name] = {"analyses": 0, "slides": 0}
+                user_stats[name]["analyses"] += 1
+                user_stats[name]["slides"] += u.get("slide_count", 0)
+
+            lines.append("By user:")
+            for name, stats in sorted(
+                user_stats.items(), key=lambda x: -x[1]["analyses"]
+            ):
+                lines.append(
+                    f"  {name}: {stats['analyses']} analyses, {stats['slides']} slides"
+                )
+            lines.append("")
+
     # Resource summary
     if resources:
         total_duration = sum(r.get("total_duration_sec", 0) for r in resources)
@@ -403,6 +441,51 @@ def generate_html_report(telemetry_dir: Path, date: Optional[str] = None) -> str
         html.append(f"<tr><td>Total slides</td><td>{total_slides}</td></tr>")
         html.append(f"<tr><td>Unique sessions</td><td>{unique_sessions}</td></tr>")
         html.append("</table>")
+
+    # User summary
+    all_events = usage + resources + failures
+    logged_in_events = [e for e in all_events if e.get("is_logged_in")]
+    anonymous_events = [e for e in all_events if not e.get("is_logged_in")]
+    if logged_in_events or anonymous_events:
+        unique_users = set(
+            e.get("hf_username") for e in logged_in_events if e.get("hf_username")
+        )
+        anon_sessions = set(
+            e.get("session_hash") for e in anonymous_events if e.get("session_hash")
+        )
+
+        html.append("<h2>User Summary</h2>")
+        html.append("<table>")
+        html.append(f"<tr><td>Logged-in users</td><td>{len(unique_users)}</td></tr>")
+        html.append(
+            f"<tr><td>Anonymous sessions</td><td>{len(anon_sessions)}</td></tr>"
+        )
+        html.append("</table>")
+
+        # Per-user breakdown
+        user_starts = [
+            u
+            for u in usage
+            if u.get("event_type") == "analysis_start" and u.get("hf_username")
+        ]
+        if user_starts:
+            user_stats = {}
+            for u in user_starts:
+                name = u["hf_username"]
+                if name not in user_stats:
+                    user_stats[name] = {"analyses": 0, "slides": 0}
+                user_stats[name]["analyses"] += 1
+                user_stats[name]["slides"] += u.get("slide_count", 0)
+
+            html.append("<table>")
+            html.append("<tr><th>User</th><th>Analyses</th><th>Slides</th></tr>")
+            for name, stats in sorted(
+                user_stats.items(), key=lambda x: -x[1]["analyses"]
+            ):
+                html.append(
+                    f"<tr><td>{name}</td><td>{stats['analyses']}</td><td>{stats['slides']}</td></tr>"
+                )
+            html.append("</table>")
 
     # Failures
     if failures:
