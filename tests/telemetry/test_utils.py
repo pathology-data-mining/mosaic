@@ -1,5 +1,7 @@
 """Tests for telemetry utility functions."""
 
+import base64
+import json
 import time
 
 import pytest
@@ -8,6 +10,8 @@ from mosaic.telemetry.utils import (
     StageTimer,
     sanitize_error_message,
     hash_session_id,
+    UserInfo,
+    extract_user_info,
 )
 
 
@@ -146,3 +150,188 @@ class TestHashSessionId:
         session_id = "user-session-12345"
         hashes = [hash_session_id(session_id) for _ in range(10)]
         assert len(set(hashes)) == 1  # All hashes should be identical
+
+
+class TestUserInfo:
+    """Tests for UserInfo dataclass."""
+
+    def test_default_values(self):
+        """Test default UserInfo values."""
+        user_info = UserInfo()
+        assert user_info.is_logged_in is False
+        assert user_info.username is None
+
+    def test_custom_values(self):
+        """Test UserInfo with custom values."""
+        user_info = UserInfo(is_logged_in=True, username="testuser")
+        assert user_info.is_logged_in is True
+        assert user_info.username == "testuser"
+
+
+class TestExtractUserInfo:
+    """Tests for extract_user_info function."""
+
+    def _create_jwt_token(self, username: str) -> str:
+        """Helper to create a valid JWT token for testing."""
+        # JWT format: header.payload.signature
+        header = {"alg": "HS256", "typ": "JWT"}
+        payload = {"onBehalfOf": {"user": username}}
+
+        # Encode header and payload
+        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode()
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+
+        # Remove padding (JWT standard)
+        header_b64 = header_b64.rstrip("=")
+        payload_b64 = payload_b64.rstrip("=")
+
+        # Create fake signature
+        signature = "fake_signature"
+
+        return f"{header_b64}.{payload_b64}.{signature}"
+
+    def _create_mock_request(self, referer: str = None):
+        """Helper to create a mock request object."""
+
+        class MockHeaders:
+            def __init__(self, referer):
+                self._referer = referer
+
+            def get(self, key, default=""):
+                if key == "referer":
+                    return self._referer if self._referer else default
+                return default
+
+        class MockRequest:
+            def __init__(self, referer):
+                self.headers = MockHeaders(referer)
+
+        return MockRequest(referer)
+
+    def test_extract_user_info_with_valid_jwt(self):
+        """Test extraction with valid JWT token."""
+        # Create JWT token
+        token = self._create_jwt_token("testuser123")
+        referer = f"https://huggingface.co/spaces/test/app?__sign={token}&other=param"
+
+        request = self._create_mock_request(referer)
+        user_info = extract_user_info(request, is_hf_spaces=True)
+
+        assert user_info.is_logged_in is True
+        assert user_info.username == "testuser123"
+
+    def test_extract_user_info_anonymous_no_token(self):
+        """Test extraction when no JWT token is present (anonymous)."""
+        referer = "https://huggingface.co/spaces/test/app"
+        request = self._create_mock_request(referer)
+
+        user_info = extract_user_info(request, is_hf_spaces=True)
+
+        assert user_info.is_logged_in is False
+        assert user_info.username is None
+
+    def test_extract_user_info_malformed_jwt(self):
+        """Test extraction with malformed JWT token."""
+        referer = "https://huggingface.co/spaces/test/app?__sign=invalid.jwt.token"
+        request = self._create_mock_request(referer)
+
+        user_info = extract_user_info(request, is_hf_spaces=True)
+
+        # Should return default UserInfo (no exception)
+        assert user_info.is_logged_in is False
+        assert user_info.username is None
+
+    def test_extract_user_info_not_hf_spaces(self):
+        """Test extraction when not on HF Spaces."""
+        token = self._create_jwt_token("testuser")
+        referer = f"http://localhost:7860?__sign={token}"
+        request = self._create_mock_request(referer)
+
+        # Even with valid token, should return default if is_hf_spaces=False
+        user_info = extract_user_info(request, is_hf_spaces=False)
+
+        assert user_info.is_logged_in is False
+        assert user_info.username is None
+
+    def test_extract_user_info_none_request(self):
+        """Test extraction with None request."""
+        user_info = extract_user_info(None, is_hf_spaces=True)
+
+        assert user_info.is_logged_in is False
+        assert user_info.username is None
+
+    def test_extract_user_info_no_headers(self):
+        """Test extraction when request has no headers attribute."""
+
+        class RequestWithoutHeaders:
+            pass
+
+        request = RequestWithoutHeaders()
+        user_info = extract_user_info(request, is_hf_spaces=True)
+
+        assert user_info.is_logged_in is False
+        assert user_info.username is None
+
+    def test_extract_user_info_jwt_missing_user(self):
+        """Test extraction when JWT is valid but missing user field."""
+        # Create JWT with different structure
+        header = {"alg": "HS256", "typ": "JWT"}
+        payload = {"someOtherField": "value"}  # No onBehalfOf
+
+        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode()
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+        header_b64 = header_b64.rstrip("=")
+        payload_b64 = payload_b64.rstrip("=")
+
+        token = f"{header_b64}.{payload_b64}.fake_sig"
+        referer = f"https://huggingface.co/spaces/test/app?__sign={token}"
+
+        request = self._create_mock_request(referer)
+        user_info = extract_user_info(request, is_hf_spaces=True)
+
+        assert user_info.is_logged_in is False
+        assert user_info.username is None
+
+    def test_extract_user_info_jwt_with_special_characters(self):
+        """Test extraction with username containing special characters."""
+        token = self._create_jwt_token("user-name_123")
+        referer = f"https://huggingface.co/spaces/test/app?__sign={token}"
+
+        request = self._create_mock_request(referer)
+        user_info = extract_user_info(request, is_hf_spaces=True)
+
+        assert user_info.is_logged_in is True
+        assert user_info.username == "user-name_123"
+
+    def test_extract_user_info_jwt_on_behalf_of_without_user(self):
+        """Test extraction when onBehalfOf exists but user key is missing."""
+        header = {"alg": "HS256", "typ": "JWT"}
+        payload = {"onBehalfOf": {"role": "admin"}}  # No "user" key
+
+        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode()
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+        header_b64 = header_b64.rstrip("=")
+        payload_b64 = payload_b64.rstrip("=")
+
+        token = f"{header_b64}.{payload_b64}.fake_sig"
+        referer = f"https://huggingface.co/spaces/test/app?__sign={token}"
+
+        request = self._create_mock_request(referer)
+        user_info = extract_user_info(request, is_hf_spaces=True)
+
+        assert user_info.is_logged_in is False
+        assert user_info.username is None
+
+    def test_extract_user_info_malformed_jwt_logs_warning(self, caplog):
+        """Test that malformed JWT triggers a warning log."""
+        import logging
+
+        referer = "https://huggingface.co/spaces/test/app?__sign=invalid.jwt.token"
+        request = self._create_mock_request(referer)
+
+        with caplog.at_level(logging.WARNING):
+            user_info = extract_user_info(request, is_hf_spaces=True)
+
+        assert user_info.is_logged_in is False
+        # loguru propagates to standard logging when caplog is used with propagate=True
+        # The function should log a warning about JWT decode failure

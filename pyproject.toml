@@ -27,7 +27,7 @@ mosaic = "mosaic.gradio_app:main"
 
 [dependency-groups]
 dev = [
-  "black>=25.1.0",
+  "black==25.12.0",
   "pylint>=3.3.6",
   "pytest>=8.3.0",
   "pytest-cov>=6.0.0",
@@ -47,6 +47,10 @@ disable = [
 # uv will fall back to git credential helper if ${GH_TOKEN} is empty
 paladin = { git = "ssh://git@github.com/pathology-data-mining/paladin.git", rev = "dev" }
 mussel = { git = "https://github.com/pathology-data-mining/Mussel.git", rev = "mosaic-dev" }
+
+[tool.black]
+target-version = ["py310", "py311"]
+line-length = 88
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

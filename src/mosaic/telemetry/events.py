@@ -65,6 +65,8 @@ class UsageEvent:
     gpu_type: Optional[str] = None  # From hardware.GPU_TYPE
     duration_sec: Optional[float] = None  # On completion only
     success: Optional[bool] = None  # On completion only
+    is_logged_in: Optional[bool] = None  # True if HF user logged in
+    hf_username: Optional[str] = None  # Raw HF username (HF Spaces only)
     event_id: str = field(default_factory=_generate_event_id)
     timestamp: str = field(default_factory=_timestamp_now)
 
@@ -93,6 +95,8 @@ class ResourceEvent:
     batch_size: Optional[int] = None
     gpu_type: Optional[str] = None
     peak_gpu_memory_gb: Optional[float] = None
+    is_logged_in: Optional[bool] = None  # True if HF user logged in
+    hf_username: Optional[str] = None  # Raw HF username (HF Spaces only)
     event_id: str = field(default_factory=_generate_event_id)
     timestamp: str = field(default_factory=_timestamp_now)
 
@@ -115,6 +119,8 @@ class FailureEvent:
     session_hash: Optional[str] = None  # Hashed for privacy
     slide_count: Optional[int] = None
     gpu_type: Optional[str] = None
+    is_logged_in: Optional[bool] = None  # True if HF user logged in
+    hf_username: Optional[str] = None  # Raw HF username (HF Spaces only)
     event_id: str = field(default_factory=_generate_event_id)
     timestamp: str = field(default_factory=_timestamp_now)
 

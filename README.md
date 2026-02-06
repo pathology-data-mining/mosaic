@@ -510,12 +510,13 @@ Mosaic collects anonymous usage telemetry to help improve the tool. This section
 
 ### What Data is Collected
 
-When running on HuggingFace Spaces, Mosaic collects the following **anonymous** telemetry data:
+When running on HuggingFace Spaces, Mosaic collects the following telemetry data:
 
 - **Application events**: App start/shutdown, analysis start/complete, heartbeat
 - **Analysis metadata**: Number of slides processed, GPU type, duration, success/failure status
 - **Error information**: Error types and messages (no personal data or slide content)
 - **Configuration**: Segmentation config used, cancer subtype settings (no patient data)
+- **HF user info** (Spaces only): HuggingFace username and login status for logged-in users
 
 ### What is NOT Collected
 
@@ -540,6 +541,86 @@ Telemetry is **only active on HuggingFace Spaces** and can be disabled:
 - Telemetry data is stored in a private HuggingFace dataset (if configured)
 - Data is used only for improving Mosaic's performance and user experience
 - No telemetry data is shared with third parties
+
+### Telemetry Reports
+
+A reporting script is included to generate usage summaries from collected telemetry data:
+
+```bash
+# Full report (all time)
+python scripts/telemetry_report.py /path/to/telemetry
+
+# Daily report for yesterday
+python scripts/telemetry_report.py /path/to/telemetry --daily
+
+# Report for a specific date
+python scripts/telemetry_report.py /path/to/telemetry --date 2026-01-20
+
+# Pull data from HuggingFace Dataset and generate report
+python scripts/telemetry_report.py --hf-repo PDM-Group/mosaic-telemetry
+
+# HTML format for email
+python scripts/telemetry_report.py /path/to/telemetry --format html
+
+# Email report (skip if no data)
+python scripts/telemetry_report.py /path/to/telemetry --daily --email team@example.com --skip-empty
+```
+
+Reports include the following sections:
+
+- **Cost Summary**: App uptime, active vs idle time, estimated cost at the configured hourly rate
+- **Usage Summary**: Analysis counts, slides processed, breakdowns by site type and segmentation config
+- **User Summary**: Logged-in vs anonymous user counts, per-user analysis and slide totals
+- **Resource Summary**: Total processing time, tile counts, peak GPU memory
+- **Failures**: Error type counts and recent failure messages
+
+Example output:
+
+```
+============================================================
+MOSAIC TELEMETRY REPORT for 2026-02-05
+============================================================
+Generated: 2026-02-06T12:00:00Z
+
+=== COST SUMMARY ===
+App sessions: 1
+Total uptime: 10.00 hours
+  - Active analysis: 0.26 hrs (2.6%)
+  - Idle time: 9.74 hrs (97.4%)
+Estimated cost: $4.00 (@ $0.4/hr)
+Cost per analysis: $1.00
+
+=== USAGE SUMMARY ===
+Analyses started: 4
+Analyses completed: 4
+Successful analyses: 4
+Total slides processed: 11
+Unique sessions: 4
+Average analysis duration: 231.4s
+
+=== USER SUMMARY ===
+Logged-in users: 3
+Anonymous sessions: 1
+
+By user:
+  dr_smith: 2 analyses, 5 slides
+  onc_research_lab: 1 analyses, 5 slides
+
+=== RESOURCE SUMMARY ===
+Total slide processing time: 0.26 hours
+Total tiles processed: 68,055
+Peak GPU memory: 14.10 GB
+
+=== NO FAILURES ===
+
+============================================================
+```
+
+For automated daily reports, add a cron entry:
+
+```
+0 8 * * * python /app/scripts/telemetry_report.py /data/telemetry --daily --email team@example.com --skip-empty
+```
 
 ### Transparency
 

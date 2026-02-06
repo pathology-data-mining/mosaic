@@ -215,6 +215,8 @@ class TelemetryTracker:
         gpu_type: Optional[str] = None,
         duration_sec: Optional[float] = None,
         success: Optional[bool] = None,
+        is_logged_in: Optional[bool] = None,
+        hf_username: Optional[str] = None,
     ) -> None:
         """Log a usage event (analysis_start or analysis_complete).
 
@@ -229,6 +231,8 @@ class TelemetryTracker:
             gpu_type: GPU type string
             duration_sec: Analysis duration (for analysis_complete only)
             success: Whether analysis succeeded (for analysis_complete only)
+            is_logged_in: True if HF user logged in
+            hf_username: HF username (HF Spaces only)
         """
         if not self._is_enabled():
             return
@@ -244,6 +248,8 @@ class TelemetryTracker:
             gpu_type=gpu_type,
             duration_sec=duration_sec,
             success=success,
+            is_logged_in=is_logged_in,
+            hf_username=hf_username,
         )
         self.storage.write_usage_event(event)
 
@@ -272,6 +278,8 @@ class TelemetryTracker:
         batch_size: Optional[int] = None,
         gpu_type: Optional[str] = None,
         peak_gpu_memory_gb: Optional[float] = None,
+        is_logged_in: Optional[bool] = None,
+        hf_username: Optional[str] = None,
     ) -> None:
         """Log a resource event for a completed analysis.
 
@@ -289,6 +297,8 @@ class TelemetryTracker:
             batch_size: Batch size used
             gpu_type: GPU type string
             peak_gpu_memory_gb: Peak GPU memory usage in GB
+            is_logged_in: True if HF user logged in
+            hf_username: HF username (HF Spaces only)
         """
         if not self._is_enabled():
             return
@@ -307,6 +317,8 @@ class TelemetryTracker:
             batch_size=batch_size,
             gpu_type=gpu_type,
             peak_gpu_memory_gb=peak_gpu_memory_gb,
+            is_logged_in=is_logged_in,
+            hf_username=hf_username,
         )
         self.storage.write_resource_event(event)
 
@@ -323,6 +335,8 @@ class TelemetryTracker:
         session_hash: Optional[str] = None,
         slide_count: Optional[int] = None,
         gpu_type: Optional[str] = None,
+        is_logged_in: Optional[bool] = None,
+        hf_username: Optional[str] = None,
     ) -> None:
         """Log a failure event.
 
@@ -334,6 +348,8 @@ class TelemetryTracker:
             session_hash: Gradio session hash (will be hashed for privacy)
             slide_count: Number of slides if known
             gpu_type: GPU type string
+            is_logged_in: True if HF user logged in
+            hf_username: HF username (HF Spaces only)
         """
         if not self._is_enabled():
             return
@@ -346,6 +362,8 @@ class TelemetryTracker:
             session_hash=hash_session_id(session_hash),
             slide_count=slide_count,
             gpu_type=gpu_type,
+            is_logged_in=is_logged_in,
+            hf_username=hf_username,
         )
         self.storage.write_failure_event(event)
 

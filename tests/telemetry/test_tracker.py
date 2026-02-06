@@ -137,6 +137,23 @@ class TestUsageEvents:
         assert event["session_hash"] is not None
         assert event["session_hash"] != "abc123"
 
+    def test_log_usage_event_with_user_info(self, tracker, temp_dir):
+        """Test that is_logged_in and hf_username are persisted in usage events."""
+        tracker.log_usage_event(
+            event_type="analysis_start",
+            analysis_id="test-user-info",
+            slide_count=1,
+            is_logged_in=True,
+            hf_username="testuser",
+        )
+
+        usage_files = list((temp_dir / "daily").glob("usage_*.jsonl"))
+        with open(usage_files[0]) as f:
+            event = json.loads(f.read().strip())
+
+        assert event["is_logged_in"] is True
+        assert event["hf_username"] == "testuser"
+
     def test_log_analysis_complete(self, tracker, temp_dir):
         """Test logging analysis complete event."""
         tracker.log_app_start()
@@ -206,6 +223,22 @@ class TestResourceEvents:
         assert event["tile_count"] == 1000
         assert event["peak_gpu_memory_gb"] == 12.5
 
+    def test_log_resource_event_with_user_info(self, tracker, temp_dir):
+        """Test that is_logged_in and hf_username are persisted in resource events."""
+        tracker.log_resource_event(
+            analysis_id="test-user-info",
+            total_duration_sec=60.0,
+            is_logged_in=True,
+            hf_username="testuser",
+        )
+
+        resource_files = list((temp_dir / "daily").glob("resource_*.jsonl"))
+        with open(resource_files[0]) as f:
+            event = json.loads(f.read().strip())
+
+        assert event["is_logged_in"] is True
+        assert event["hf_username"] == "testuser"
+
 
 class TestFailureEvents:
     """Tests for failure event logging."""
@@ -230,6 +263,23 @@ class TestFailureEvents:
         assert event["error_type"] == "ValueError"
         assert event["error_stage"] == "upload"
         assert event["analysis_id"] == "test-123"
+
+    def test_log_failure_event_with_user_info(self, tracker, temp_dir):
+        """Test that is_logged_in and hf_username are persisted in failure events."""
+        tracker.log_failure_event(
+            error_type="ValueError",
+            error_message="test error",
+            error_stage="upload",
+            is_logged_in=False,
+            hf_username=None,
+        )
+
+        failure_files = list((temp_dir / "daily").glob("failure_*.jsonl"))
+        with open(failure_files[0]) as f:
+            event = json.loads(f.read().strip())
+
+        assert event["is_logged_in"] is False
+        assert event["hf_username"] is None
 
     def test_error_message_sanitized(self, tracker, temp_dir):
         """Test that error messages are sanitized."""

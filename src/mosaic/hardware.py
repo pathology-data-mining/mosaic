@@ -8,6 +8,9 @@ import os
 import torch
 from loguru import logger
 
+# Detect HuggingFace Spaces environment
+IS_HF_SPACES = bool(os.environ.get("SPACE_ID"))
+
 # Detect HuggingFace Spaces ZeroGPU environment
 try:
     import spaces
@@ -95,6 +98,7 @@ def get_gpu_metrics() -> dict:
 __all__ = [
     "spaces",
     "HAS_SPACES",
+    "IS_HF_SPACES",
     "IS_ZEROGPU",
     "IS_T4_GPU",
     "GPU_NAME",

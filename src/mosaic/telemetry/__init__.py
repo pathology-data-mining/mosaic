@@ -8,7 +8,7 @@ This module provides lightweight telemetry for the Mosaic HuggingFace app to tra
 Key features:
 - Gradio-only: No telemetry for CLI batch processing
 - No external dependencies: Uses stdlib only (json, dataclasses)
-- Privacy-first: Session IDs hashed, no file paths or PII stored
+- Privacy-first: Session IDs hashed, no file paths stored. HF usernames recorded for usage tracking.
 - File-based storage: JSONL format with daily rotation
 - HF Spaces compatible: Uses /data persistent storage when available
 
@@ -43,7 +43,13 @@ from mosaic.telemetry.events import (
 )
 from mosaic.telemetry.storage import TelemetryStorage
 from mosaic.telemetry.tracker import TelemetryTracker
-from mosaic.telemetry.utils import StageTimer, sanitize_error_message, hash_session_id
+from mosaic.telemetry.utils import (
+    StageTimer,
+    sanitize_error_message,
+    hash_session_id,
+    UserInfo,
+    extract_user_info,
+)
 
 __all__ = [
     # Main interface
@@ -61,4 +67,6 @@ __all__ = [
     "StageTimer",
     "sanitize_error_message",
     "hash_session_id",
+    "UserInfo",
+    "extract_user_info",
 ]

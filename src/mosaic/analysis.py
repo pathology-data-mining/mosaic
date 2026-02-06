@@ -21,10 +21,12 @@ from mussel.cli.tessellate import BiopsySegConfig, ResectionSegConfig, TcgaSegCo
 from loguru import logger
 from mosaic.inference import run_aeon, run_paladin
 from mosaic.data_directory import get_data_directory
+from mosaic.telemetry import extract_user_info
 
 # Import centralized hardware detection
 from mosaic.hardware import (
     spaces,
+    IS_HF_SPACES,
     IS_ZEROGPU,
     IS_T4_GPU,
     GPU_TYPE,
@@ -806,6 +808,9 @@ def analyze_slide(
     if slide_path is None:
         raise gr.Error("Please upload a slide.")
 
+    # Extract user info for telemetry (HF Spaces only)
+    user_info = extract_user_info(request, IS_HF_SPACES)
+
     # Initialize telemetry for resource tracking
     slide_start_time = time_module.time()
     timings = {}  # Collect stage timings for telemetry
@@ -899,54 +904,11 @@ def analyze_slide(
     else:
         # Single-slide mode: load models on-demand
         # Check if user is logged in for longer GPU duration (HF Spaces only)
-        is_logged_in = False
-        username = "anonymous"
-        if request is not None:
-            try:
-                # Check if user is logged in via JWT token in referer
-                # HF Spaces doesn't populate request.username but includes JWT in URL
-                if hasattr(request, "headers"):
-                    referer = request.headers.get("referer", "")
-                    if "__sign=" in referer:
-                        # Extract and decode JWT token
-                        import re
-                        import json
-                        import base64
+        is_logged_in = user_info.is_logged_in
+        username = user_info.username or "anonymous"
 
-                        match = re.search(r"__sign=([^&]+)", referer)
-                        if match:
-                            token = match.group(1)
-                            try:
-                                # JWT format: header.payload.signature
-                                # We only need the payload (middle part)
-                                parts = token.split(".")
-                                if len(parts) == 3:
-                                    # Decode base64 payload (add padding if needed)
-                                    payload = parts[1]
-                                    payload += "=" * (4 - len(payload) % 4)
-                                    decoded = base64.urlsafe_b64decode(payload)
-                                    token_data = json.loads(decoded)
-
-                                    # Check if user is in token
-                                    if (
-                                        "onBehalfOf" in token_data
-                                        and "user" in token_data["onBehalfOf"]
-                                    ):
-                                        username = token_data["onBehalfOf"]["user"]
-                                        is_logged_in = True
-                                        logger.info(
-                                            f"Found user in JWT token: {username}"
-                                        )
-                            except Exception as e:
-                                logger.warning(f"Failed to decode JWT: {e}")
-
-                if IS_ZEROGPU:
-                    logger.info(f"User: {username} | Logged in: {is_logged_in}")
-            except Exception as e:
-                logger.warning(f"Failed to detect user: {e}")
-                import traceback
-
-                logger.warning(traceback.format_exc())
+        if IS_ZEROGPU:
+            logger.info(f"User: {username} | Logged in: {is_logged_in}")
 
         if is_logged_in:
             if IS_ZEROGPU:
@@ -1004,6 +966,8 @@ def analyze_slide(
             batch_size=timings.get("batch_size"),
             gpu_type=gpu_metrics.get("gpu_type"),
             peak_gpu_memory_gb=gpu_metrics.get("max_memory_allocated_gb"),
+            is_logged_in=user_info.is_logged_in,
+            hf_username=user_info.username,
         )
 
     return slide_mask, aeon_results, paladin_results
