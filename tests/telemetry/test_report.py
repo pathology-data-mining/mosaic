@@ -287,6 +287,81 @@ class TestGenerateTextReport:
         report = generate_text_report(tmp_path, date="2026-01-20")
         assert "for 2026-01-20" in report
 
+    def test_report_with_cached_analysis(self, tmp_path):
+        """Test report shows cached analysis count when present."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        usage = [
+            {
+                "event_type": "analysis_start",
+                "slide_count": 1,
+                "session_hash": "s1",
+                "site_type": "Primary",
+                "seg_config": "TCGA",
+            },
+            {
+                "event_type": "analysis_complete",
+                "success": True,
+                "duration_sec": 2.0,
+                "slide_count": 1,
+                "from_cache": True,
+            },
+            {
+                "event_type": "analysis_start",
+                "slide_count": 1,
+                "session_hash": "s2",
+                "site_type": "Primary",
+                "seg_config": "TCGA",
+            },
+            {
+                "event_type": "analysis_complete",
+                "success": True,
+                "duration_sec": 120.0,
+                "slide_count": 1,
+            },
+        ]
+
+        file_path = daily_dir / "usage_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for event in usage:
+                f.write(json.dumps(event) + "\n")
+
+        report = generate_text_report(tmp_path)
+        assert "Cached analyses: 1" in report
+        # Average duration should exclude cached analysis (2s),
+        # only include the fresh one (120s)
+        assert "Average analysis duration: 120.0s" in report
+
+    def test_report_without_cached_analysis(self, tmp_path):
+        """Test report omits cache stats when no cache hits."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        usage = [
+            {
+                "event_type": "analysis_start",
+                "slide_count": 1,
+                "session_hash": "s1",
+                "site_type": "Primary",
+                "seg_config": "Biopsy",
+            },
+            {
+                "event_type": "analysis_complete",
+                "success": True,
+                "duration_sec": 60.0,
+                "slide_count": 1,
+            },
+        ]
+
+        file_path = daily_dir / "usage_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for event in usage:
+                f.write(json.dumps(event) + "\n")
+
+        report = generate_text_report(tmp_path)
+        assert "Cached analyses" not in report
+
     def test_report_with_resources(self, tmp_path):
         """Test report with resource data."""
         daily_dir = tmp_path / "daily"
@@ -346,6 +421,34 @@ class TestGenerateHtmlReport:
         assert "<table>" in report
         assert "Analyses started" in report
         assert "<td>1</td>" in report  # 1 analysis started
+
+    def test_html_with_cached_analysis(self, tmp_path):
+        """Test HTML report shows cached analysis count."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        usage = [
+            {
+                "event_type": "analysis_start",
+                "slide_count": 1,
+                "session_hash": "s1",
+            },
+            {
+                "event_type": "analysis_complete",
+                "success": True,
+                "duration_sec": 2.0,
+                "slide_count": 1,
+                "from_cache": True,
+            },
+        ]
+
+        file_path = daily_dir / "usage_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for event in usage:
+                f.write(json.dumps(event) + "\n")
+
+        report = generate_html_report(tmp_path)
+        assert "Cached analyses" in report
 
     def test_html_with_failures(self, tmp_path):
         """Test HTML report with failures."""

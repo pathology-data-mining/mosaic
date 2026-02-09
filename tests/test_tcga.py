@@ -766,7 +766,11 @@ class TestMetadataCache:
             mode = kwargs.get("mode")
             if mode is None and len(args) > 1:
                 mode = args[1]
-            if "metadata.json" in str(args[0]) and mode is not None and "w" in str(mode):
+            if (
+                "metadata.json" in str(args[0])
+                and mode is not None
+                and "w" in str(mode)
+            ):
                 raise PermissionError("No permission")
             return original_open(*args, **kwargs)
 

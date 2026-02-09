@@ -204,9 +204,13 @@ def generate_text_report(telemetry_dir: Path, date: Optional[str] = None) -> str
             set(u.get("session_hash") for u in usage if u.get("session_hash"))
         )
 
-        # Calculate average duration
+        # Cache hit tracking
+        cached_analyses = [c for c in completes if c.get("from_cache")]
+        fresh_analyses = [c for c in completes if not c.get("from_cache")]
+
+        # Calculate average duration (excluding cached analyses)
         durations = [
-            c.get("duration_sec", 0) for c in completes if c.get("duration_sec")
+            c.get("duration_sec", 0) for c in fresh_analyses if c.get("duration_sec")
         ]
         avg_duration = sum(durations) / len(durations) if durations else 0
 
@@ -215,6 +219,8 @@ def generate_text_report(telemetry_dir: Path, date: Optional[str] = None) -> str
         lines.append(f"Analyses completed: {len(completes)}")
         lines.append(f"Successful analyses: {len(successful)}")
         lines.append(f"Total slides processed: {total_slides}")
+        if cached_analyses:
+            lines.append(f"Cached analyses: {len(cached_analyses)}")
         lines.append(f"Unique sessions: {unique_sessions}")
         if avg_duration > 0:
             lines.append(f"Average analysis duration: {avg_duration:.1f}s")
@@ -431,6 +437,9 @@ def generate_html_report(telemetry_dir: Path, date: Optional[str] = None) -> str
             set(u.get("session_hash") for u in usage if u.get("session_hash"))
         )
 
+        # Cache hit tracking
+        cached_analyses = [c for c in completes if c.get("from_cache")]
+
         html.append("<h2>Usage Summary</h2>")
         html.append("<table>")
         html.append(f"<tr><td>Analyses started</td><td>{len(starts)}</td></tr>")
@@ -439,6 +448,10 @@ def generate_html_report(telemetry_dir: Path, date: Optional[str] = None) -> str
             f"<tr><td>Successful analyses</td><td class='success'>{len(successful)}</td></tr>"
         )
         html.append(f"<tr><td>Total slides</td><td>{total_slides}</td></tr>")
+        if cached_analyses:
+            html.append(
+                f"<tr><td>Cached analyses</td><td>{len(cached_analyses)}</td></tr>"
+            )
         html.append(f"<tr><td>Unique sessions</td><td>{unique_sessions}</td></tr>")
         html.append("</table>")
 

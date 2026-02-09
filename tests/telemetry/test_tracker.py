@@ -196,6 +196,55 @@ class TestUsageEvents:
         assert metrics["analysis_count"] == 2
         assert metrics["analysis_time_sec"] == 105.0
 
+    def test_log_usage_event_with_from_cache(self, tracker, temp_dir):
+        """Test that from_cache is persisted in usage events."""
+        tracker.log_usage_event(
+            event_type="analysis_complete",
+            analysis_id="test-cache",
+            slide_count=1,
+            duration_sec=2.0,
+            success=True,
+            from_cache=True,
+        )
+
+        usage_files = list((temp_dir / "daily").glob("usage_*.jsonl"))
+        with open(usage_files[0]) as f:
+            event = json.loads(f.read().strip())
+
+        assert event["from_cache"] is True
+
+    def test_cached_analysis_excludes_duration_from_metrics(self, tracker):
+        """Test that cached analyses don't count toward analysis_time_sec."""
+        tracker.log_app_start()
+        tracker.log_usage_event(
+            event_type="analysis_complete",
+            analysis_id="test-cache",
+            slide_count=1,
+            duration_sec=2.0,
+            success=True,
+            from_cache=True,
+        )
+
+        metrics = tracker._get_session_metrics()
+        assert metrics["analysis_count"] == 1
+        assert metrics["analysis_time_sec"] == 0.0
+
+    def test_fresh_analysis_includes_duration_in_metrics(self, tracker):
+        """Test that fresh analyses count toward analysis_time_sec."""
+        tracker.log_app_start()
+        tracker.log_usage_event(
+            event_type="analysis_complete",
+            analysis_id="test-fresh",
+            slide_count=1,
+            duration_sec=60.0,
+            success=True,
+            from_cache=False,
+        )
+
+        metrics = tracker._get_session_metrics()
+        assert metrics["analysis_count"] == 1
+        assert metrics["analysis_time_sec"] == 60.0
+
 
 class TestResourceEvents:
     """Tests for resource event logging."""

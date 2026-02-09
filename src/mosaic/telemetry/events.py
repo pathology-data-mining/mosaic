@@ -65,6 +65,7 @@ class UsageEvent:
     gpu_type: Optional[str] = None  # From hardware.GPU_TYPE
     duration_sec: Optional[float] = None  # On completion only
     success: Optional[bool] = None  # On completion only
+    from_cache: Optional[bool] = None  # On completion only
     is_logged_in: Optional[bool] = None  # True if HF user logged in
     hf_username: Optional[str] = None  # Raw HF username (HF Spaces only)
     event_id: str = field(default_factory=_generate_event_id)

@@ -289,6 +289,7 @@ def analyze_slides(
     all_slide_masks = []
     all_aeon_results = []
     all_paladin_results = []
+    from_cache = False
 
     # Log analysis start event
     tracker.log_usage_event(
@@ -401,6 +402,7 @@ def analyze_slides(
                     cached = load_analysis_results(file_uuid, settings_hash)
                     if cached is not None:
                         slide_mask, aeon_results, paladin_results = cached
+                        from_cache = True
                         logger.info(
                             f"Using cached results for {file_uuid}/{settings_hash}"
                         )
@@ -429,9 +431,7 @@ def analyze_slides(
                         logger.info(
                             f"Batch mode: Loading models once for {len(slides)} slides"
                         )
-                        progress(
-                            0.0, desc="Loading models for batch processing"
-                        )
+                        progress(0.0, desc="Loading models for batch processing")
                         model_cache = load_all_models(
                             use_gpu=True, aggressive_memory_mgmt=None
                         )
@@ -514,6 +514,7 @@ def analyze_slides(
             slide_count=len(slides),
             duration_sec=duration_sec,
             success=True,
+            from_cache=from_cache if from_cache else None,
             gpu_type=GPU_TYPE,
             is_logged_in=user_info.is_logged_in,
             hf_username=user_info.username,
