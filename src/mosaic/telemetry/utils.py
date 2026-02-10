@@ -144,6 +144,16 @@ def extract_user_info(request, is_hf_spaces: bool = False) -> UserInfo:
         # Gradio 6.x+ provides username directly in the request object
         username = getattr(request, "username", None)
 
+        # Debug: Log request object attributes to diagnose authentication issues
+        if username is None:
+            request_attrs = [attr for attr in dir(request) if not attr.startswith('_')]
+            logger.debug(f"Request attributes: {request_attrs}")
+            
+            # Check for alternative username attributes
+            for attr in ['user', 'user_info', 'auth', 'oauth_info']:
+                if hasattr(request, attr):
+                    logger.debug(f"Found {attr}: {getattr(request, attr)}")
+
         if username:
             logger.info(f"Successfully extracted user info: {username}")
             return UserInfo(is_logged_in=True, username=username)
