@@ -14,6 +14,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 
 # Copy project files (including .git for faster HF Spaces dev)
+# CACHE BUST: 2026-02-10 - Added setuptools to fix pkg_resources import
 COPY pyproject.toml README.md ./
 COPY .git/ ./.git/
 COPY src/ ./src/
