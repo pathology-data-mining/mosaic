@@ -674,7 +674,7 @@ def launch_gradio(server_name, server_port, share):
     # Start downloading models in background
     start_background_model_download()
 
-    with gr.Blocks(title="Mosaic") as demo:
+    with gr.Blocks(title="Mosaic", expects_oauth=True) as demo:
         user_dir_state = gr.State(None)
         gr.Markdown(
             "# Mosaic: H&E Whole Slide Image Cancer Subtype and Biomarker Inference"

@@ -6,6 +6,7 @@ colorTo: purple
 sdk: docker
 pinned: false
 license: apache-2.0
+hf_oauth: true
 ---
 
 # Mosaic: H&E Whole Slide Image Cancer Subtype and Biomarker Inference
