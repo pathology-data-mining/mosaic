@@ -1,7 +1,19 @@
-"""Entry point for Hugging Face Spaces deployment.
+"""Entry point for Hugging Face Spaces ZeroGPU deployment.
 
 This module serves as the main entry point when deploying Mosaic to
-Hugging Face Spaces. It initializes the models and launches the Gradio interface.
+Hugging Face Spaces using ZeroGPU (Gradio SDK). It installs dependencies
+at runtime and launches the Gradio interface.
+
+NOTE: This is NOT used for Docker SDK deployments. For Docker deployments,
+the Dockerfile handles all dependency installation and uses the 'mosaic'
+CLI command as the entrypoint.
+
+Runtime dependency installation (via pip) is required for ZeroGPU deployment
+because:
+1. Paladin is a private repository requiring GH_TOKEN authentication
+2. requirements.txt is processed before the app starts and doesn't have
+   access to secrets
+3. ZeroGPU Spaces use Gradio SDK which expects runtime installation
 """
 
 import os
