@@ -289,7 +289,8 @@ def analyze_slides(
     all_slide_masks = []
     all_aeon_results = []
     all_paladin_results = []
-    from_cache = False
+    cached_slides = 0
+    fresh_slides = 0
 
     # Log analysis start event
     tracker.log_usage_event(
@@ -402,7 +403,7 @@ def analyze_slides(
                     cached = load_analysis_results(file_uuid, settings_hash)
                     if cached is not None:
                         slide_mask, aeon_results, paladin_results = cached
-                        from_cache = True
+                        cached_slides += 1
                         logger.info(
                             f"Using cached results for {file_uuid}/{settings_hash}"
                         )
@@ -416,6 +417,7 @@ def analyze_slides(
 
             # If no cached results, run analysis
             if slide_mask is None or aeon_results is None or paladin_results is None:
+                fresh_slides += 1
                 # Lazy model loading: load on first cache miss
                 if model_cache is None:
                     if IS_T4_GPU:
@@ -514,7 +516,7 @@ def analyze_slides(
             slide_count=len(slides),
             duration_sec=duration_sec,
             success=True,
-            from_cache=from_cache if from_cache else None,
+            cached_slide_count=cached_slides if cached_slides > 0 else None,
             gpu_type=GPU_TYPE,
             is_logged_in=user_info.is_logged_in,
             hf_username=user_info.username,

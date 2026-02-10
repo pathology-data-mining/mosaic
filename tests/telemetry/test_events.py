@@ -108,24 +108,24 @@ class TestUsageEvent:
         assert data["slide_count"] == 3
         assert data["session_hash"] is None
 
-    def test_from_cache_true(self):
-        """Test from_cache field on analysis_complete event."""
+    def test_cached_slide_count(self):
+        """Test cached_slide_count field on analysis_complete event."""
         event = UsageEvent(
             event_type="analysis_complete",
             analysis_id="test-123",
             session_hash=None,
-            slide_count=1,
+            slide_count=10,
             duration_sec=2.0,
             success=True,
-            from_cache=True,
+            cached_slide_count=3,
         )
 
-        assert event.from_cache is True
+        assert event.cached_slide_count == 3
         data = event.to_dict()
-        assert data["from_cache"] is True
+        assert data["cached_slide_count"] == 3
 
-    def test_from_cache_default_none(self):
-        """Test that from_cache defaults to None for backward compat."""
+    def test_cached_slide_count_default_none(self):
+        """Test that cached_slide_count defaults to None."""
         event = UsageEvent(
             event_type="analysis_complete",
             analysis_id="test-123",
@@ -135,9 +135,9 @@ class TestUsageEvent:
             success=True,
         )
 
-        assert event.from_cache is None
+        assert event.cached_slide_count is None
         data = event.to_dict()
-        assert data["from_cache"] is None
+        assert data["cached_slide_count"] is None
 
     def test_user_info_fields(self):
         """Test is_logged_in and hf_username fields in UsageEvent."""
