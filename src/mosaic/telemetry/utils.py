@@ -141,18 +141,36 @@ def extract_user_info(request, is_hf_spaces: bool = False) -> UserInfo:
         return UserInfo()
 
     try:
-        # Gradio 6.x+ provides username directly in the request object
-        username = getattr(request, "username", None)
-
-        # Debug: Log request object attributes to diagnose authentication issues
-        if username is None:
-            request_attrs = [attr for attr in dir(request) if not attr.startswith('_')]
-            logger.debug(f"Request attributes: {request_attrs}")
+        # Gradio 6.x+ with OAuth provides username via request.username
+        # However, this is a property that may require authentication middleware
+        # Try to access it, handling potential middleware errors
+        username = None
+        
+        try:
+            username = request.username
+        except Exception as auth_error:
+            # AuthenticationMiddleware error or other property access issues
+            logger.debug(f"Could not access request.username directly: {auth_error}")
             
-            # Check for alternative username attributes
-            for attr in ['user', 'user_info', 'auth', 'oauth_info']:
-                if hasattr(request, attr):
-                    logger.debug(f"Found {attr}: {getattr(request, attr)}")
+            # Try alternative: check if request has kwargs with user info
+            if hasattr(request, "kwargs"):
+                username = request.kwargs.get("username") or request.kwargs.get("user")
+                if username:
+                    logger.debug(f"Found username in request.kwargs: {username}")
+            
+            # Try alternative: check request.request (underlying Starlette request)
+            if not username and hasattr(request, "request"):
+                try:
+                    # Try to get user from state or session
+                    if hasattr(request.request, "state") and hasattr(request.request.state, "user"):
+                        user = request.request.state.user
+                        if hasattr(user, "username"):
+                            username = user.username
+                        elif isinstance(user, dict):
+                            username = user.get("username") or user.get("preferred_username")
+                        logger.debug(f"Found user in request.request.state: {username}")
+                except Exception as nested_error:
+                    logger.debug(f"Could not access request.request.state.user: {nested_error}")
 
         if username:
             logger.info(f"Successfully extracted user info: {username}")
