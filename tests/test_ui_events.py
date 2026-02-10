@@ -106,7 +106,7 @@ class TestGeneratorBehavior:
         mock_cancer_subtype_maps,
         temp_output_dir,
     ):
-        """Test that analyze_slides yields only a single final result for batch."""
+        """Test that analyze_slides yields initial state (disabled buttons) and final results."""
         from PIL import Image
 
         cancer_subtype_name_map, reversed_map, cancer_subtypes = (
@@ -158,11 +158,24 @@ class TestGeneratorBehavior:
             temp_output_dir,
         )
 
-        # Generator should produce exactly one yield (final results only)
+        # Generator should produce exactly two yields:
+        # 1. Initial yield to disable buttons
+        # 2. Final yield with complete results
         results = list(gen)
-        assert len(results) == 1
+        assert len(results) == 2
 
-        final_yield = results[0]
+        # First yield disables buttons
+        initial_yield = results[0]
+        assert len(initial_yield) == 9
+        # Buttons should be disabled (interactive=False)
+        initial_analyze_button = initial_yield[7]
+        initial_clear_button = initial_yield[8]
+        assert hasattr(initial_analyze_button, "interactive")
+        assert initial_analyze_button.interactive is False
+        assert initial_clear_button.interactive is False
+
+        # Second yield is the final result
+        final_yield = results[1]
 
         # Should be tuple with 9 elements
         assert len(final_yield) == 9

@@ -16,6 +16,9 @@ Usage:
     # Daily report for specific date
     python scripts/telemetry_report.py /path/to/telemetry --date 2026-01-20
 
+    # Detailed report with per-session breakdown
+    python scripts/telemetry_report.py /path/to/telemetry --long
+
     # Email output (pipe to sendmail or use with cron)
     python scripts/telemetry_report.py /path/to/telemetry --daily --email user@example.com
 
@@ -24,6 +27,9 @@ Usage:
 
     # HTML format for email
     python scripts/telemetry_report.py /path/to/telemetry --daily --format html
+
+    # Long format with HTML
+    python scripts/telemetry_report.py /path/to/telemetry --long --format html
 
     # Pull data from HuggingFace Dataset repository
     python scripts/telemetry_report.py --hf-repo PDM-Group/mosaic-telemetry
@@ -110,12 +116,13 @@ def is_report_empty(
     return not (has_sessions or has_usage or has_resources or has_failures)
 
 
-def generate_text_report(telemetry_dir: Path, date: Optional[str] = None) -> str:
+def generate_text_report(telemetry_dir: Path, date: Optional[str] = None, long: bool = False) -> str:
     """Generate plain text report.
 
     Args:
         telemetry_dir: Base telemetry directory
         date: Optional date filter
+        long: Include detailed per-session breakdown
 
     Returns:
         Report as string
@@ -336,17 +343,156 @@ def generate_text_report(telemetry_dir: Path, date: Optional[str] = None) -> str
         lines.append("=== NO FAILURES ===")
         lines.append("")
 
+    # Long format: detailed per-session breakdown
+    if long and sessions:
+        lines.append("=== DETAILED SESSION BREAKDOWN ===")
+        shutdowns = [s for s in sessions if s.get("event_type") == "app_shutdown"]
+        heartbeats = [s for s in sessions if s.get("event_type") == "heartbeat"]
+        
+        # Group heartbeats by app_start_time for running sessions
+        all_sessions = []
+        
+        if shutdowns:
+            all_sessions.extend(shutdowns)
+        
+        if heartbeats:
+            sessions_by_start = {}
+            for hb in heartbeats:
+                start_time = hb.get("app_start_time")
+                if start_time:
+                    if start_time not in sessions_by_start or hb.get("uptime_sec", 0) > sessions_by_start[start_time].get("uptime_sec", 0):
+                        sessions_by_start[start_time] = hb
+            all_sessions.extend(sessions_by_start.values())
+        
+        # Sort by timestamp
+        all_sessions.sort(key=lambda x: x.get("timestamp", x.get("app_start_time", "")))
+        
+        for i, session in enumerate(all_sessions, 1):
+            is_running = session.get("event_type") == "heartbeat"
+            uptime_sec = session.get("uptime_sec", 0)
+            uptime_hrs = uptime_sec / 3600
+            analysis_sec = session.get("analysis_time_sec", 0)
+            analysis_hrs = analysis_sec / 3600
+            idle_hrs = uptime_hrs - analysis_hrs
+            analysis_count = session.get("analysis_count", 0)
+            hourly_rate = session.get("hourly_rate") or DEFAULT_HOURLY_RATE
+            cost = uptime_hrs * hourly_rate
+            utilization = (analysis_hrs / uptime_hrs * 100) if uptime_hrs > 0 else 0
+            
+            start_time = session.get("app_start_time", session.get("timestamp", "Unknown"))
+            status = "Running" if is_running else "Completed"
+            
+            lines.append(f"\nSession {i} [{status}]:")
+            lines.append(f"  Start time: {start_time}")
+            lines.append(f"  Uptime: {uptime_hrs:.2f} hrs ({uptime_sec} sec)")
+            lines.append(f"  Active analysis: {analysis_hrs:.2f} hrs ({utilization:.1f}%)")
+            lines.append(f"  Idle time: {idle_hrs:.2f} hrs ({100-utilization:.1f}%)")
+            lines.append(f"  Analyses completed: {analysis_count}")
+            lines.append(f"  Cost: ${cost:.2f} (@ ${hourly_rate}/hr)")
+            if analysis_count > 0:
+                lines.append(f"  Cost per analysis: ${cost / analysis_count:.2f}")
+        lines.append("")
+    
+    # Long format: detailed analysis breakdown
+    if long and usage:
+        starts = [u for u in usage if u.get("event_type") == "analysis_start"]
+        completes = [u for u in usage if u.get("event_type") == "analysis_complete"]
+        
+        # Create a map of completes by timestamp proximity to starts
+        lines.append("=== DETAILED ANALYSIS BREAKDOWN ===")
+        
+        # Sort starts by timestamp
+        starts_sorted = sorted(starts, key=lambda x: x.get("timestamp", ""))
+        completes_sorted = sorted(completes, key=lambda x: x.get("timestamp", ""))
+        
+        # Track which completes we've already matched
+        used_completes = set()
+        
+        for i, start in enumerate(starts_sorted, 1):
+            timestamp = start.get("timestamp", "Unknown")
+            session_hash = start.get("session_hash", "Unknown")
+            slide_count = start.get("slide_count", 0)
+            site_type = start.get("site_type", "Unknown")
+            seg_config = start.get("seg_config", "Unknown")
+            hf_username = start.get("hf_username", "Anonymous")
+            
+            # Try to find corresponding complete event (first unused one after this start)
+            complete = None
+            for j, c in enumerate(completes_sorted):
+                if j not in used_completes and c.get("timestamp", "") >= timestamp:
+                    complete = c
+                    used_completes.add(j)
+                    break
+            
+            lines.append(f"\nAnalysis {i}:")
+            lines.append(f"  Timestamp: {timestamp}")
+            lines.append(f"  User: {hf_username}")
+            lines.append(f"  Session: {session_hash[:16]}...")
+            lines.append(f"  Slides: {slide_count}")
+            lines.append(f"  Site type: {site_type}")
+            lines.append(f"  Segmentation: {seg_config}")
+            
+            if complete:
+                success = complete.get("success", False)
+                duration = complete.get("duration_sec", 0)
+                cached_count = complete.get("cached_slide_count", 0)
+                status = "Success" if success else "Failed"
+                
+                lines.append(f"  Status: {status}")
+                lines.append(f"  Duration: {duration:.1f}s")
+                if cached_count > 0:
+                    lines.append(f"  Cached slides: {cached_count}/{slide_count}")
+            else:
+                lines.append(f"  Status: No completion event found")
+        
+        lines.append("")
+    
+    # Long format: detailed failure breakdown
+    if long and failures:
+        lines.append("=== DETAILED FAILURE BREAKDOWN ===")
+        
+        # Sort failures by timestamp (newest first)
+        failures_sorted = sorted(failures, key=lambda x: x.get("timestamp", ""), reverse=True)
+        
+        for i, failure in enumerate(failures_sorted, 1):
+            timestamp = failure.get("timestamp", "Unknown")
+            error_type = failure.get("error_type", "Unknown")
+            error_message = failure.get("error_message", "No message")
+            error_stage = failure.get("error_stage", "Unknown")
+            session_hash = failure.get("session_hash", "Unknown")
+            hf_username = failure.get("hf_username", "Anonymous")
+            slide_path = failure.get("slide_path", "N/A")
+            stack_trace = failure.get("stack_trace", "")
+            
+            lines.append(f"\nFailure {i}:")
+            lines.append(f"  Timestamp: {timestamp}")
+            lines.append(f"  User: {hf_username}")
+            lines.append(f"  Session: {session_hash[:16] if len(session_hash) > 16 else session_hash}...")
+            lines.append(f"  Error type: {error_type}")
+            lines.append(f"  Stage: {error_stage}")
+            lines.append(f"  Slide: {slide_path}")
+            lines.append(f"  Message: {error_message}")
+            
+            if stack_trace:
+                lines.append(f"  Stack trace:")
+                # Indent stack trace
+                for line in stack_trace.split("\n")[:20]:  # Limit to 20 lines
+                    lines.append(f"    {line}")
+        
+        lines.append("")
+
     lines.append("=" * 60)
 
     return "\n".join(lines)
 
 
-def generate_html_report(telemetry_dir: Path, date: Optional[str] = None) -> str:
+def generate_html_report(telemetry_dir: Path, date: Optional[str] = None, long: bool = False) -> str:
     """Generate HTML report.
 
     Args:
         telemetry_dir: Base telemetry directory
         date: Optional date filter
+        long: Include detailed per-session breakdown
 
     Returns:
         Report as HTML string
@@ -530,6 +676,150 @@ def generate_html_report(telemetry_dir: Path, date: Optional[str] = None) -> str
             html.append(f"<tr><td>{error_type}</td><td>{count}</td></tr>")
         html.append("</table>")
 
+    # Long format: detailed session breakdown
+    if long and sessions:
+        html.append("<h2>Detailed Session Breakdown</h2>")
+        shutdowns = [s for s in sessions if s.get("event_type") == "app_shutdown"]
+        heartbeats = [s for s in sessions if s.get("event_type") == "heartbeat"]
+        
+        all_sessions = []
+        if shutdowns:
+            all_sessions.extend(shutdowns)
+        
+        if heartbeats:
+            sessions_by_start = {}
+            for hb in heartbeats:
+                start_time = hb.get("app_start_time")
+                if start_time:
+                    if start_time not in sessions_by_start or hb.get("uptime_sec", 0) > sessions_by_start[start_time].get("uptime_sec", 0):
+                        sessions_by_start[start_time] = hb
+            all_sessions.extend(sessions_by_start.values())
+        
+        all_sessions.sort(key=lambda x: x.get("timestamp", x.get("app_start_time", "")))
+        
+        html.append("<table>")
+        html.append("<tr><th>#</th><th>Status</th><th>Start Time</th><th>Uptime</th><th>Active</th><th>Utilization</th><th>Analyses</th><th>Cost</th></tr>")
+        
+        for i, session in enumerate(all_sessions, 1):
+            is_running = session.get("event_type") == "heartbeat"
+            uptime_sec = session.get("uptime_sec", 0)
+            uptime_hrs = uptime_sec / 3600
+            analysis_sec = session.get("analysis_time_sec", 0)
+            analysis_hrs = analysis_sec / 3600
+            analysis_count = session.get("analysis_count", 0)
+            hourly_rate = session.get("hourly_rate") or DEFAULT_HOURLY_RATE
+            cost = uptime_hrs * hourly_rate
+            utilization = (analysis_hrs / uptime_hrs * 100) if uptime_hrs > 0 else 0
+            
+            start_time = session.get("app_start_time", session.get("timestamp", "Unknown"))
+            status = "Running" if is_running else "Completed"
+            status_class = "success" if not is_running else ""
+            
+            html.append(f"<tr>")
+            html.append(f"<td>{i}</td>")
+            html.append(f"<td class='{status_class}'>{status}</td>")
+            html.append(f"<td>{start_time}</td>")
+            html.append(f"<td>{uptime_hrs:.2f}h</td>")
+            html.append(f"<td>{analysis_hrs:.2f}h</td>")
+            html.append(f"<td>{utilization:.1f}%</td>")
+            html.append(f"<td>{analysis_count}</td>")
+            html.append(f"<td class='cost'>${cost:.2f}</td>")
+            html.append(f"</tr>")
+        
+        html.append("</table>")
+    
+    # Long format: detailed analysis breakdown
+    if long and usage:
+        starts = [u for u in usage if u.get("event_type") == "analysis_start"]
+        completes = [u for u in usage if u.get("event_type") == "analysis_complete"]
+        
+        if starts:
+            html.append("<h2>Detailed Analysis Breakdown</h2>")
+            starts_sorted = sorted(starts, key=lambda x: x.get("timestamp", ""))
+            completes_sorted = sorted(completes, key=lambda x: x.get("timestamp", ""))
+            
+            html.append("<table>")
+            html.append("<tr><th>#</th><th>Timestamp</th><th>User</th><th>Session</th><th>Slides</th><th>Site Type</th><th>Status</th><th>Duration</th><th>Cached</th></tr>")
+            
+            # Track which completes we've already matched
+            used_completes = set()
+            
+            for i, start in enumerate(starts_sorted, 1):
+                timestamp = start.get("timestamp", "Unknown")
+                session_hash = start.get("session_hash", "Unknown")
+                slide_count = start.get("slide_count", 0)
+                site_type = start.get("site_type", "Unknown")
+                hf_username = start.get("hf_username", "Anonymous")
+                
+                # Try to find corresponding complete event (first unused one after this start)
+                complete = None
+                for j, c in enumerate(completes_sorted):
+                    if j not in used_completes and c.get("timestamp", "") >= timestamp:
+                        complete = c
+                        used_completes.add(j)
+                        break
+                
+                status = "N/A"
+                duration = "N/A"
+                cached_info = "N/A"
+                status_class = ""
+                
+                if complete:
+                    success = complete.get("success", False)
+                    duration_sec = complete.get("duration_sec", 0)
+                    cached_count = complete.get("cached_slide_count", 0)
+                    status = "Success" if success else "Failed"
+                    status_class = "success" if success else "cost"
+                    duration = f"{duration_sec:.1f}s"
+                    if cached_count > 0:
+                        cached_info = f"{cached_count}/{slide_count}"
+                
+                html.append(f"<tr>")
+                html.append(f"<td>{i}</td>")
+                html.append(f"<td>{timestamp}</td>")
+                html.append(f"<td>{hf_username}</td>")
+                html.append(f"<td>{session_hash[:12]}...</td>")
+                html.append(f"<td>{slide_count}</td>")
+                html.append(f"<td>{site_type}</td>")
+                html.append(f"<td class='{status_class}'>{status}</td>")
+                html.append(f"<td>{duration}</td>")
+                html.append(f"<td>{cached_info}</td>")
+                html.append(f"</tr>")
+            
+            html.append("</table>")
+    
+    # Long format: detailed failure breakdown
+    if long and failures:
+        html.append("<h2>Detailed Failure Breakdown</h2>")
+        failures_sorted = sorted(failures, key=lambda x: x.get("timestamp", ""), reverse=True)
+        
+        html.append("<table>")
+        html.append("<tr><th>#</th><th>Timestamp</th><th>User</th><th>Error Type</th><th>Stage</th><th>Message</th></tr>")
+        
+        for i, failure in enumerate(failures_sorted, 1):
+            timestamp = failure.get("timestamp", "Unknown")
+            error_type = failure.get("error_type", "Unknown")
+            error_message = failure.get("error_message", "No message")
+            error_stage = failure.get("error_stage", "Unknown")
+            hf_username = failure.get("hf_username", "Anonymous")
+            
+            # Truncate long messages for table
+            if len(error_message) > 100:
+                error_message_display = error_message[:97] + "..."
+            else:
+                error_message_display = error_message
+            
+            html.append(f"<tr>")
+            html.append(f"<td>{i}</td>")
+            html.append(f"<td>{timestamp}</td>")
+            html.append(f"<td>{hf_username}</td>")
+            html.append(f"<td>{error_type}</td>")
+            html.append(f"<td>{error_stage}</td>")
+            html.append(f"<td title='{error_message}'>{error_message_display}</td>")
+            html.append(f"</tr>")
+        
+        html.append("</table>")
+
     html.append("</body></html>")
 
     return "\n".join(html)
@@ -707,6 +997,11 @@ def main():
         action="store_true",
         help="Skip sending email if report has no data (useful for automated daily reports)",
     )
+    parser.add_argument(
+        "--long",
+        action="store_true",
+        help="Include detailed per-session breakdown in report",
+    )
     args = parser.parse_args()
 
     # If HF repo specified, download to a clean temp directory
@@ -746,9 +1041,9 @@ def main():
 
     # Generate report
     if args.format == "html":
-        report = generate_html_report(args.telemetry_dir, date=date)
+        report = generate_html_report(args.telemetry_dir, date=date, long=args.long)
     else:
-        report = generate_text_report(args.telemetry_dir, date=date)
+        report = generate_text_report(args.telemetry_dir, date=date, long=args.long)
 
     # Output
     if args.email:

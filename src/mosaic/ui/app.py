@@ -306,6 +306,19 @@ def analyze_slides(
         hf_username=user_info.username,
     )
 
+    # Disable analyze and clear buttons during analysis
+    yield (
+        gr.Dataframe(),  # settings_input (unchanged)
+        [],  # slide_masks (empty initially)
+        None,  # aeon_output_table (empty initially)
+        gr.DownloadButton(visible=False),  # aeon_download_button (hidden)
+        None,  # paladin_output_table (empty initially)
+        gr.DownloadButton(visible=False),  # paladin_download_button (hidden)
+        user_dir,  # user_dir_state (unchanged)
+        gr.Button(interactive=False),  # Disable analyze button
+        gr.Button(interactive=False),  # Disable clear button
+    )
+
     # Defer model loading until needed - skip GPU loading if all slides have cached results
     # On T4: Reuse global cache if already loaded, otherwise load on first cache miss
     # On high-memory GPUs: Load on first cache miss for batch, per-slide for single

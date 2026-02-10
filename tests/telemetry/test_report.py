@@ -816,3 +816,373 @@ class TestCLI:
         captured = capsys.readouterr()
         assert "<!DOCTYPE html>" in captured.out
         assert "<html>" in captured.out
+
+
+class TestLongFormat:
+    """Tests for long format detailed reporting."""
+
+    def test_long_format_text_with_sessions(self, tmp_path):
+        """Test long format shows detailed session breakdown."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        sessions = [
+            {
+                "event_type": "app_shutdown",
+                "timestamp": "2026-01-20T10:00:00Z",
+                "app_start_time": "2026-01-20T08:00:00Z",
+                "uptime_sec": 7200,
+                "analysis_time_sec": 3600,
+                "analysis_count": 5,
+                "hourly_rate": 0.40,
+            },
+            {
+                "event_type": "heartbeat",
+                "timestamp": "2026-01-20T14:00:00Z",
+                "app_start_time": "2026-01-20T12:00:00Z",
+                "uptime_sec": 7200,
+                "analysis_time_sec": 1800,
+                "analysis_count": 3,
+                "hourly_rate": 0.40,
+            },
+        ]
+
+        file_path = daily_dir / "session_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for session in sessions:
+                f.write(json.dumps(session) + "\n")
+
+        report = generate_text_report(tmp_path, long=True)
+        
+        # Check for detailed session breakdown section
+        assert "DETAILED SESSION BREAKDOWN" in report
+        assert "Session 1 [Completed]:" in report
+        assert "Session 2 [Running]:" in report
+        assert "Start time: 2026-01-20T08:00:00Z" in report
+        assert "Start time: 2026-01-20T12:00:00Z" in report
+        assert "Uptime: 2.00 hrs" in report
+        assert "Active analysis: 1.00 hrs (50.0%)" in report
+        assert "Active analysis: 0.50 hrs (25.0%)" in report
+        assert "Analyses completed: 5" in report
+        assert "Analyses completed: 3" in report
+        assert "Cost: $0.80" in report
+        assert "Cost per analysis:" in report
+
+    def test_long_format_text_with_analyses(self, tmp_path):
+        """Test long format shows detailed analysis breakdown."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        usage = [
+            {
+                "event_type": "analysis_start",
+                "timestamp": "2026-01-20T10:00:00Z",
+                "session_hash": "abc123def456",
+                "slide_count": 3,
+                "site_type": "Primary",
+                "seg_config": "Resection",
+                "hf_username": "user1",
+            },
+            {
+                "event_type": "analysis_complete",
+                "timestamp": "2026-01-20T10:05:00Z",
+                "success": True,
+                "duration_sec": 300,
+                "slide_count": 3,
+                "cached_slide_count": 1,
+            },
+            {
+                "event_type": "analysis_start",
+                "timestamp": "2026-01-20T11:00:00Z",
+                "session_hash": "xyz789ghi012",
+                "slide_count": 2,
+                "site_type": "Metastatic",
+                "seg_config": "TCGA",
+                "hf_username": "user2",
+            },
+            {
+                "event_type": "analysis_complete",
+                "timestamp": "2026-01-20T11:03:00Z",
+                "success": False,
+                "duration_sec": 180,
+                "slide_count": 2,
+            },
+        ]
+
+        file_path = daily_dir / "usage_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for event in usage:
+                f.write(json.dumps(event) + "\n")
+
+        report = generate_text_report(tmp_path, long=True)
+        
+        # Check for detailed analysis breakdown section
+        assert "DETAILED ANALYSIS BREAKDOWN" in report
+        assert "Analysis 1:" in report
+        assert "Analysis 2:" in report
+        assert "Timestamp: 2026-01-20T10:00:00Z" in report
+        assert "Timestamp: 2026-01-20T11:00:00Z" in report
+        assert "User: user1" in report
+        assert "User: user2" in report
+        assert "Session: abc123def456..." in report
+        assert "Session: xyz789ghi012..." in report
+        assert "Slides: 3" in report
+        assert "Slides: 2" in report
+        assert "Site type: Primary" in report
+        assert "Site type: Metastatic" in report
+        assert "Segmentation: Resection" in report
+        assert "Segmentation: TCGA" in report
+        assert "Status: Success" in report
+        assert "Status: Failed" in report
+        assert "Duration: 300.0s" in report
+        assert "Duration: 180.0s" in report
+        assert "Cached slides: 1/3" in report
+
+    def test_long_format_text_with_failures(self, tmp_path):
+        """Test long format shows detailed failure breakdown."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        failures = [
+            {
+                "timestamp": "2026-01-20T10:00:00Z",
+                "error_type": "ValueError",
+                "error_message": "Invalid input parameter xyz",
+                "error_stage": "preprocessing",
+                "session_hash": "session123",
+                "hf_username": "user1",
+                "slide_path": "/data/slides/slide1.svs",
+                "stack_trace": "Traceback (most recent call last):\n  File test.py line 10\n    raise ValueError",
+            },
+            {
+                "timestamp": "2026-01-20T11:00:00Z",
+                "error_type": "RuntimeError",
+                "error_message": "GPU out of memory",
+                "error_stage": "inference",
+                "session_hash": "session456",
+                "hf_username": "user2",
+                "slide_path": "/data/slides/slide2.svs",
+            },
+        ]
+
+        file_path = daily_dir / "failure_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for failure in failures:
+                f.write(json.dumps(failure) + "\n")
+
+        report = generate_text_report(tmp_path, long=True)
+        
+        # Check for detailed failure breakdown section (newest first)
+        assert "DETAILED FAILURE BREAKDOWN" in report
+        assert "Failure 1:" in report
+        assert "Failure 2:" in report
+        assert "Timestamp: 2026-01-20T11:00:00Z" in report  # Newer one first
+        assert "Timestamp: 2026-01-20T10:00:00Z" in report
+        assert "User: user1" in report
+        assert "User: user2" in report
+        assert "Session: session123..." in report
+        assert "Session: session456..." in report
+        assert "Error type: ValueError" in report
+        assert "Error type: RuntimeError" in report
+        assert "Stage: preprocessing" in report
+        assert "Stage: inference" in report
+        assert "Slide: /data/slides/slide1.svs" in report
+        assert "Slide: /data/slides/slide2.svs" in report
+        assert "Message: Invalid input parameter xyz" in report
+        assert "Message: GPU out of memory" in report
+        assert "Stack trace:" in report
+        assert "Traceback (most recent call last):" in report
+
+    def test_long_format_html_with_sessions(self, tmp_path):
+        """Test long format HTML shows detailed session table."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        sessions = [
+            {
+                "event_type": "app_shutdown",
+                "timestamp": "2026-01-20T10:00:00Z",
+                "app_start_time": "2026-01-20T08:00:00Z",
+                "uptime_sec": 3600,
+                "analysis_time_sec": 1800,
+                "analysis_count": 5,
+                "hourly_rate": 0.40,
+            },
+        ]
+
+        file_path = daily_dir / "session_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for session in sessions:
+                f.write(json.dumps(session) + "\n")
+
+        report = generate_html_report(tmp_path, long=True)
+        
+        # Check for detailed session breakdown section
+        assert "<h2>Detailed Session Breakdown</h2>" in report
+        assert "<th>Status</th>" in report
+        assert "<th>Start Time</th>" in report
+        assert "<th>Uptime</th>" in report
+        assert "<th>Utilization</th>" in report
+        assert "<th>Cost</th>" in report
+        assert "Completed" in report  # Status value
+        assert "2026-01-20T08:00:00Z" in report
+        assert "1.00h" in report
+        assert "50.0%" in report
+        assert "$0.40" in report
+
+    def test_long_format_html_with_analyses(self, tmp_path):
+        """Test long format HTML shows detailed analysis table."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        usage = [
+            {
+                "event_type": "analysis_start",
+                "timestamp": "2026-01-20T10:00:00Z",
+                "session_hash": "abc123def456",
+                "slide_count": 3,
+                "site_type": "Primary",
+                "hf_username": "user1",
+            },
+            {
+                "event_type": "analysis_complete",
+                "timestamp": "2026-01-20T10:05:00Z",  # Added timestamp
+                "success": True,
+                "duration_sec": 300,
+                "slide_count": 3,
+                "cached_slide_count": 2,
+            },
+        ]
+
+        file_path = daily_dir / "usage_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for event in usage:
+                f.write(json.dumps(event) + "\n")
+
+        report = generate_html_report(tmp_path, long=True)
+        
+        # Check for detailed analysis breakdown section
+        assert "<h2>Detailed Analysis Breakdown</h2>" in report
+        assert "<th>Timestamp</th>" in report
+        assert "<th>User</th>" in report
+        assert "<th>Session</th>" in report
+        assert "<th>Status</th>" in report
+        assert "<th>Duration</th>" in report
+        assert "<th>Cached</th>" in report
+        assert "2026-01-20T10:00:00Z" in report
+        assert "user1" in report
+        assert "abc123def456" in report
+        assert "Success" in report
+        assert "300.0s" in report
+        assert "2/3" in report
+
+    def test_long_format_html_with_failures(self, tmp_path):
+        """Test long format HTML shows detailed failure table."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        failures = [
+            {
+                "timestamp": "2026-01-20T10:00:00Z",
+                "error_type": "ValueError",
+                "error_message": "Invalid input parameter",
+                "error_stage": "preprocessing",
+                "hf_username": "user1",
+            },
+        ]
+
+        file_path = daily_dir / "failure_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for failure in failures:
+                f.write(json.dumps(failure) + "\n")
+
+        report = generate_html_report(tmp_path, long=True)
+        
+        # Check for detailed failure breakdown section
+        assert "<h2>Detailed Failure Breakdown</h2>" in report
+        assert "<th>Timestamp</th>" in report
+        assert "<th>User</th>" in report
+        assert "<th>Error Type</th>" in report
+        assert "<th>Stage</th>" in report
+        assert "<th>Message</th>" in report
+        assert "2026-01-20T10:00:00Z" in report
+        assert "user1" in report
+        assert "ValueError" in report
+        assert "preprocessing" in report
+        assert "Invalid input parameter" in report
+
+    def test_long_format_without_data(self, tmp_path):
+        """Test long format with no data doesn't crash."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        report_text = generate_text_report(tmp_path, long=True)
+        report_html = generate_html_report(tmp_path, long=True)
+        
+        # Should still generate valid reports
+        assert "MOSAIC TELEMETRY REPORT" in report_text
+        assert "NO FAILURES" in report_text
+        assert "<html>" in report_html
+        
+        # Long format sections should not appear if no data
+        assert "DETAILED SESSION BREAKDOWN" not in report_text
+        assert "DETAILED ANALYSIS BREAKDOWN" not in report_text
+        assert "<h2>Detailed Session Breakdown</h2>" not in report_html
+
+    def test_short_format_default(self, tmp_path):
+        """Test that default format is short (no long sections)."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        sessions = [
+            {
+                "event_type": "app_shutdown",
+                "uptime_sec": 3600,
+                "analysis_time_sec": 1800,
+                "analysis_count": 5,
+                "hourly_rate": 0.40,
+            }
+        ]
+
+        file_path = daily_dir / "session_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for session in sessions:
+                f.write(json.dumps(session) + "\n")
+
+        report = generate_text_report(tmp_path, long=False)
+        
+        # Should have summary section but not detailed breakdown
+        assert "COST SUMMARY" in report
+        assert "DETAILED SESSION BREAKDOWN" not in report
+
+    def test_cli_with_long_flag(self, tmp_path, capsys):
+        """Test CLI with --long flag."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        # Add some data
+        sessions = [
+            {
+                "event_type": "app_shutdown",
+                "timestamp": "2026-01-20T10:00:00Z",
+                "app_start_time": "2026-01-20T08:00:00Z",
+                "uptime_sec": 3600,
+                "analysis_time_sec": 1800,
+                "analysis_count": 3,
+                "hourly_rate": 0.40,
+            }
+        ]
+
+        file_path = daily_dir / "session_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for session in sessions:
+                f.write(json.dumps(session) + "\n")
+
+        # Mock sys.argv
+        with patch("sys.argv", ["telemetry_report.py", str(tmp_path), "--long"]):
+            from telemetry_report import main
+            main()
+
+        captured = capsys.readouterr()
+        assert "DETAILED SESSION BREAKDOWN" in captured.out
+        assert "Session 1 [Completed]:" in captured.out

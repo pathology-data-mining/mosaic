@@ -27,3 +27,12 @@ gradio_cached_examples/
 # GitHub tokens and secrets
 github_token
 *_token
+
+# Large profile/debug files that slow down Claude
+*.json.gz
+Firefox*.json
+Firefox*.json.gz
+
+# Additional output/temp directories
+output/
+md/
