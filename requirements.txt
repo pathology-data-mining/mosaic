@@ -2,6 +2,7 @@
 torch>=2.0.0,<2.6
 torchvision>=0.15.0
 open-clip-torch
+lightning>=2.6.0
 gradio>=5.49.0
 loguru>=0.7.3
 memory-profiler>=0.61.0
