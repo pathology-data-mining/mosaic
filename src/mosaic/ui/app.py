@@ -674,8 +674,12 @@ def launch_gradio(server_name, server_port, share):
     # Start downloading models in background
     start_background_model_download()
 
-    with gr.Blocks(title="Mosaic", expects_oauth=True) as demo:
+    with gr.Blocks(title="Mosaic") as demo:
         user_dir_state = gr.State(None)
+
+        # Add login button for OAuth (only active on HF Spaces)
+        gr.LoginButton()
+
         gr.Markdown(
             "# Mosaic: H&E Whole Slide Image Cancer Subtype and Biomarker Inference"
         )
