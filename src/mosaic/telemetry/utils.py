@@ -5,13 +5,10 @@ This module provides helper utilities:
 - sanitize_error_message: Remove sensitive data from error messages
 - hash_session_id: Hash session IDs for privacy
 - UserInfo: Dataclass for user information from HF Spaces
-- extract_user_info: Extract user info from Gradio request JWT token
+- extract_user_info: Extract user info from Gradio request object
 """
 
-import base64
-import binascii
 import hashlib
-import json
 import re
 import time
 from contextlib import contextmanager
@@ -116,21 +113,20 @@ class UserInfo:
 
 
 def extract_user_info(request, is_hf_spaces: bool = False) -> UserInfo:
-    """Extract user info from Gradio request JWT token on HF Spaces.
+    """Extract user info from Gradio request object.
 
-    On HuggingFace Spaces, when a user is logged in, Gradio embeds a JWT token
-    in the referer URL's __sign= parameter. This function extracts and decodes
-    the JWT to get the username.
+    In Gradio 6.x+, the request object has a built-in `username` attribute
+    that is automatically populated when a user is logged in on HuggingFace Spaces.
 
-    Only performs extraction when is_hf_spaces=True to avoid unnecessary
-    processing on local deployments.
+    This replaces the old JWT token parsing approach which stopped working when
+    HuggingFace changed how they pass authentication information.
 
     Args:
         request: Gradio request object (can be None)
-        is_hf_spaces: Whether running on HuggingFace Spaces
+        is_hf_spaces: Whether running on HuggingFace Spaces (only extract on HF)
 
     Returns:
-        UserInfo with is_logged_in and username (or defaults if extraction fails)
+        UserInfo with is_logged_in and username (or defaults if not available)
 
     Example:
         user_info = extract_user_info(request, IS_HF_SPACES)
@@ -145,57 +141,18 @@ def extract_user_info(request, is_hf_spaces: bool = False) -> UserInfo:
         return UserInfo()
 
     try:
-        # Check if request has headers attribute
-        if not hasattr(request, "headers"):
-            logger.debug("Cannot extract user info: request has no headers attribute")
-            return UserInfo()
+        # Gradio 6.x+ provides username directly in the request object
+        username = getattr(request, "username", None)
 
-        # Extract JWT token from referer URL
-        referer = request.headers.get("referer", "")
-        if "__sign=" not in referer:
-            logger.debug("Cannot extract user info: no __sign= in referer")
-            return UserInfo()
-
-        # Extract token from __sign= parameter
-        match = re.search(r"__sign=([^&]+)", referer)
-        if not match:
-            logger.debug(
-                "Cannot extract user info: __sign= parameter not found in referer"
-            )
-            return UserInfo()
-
-        token = match.group(1)
-
-        # JWT format: header.payload.signature
-        # We only need the payload (middle part)
-        parts = token.split(".")
-        if len(parts) != 3:
-            logger.debug(
-                f"Cannot extract user info: JWT token has {len(parts)} parts (expected 3)"
-            )
-            return UserInfo()
-
-        # Decode base64 payload (add padding if needed)
-        payload = parts[1]
-        pad_len = (4 - (len(payload) % 4)) % 4
-        if pad_len:
-            payload += "=" * pad_len
-        decoded = base64.urlsafe_b64decode(payload)
-        token_data = json.loads(decoded)
-
-        # Check if user is in token
-        if "onBehalfOf" in token_data and "user" in token_data["onBehalfOf"]:
-            username = token_data["onBehalfOf"]["user"]
+        if username:
             logger.info(f"Successfully extracted user info: {username}")
             return UserInfo(is_logged_in=True, username=username)
         else:
             logger.debug(
-                f"Cannot extract user info: token structure unexpected. Keys: {list(token_data.keys())}"
+                "User info not available: username is None (user not logged in)"
             )
+            return UserInfo()
 
-    except (json.JSONDecodeError, binascii.Error, UnicodeDecodeError, ValueError) as e:
-        logger.warning(f"Failed to decode JWT token from request: {e}")
     except Exception as e:
         logger.error(f"Unexpected error extracting user info: {e}")
-
-    return UserInfo()
+        return UserInfo()

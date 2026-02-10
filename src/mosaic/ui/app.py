@@ -224,10 +224,7 @@ def analyze_slides(
     session_hash = request.session_hash if request else None
 
     # Extract user info for telemetry (HF Spaces only)
-    # If extraction fails, check logs for debug messages about why:
-    # - "no __sign= in referer" - HF might have changed JWT passing
-    # - "token structure unexpected" - JWT payload format changed
-    # - "request has no headers" - Gradio request issue
+    # Gradio 6.x+ provides username directly via request.username
     user_info = extract_user_info(request, IS_HF_SPACES)
 
     # Wait for core models download to complete (Paladin models can continue in background)
