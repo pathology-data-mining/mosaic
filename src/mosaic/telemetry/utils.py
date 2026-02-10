@@ -137,22 +137,31 @@ def extract_user_info(request, is_hf_spaces: bool = False) -> UserInfo:
         if user_info.is_logged_in:
             print(f"User: {user_info.username}")
     """
-    if not is_hf_spaces or request is None:
+    if not is_hf_spaces:
+        return UserInfo()
+
+    if request is None:
+        logger.debug("Cannot extract user info: request is None")
         return UserInfo()
 
     try:
         # Check if request has headers attribute
         if not hasattr(request, "headers"):
+            logger.debug("Cannot extract user info: request has no headers attribute")
             return UserInfo()
 
         # Extract JWT token from referer URL
         referer = request.headers.get("referer", "")
         if "__sign=" not in referer:
+            logger.debug("Cannot extract user info: no __sign= in referer")
             return UserInfo()
 
         # Extract token from __sign= parameter
         match = re.search(r"__sign=([^&]+)", referer)
         if not match:
+            logger.debug(
+                "Cannot extract user info: __sign= parameter not found in referer"
+            )
             return UserInfo()
 
         token = match.group(1)
@@ -161,6 +170,9 @@ def extract_user_info(request, is_hf_spaces: bool = False) -> UserInfo:
         # We only need the payload (middle part)
         parts = token.split(".")
         if len(parts) != 3:
+            logger.debug(
+                f"Cannot extract user info: JWT token has {len(parts)} parts (expected 3)"
+            )
             return UserInfo()
 
         # Decode base64 payload (add padding if needed)
@@ -174,7 +186,12 @@ def extract_user_info(request, is_hf_spaces: bool = False) -> UserInfo:
         # Check if user is in token
         if "onBehalfOf" in token_data and "user" in token_data["onBehalfOf"]:
             username = token_data["onBehalfOf"]["user"]
+            logger.info(f"Successfully extracted user info: {username}")
             return UserInfo(is_logged_in=True, username=username)
+        else:
+            logger.debug(
+                f"Cannot extract user info: token structure unexpected. Keys: {list(token_data.keys())}"
+            )
 
     except (json.JSONDecodeError, binascii.Error, UnicodeDecodeError, ValueError) as e:
         logger.warning(f"Failed to decode JWT token from request: {e}")

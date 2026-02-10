@@ -224,6 +224,10 @@ def analyze_slides(
     session_hash = request.session_hash if request else None
 
     # Extract user info for telemetry (HF Spaces only)
+    # If extraction fails, check logs for debug messages about why:
+    # - "no __sign= in referer" - HF might have changed JWT passing
+    # - "token structure unexpected" - JWT payload format changed
+    # - "request has no headers" - Gradio request issue
     user_info = extract_user_info(request, IS_HF_SPACES)
 
     # Wait for core models download to complete (Paladin models can continue in background)
@@ -684,7 +688,8 @@ def launch_gradio(server_name, server_port, share):
 
         # Comprehensive documentation section
         with gr.Accordion("📖 Documentation & Help", open=False):
-            gr.Markdown("""
+            gr.Markdown(
+                """
 ## Quick Start Guide
 
 **Single Slide Analysis:**
@@ -850,7 +855,8 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 - **Slow processing**: Large slides take longer; be patient
 - **Upload failed**: Check file format (.svs, .tiff, .tif only)
 - **No results**: Ensure slide contains sufficient tissue
-            """)
+            """
+            )
 
         with gr.Row():
             with gr.Column():
@@ -958,9 +964,11 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     clear_button = gr.Button("Clear")
                     analyze_button = gr.Button("Analyze", variant="primary")
             with gr.Column():
-                gr.Markdown("""
+                gr.Markdown(
+                    """
                     **Tissue Segmentation Masks**: Cyan outlines show detected tissue regions. Red fill indicates tissue area.
-                    """)
+                    """
+                )
                 slide_masks = gr.Gallery(
                     label="Slide Masks (tissue segmentation)",
                     columns=3,

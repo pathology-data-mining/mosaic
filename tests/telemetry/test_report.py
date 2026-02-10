@@ -853,7 +853,7 @@ class TestLongFormat:
                 f.write(json.dumps(session) + "\n")
 
         report = generate_text_report(tmp_path, long=True)
-        
+
         # Check for detailed session breakdown section
         assert "DETAILED SESSION BREAKDOWN" in report
         assert "Session 1 [Completed]:" in report
@@ -915,7 +915,7 @@ class TestLongFormat:
                 f.write(json.dumps(event) + "\n")
 
         report = generate_text_report(tmp_path, long=True)
-        
+
         # Check for detailed analysis breakdown section
         assert "DETAILED ANALYSIS BREAKDOWN" in report
         assert "Analysis 1:" in report
@@ -971,7 +971,7 @@ class TestLongFormat:
                 f.write(json.dumps(failure) + "\n")
 
         report = generate_text_report(tmp_path, long=True)
-        
+
         # Check for detailed failure breakdown section (newest first)
         assert "DETAILED FAILURE BREAKDOWN" in report
         assert "Failure 1:" in report
@@ -1016,7 +1016,7 @@ class TestLongFormat:
                 f.write(json.dumps(session) + "\n")
 
         report = generate_html_report(tmp_path, long=True)
-        
+
         # Check for detailed session breakdown section
         assert "<h2>Detailed Session Breakdown</h2>" in report
         assert "<th>Status</th>" in report
@@ -1060,7 +1060,7 @@ class TestLongFormat:
                 f.write(json.dumps(event) + "\n")
 
         report = generate_html_report(tmp_path, long=True)
-        
+
         # Check for detailed analysis breakdown section
         assert "<h2>Detailed Analysis Breakdown</h2>" in report
         assert "<th>Timestamp</th>" in report
@@ -1097,7 +1097,7 @@ class TestLongFormat:
                 f.write(json.dumps(failure) + "\n")
 
         report = generate_html_report(tmp_path, long=True)
-        
+
         # Check for detailed failure breakdown section
         assert "<h2>Detailed Failure Breakdown</h2>" in report
         assert "<th>Timestamp</th>" in report
@@ -1118,12 +1118,12 @@ class TestLongFormat:
 
         report_text = generate_text_report(tmp_path, long=True)
         report_html = generate_html_report(tmp_path, long=True)
-        
+
         # Should still generate valid reports
         assert "MOSAIC TELEMETRY REPORT" in report_text
         assert "NO FAILURES" in report_text
         assert "<html>" in report_html
-        
+
         # Long format sections should not appear if no data
         assert "DETAILED SESSION BREAKDOWN" not in report_text
         assert "DETAILED ANALYSIS BREAKDOWN" not in report_text
@@ -1150,10 +1150,51 @@ class TestLongFormat:
                 f.write(json.dumps(session) + "\n")
 
         report = generate_text_report(tmp_path, long=False)
-        
+
         # Should have summary section but not detailed breakdown
         assert "COST SUMMARY" in report
         assert "DETAILED SESSION BREAKDOWN" not in report
+
+    def test_long_format_with_none_username(self, tmp_path):
+        """Test long format handles None hf_username (anonymous users)."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        # Analysis with None hf_username (anonymous/not logged in user)
+        usage = [
+            {
+                "event_type": "analysis_start",
+                "timestamp": "2026-01-20T10:00:00Z",
+                "session_hash": "abc123def456",
+                "slide_count": 2,
+                "site_type": "Primary",
+                "hf_username": None,  # None instead of a username
+            },
+            {
+                "event_type": "analysis_complete",
+                "timestamp": "2026-01-20T10:05:00Z",
+                "success": True,
+                "duration_sec": 250,
+                "slide_count": 2,
+            },
+        ]
+
+        file_path = daily_dir / "usage_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for event in usage:
+                f.write(json.dumps(event) + "\n")
+
+        # Test text report
+        report_text = generate_text_report(tmp_path, long=True)
+        assert "DETAILED ANALYSIS BREAKDOWN" in report_text
+        assert "User: Anonymous" in report_text
+        assert "User: None" not in report_text
+
+        # Test HTML report
+        report_html = generate_html_report(tmp_path, long=True)
+        assert "<h2>Detailed Analysis Breakdown</h2>" in report_html
+        assert "<td>Anonymous</td>" in report_html
+        assert "<td>None</td>" not in report_html
 
     def test_cli_with_long_flag(self, tmp_path, capsys):
         """Test CLI with --long flag."""
@@ -1181,8 +1222,52 @@ class TestLongFormat:
         # Mock sys.argv
         with patch("sys.argv", ["telemetry_report.py", str(tmp_path), "--long"]):
             from telemetry_report import main
+
             main()
 
         captured = capsys.readouterr()
         assert "DETAILED SESSION BREAKDOWN" in captured.out
         assert "Session 1 [Completed]:" in captured.out
+
+    def test_long_format_with_none_cached_count(self, tmp_path):
+        """Test long format handles None cached_slide_count gracefully."""
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+
+        usage = [
+            {
+                "event_type": "analysis_start",
+                "timestamp": "2026-01-20T10:00:00Z",
+                "session_hash": "abc123",
+                "slide_count": 2,
+                "site_type": "Primary",
+                "seg_config": "TCGA",
+                "hf_username": "user1",
+            },
+            {
+                "event_type": "analysis_complete",
+                "timestamp": "2026-01-20T10:05:00Z",
+                "success": True,
+                "duration_sec": 120,
+                "slide_count": 2,
+                # cached_slide_count is None (not present in event)
+            },
+        ]
+
+        file_path = daily_dir / "usage_2026-01-20.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for event in usage:
+                f.write(json.dumps(event) + "\n")
+
+        # Should not raise TypeError
+        report_text = generate_text_report(tmp_path, long=True)
+        report_html = generate_html_report(tmp_path, long=True)
+
+        # Should show analysis but without cached info
+        assert "Analysis 1:" in report_text
+        assert "Status: Success" in report_text
+        assert "Duration: 120.0s" in report_text
+        assert "Cached slides:" not in report_text  # Should be omitted when None
+
+        assert "Success" in report_html
+        assert "120.0s" in report_html

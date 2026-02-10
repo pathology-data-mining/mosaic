@@ -414,7 +414,7 @@ def generate_text_report(telemetry_dir: Path, date: Optional[str] = None, long: 
             slide_count = start.get("slide_count", 0)
             site_type = start.get("site_type", "Unknown")
             seg_config = start.get("seg_config", "Unknown")
-            hf_username = start.get("hf_username", "Anonymous")
+            hf_username = start.get("hf_username") or "Anonymous"
             
             # Try to find corresponding complete event (first unused one after this start)
             complete = None
@@ -435,12 +435,12 @@ def generate_text_report(telemetry_dir: Path, date: Optional[str] = None, long: 
             if complete:
                 success = complete.get("success", False)
                 duration = complete.get("duration_sec", 0)
-                cached_count = complete.get("cached_slide_count", 0)
+                cached_count = complete.get("cached_slide_count")
                 status = "Success" if success else "Failed"
                 
                 lines.append(f"  Status: {status}")
                 lines.append(f"  Duration: {duration:.1f}s")
-                if cached_count > 0:
+                if cached_count and cached_count > 0:
                     lines.append(f"  Cached slides: {cached_count}/{slide_count}")
             else:
                 lines.append(f"  Status: No completion event found")
@@ -749,7 +749,7 @@ def generate_html_report(telemetry_dir: Path, date: Optional[str] = None, long: 
                 session_hash = start.get("session_hash", "Unknown")
                 slide_count = start.get("slide_count", 0)
                 site_type = start.get("site_type", "Unknown")
-                hf_username = start.get("hf_username", "Anonymous")
+                hf_username = start.get("hf_username") or "Anonymous"
                 
                 # Try to find corresponding complete event (first unused one after this start)
                 complete = None
@@ -767,11 +767,11 @@ def generate_html_report(telemetry_dir: Path, date: Optional[str] = None, long: 
                 if complete:
                     success = complete.get("success", False)
                     duration_sec = complete.get("duration_sec", 0)
-                    cached_count = complete.get("cached_slide_count", 0)
+                    cached_count = complete.get("cached_slide_count")
                     status = "Success" if success else "Failed"
                     status_class = "success" if success else "cost"
                     duration = f"{duration_sec:.1f}s"
-                    if cached_count > 0:
+                    if cached_count and cached_count > 0:
                         cached_info = f"{cached_count}/{slide_count}"
                 
                 html.append(f"<tr>")
