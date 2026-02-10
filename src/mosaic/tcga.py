@@ -696,9 +696,7 @@ def save_metadata_cache(
         )
     except Exception as e:
         # Truly unexpected errors
-        logger.exception(
-            f"Unexpected error saving metadata cache for {file_uuid}: {e}"
-        )
+        logger.exception(f"Unexpected error saving metadata cache for {file_uuid}: {e}")
 
 
 def load_metadata_cache(

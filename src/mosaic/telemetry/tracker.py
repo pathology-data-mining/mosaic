@@ -215,6 +215,7 @@ class TelemetryTracker:
         gpu_type: Optional[str] = None,
         duration_sec: Optional[float] = None,
         success: Optional[bool] = None,
+        cached_slide_count: Optional[int] = None,
         is_logged_in: Optional[bool] = None,
         hf_username: Optional[str] = None,
     ) -> None:
@@ -231,6 +232,7 @@ class TelemetryTracker:
             gpu_type: GPU type string
             duration_sec: Analysis duration (for analysis_complete only)
             success: Whether analysis succeeded (for analysis_complete only)
+            cached_slide_count: Number of slides served from cache (for analysis_complete only)
             is_logged_in: True if HF user logged in
             hf_username: HF username (HF Spaces only)
         """
@@ -248,6 +250,7 @@ class TelemetryTracker:
             gpu_type=gpu_type,
             duration_sec=duration_sec,
             success=success,
+            cached_slide_count=cached_slide_count,
             is_logged_in=is_logged_in,
             hf_username=hf_username,
         )
@@ -257,7 +260,14 @@ class TelemetryTracker:
         if event_type == "analysis_complete" and duration_sec is not None:
             with self._session_lock:
                 self._analysis_count += 1
-                self._analysis_time_sec += duration_sec
+                # Don't count duration if ALL slides were served from cache
+                is_fully_cached = (
+                    cached_slide_count is not None
+                    and slide_count > 0
+                    and cached_slide_count == slide_count
+                )
+                if not is_fully_cached:
+                    self._analysis_time_sec += duration_sec
 
     # =========================================================================
     # Resource Events
