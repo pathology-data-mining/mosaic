@@ -22,6 +22,7 @@ COPY data/*.csv data/metadata/ ./data/
 
 # Create venv and install with dependencies using SSH or GH_TOKEN secret
 # SSH requires actual keys in the agent (ssh-add -l), fallback to GH_TOKEN
+# IMPORTANT: setuptools must be installed for pkg_resources (required by pytorch_lightning)
 RUN --mount=type=ssh \
     --mount=type=secret,id=GH_TOKEN \
     uv venv && \
@@ -38,6 +39,7 @@ RUN --mount=type=ssh \
     else \
         echo "Warning: No authentication method found - private repo access may fail"; \
     fi && \
+    echo "Installing dependencies (including setuptools for pkg_resources)..." && \
     uv pip install -e . && \
     git checkout -- pyproject.toml 2>/dev/null || true
 
