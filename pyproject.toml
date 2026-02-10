@@ -16,6 +16,7 @@ dependencies = [
   "mussel[torch-gpu]",
   "paladin",
   "seaborn>=0.13.2",
+  "setuptools>=65.0.0",
   "spaces>=0.30.0",
   "statsmodels>=0.14.6",
 ]
