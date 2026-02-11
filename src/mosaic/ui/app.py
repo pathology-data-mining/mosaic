@@ -1856,7 +1856,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     gr.update(visible=False),  # user_storage_tabs
                 )
 
-            login_button.success(
+            login_button.login(
                 show_user_storage_on_login,
                 inputs=None,
                 outputs=[
