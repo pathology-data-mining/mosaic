@@ -27,7 +27,7 @@ SETTINGS_COLUMNS = [
     "Sex",
     "Tissue Site",
     "Cancer Subtype",
-    "IHC Subtype",
+    # "IHC Subtype",  # Not yet in use
     "Segmentation Config",
 ]
 
@@ -154,8 +154,8 @@ def load_settings(slide_csv_path):
         settings_df["Segmentation Config"] = "Biopsy"
     if "Cancer Subtype" not in settings_df.columns:
         settings_df["Cancer Subtype"] = "Unknown"
-    if "IHC Subtype" not in settings_df.columns:
-        settings_df["IHC Subtype"] = ""
+    # if "IHC Subtype" not in settings_df.columns:  # Not yet in use
+    #     settings_df["IHC Subtype"] = ""
     if "Tissue Site" not in settings_df.columns:
         settings_df["Tissue Site"] = "Unknown"
     if not set(SETTINGS_COLUMNS).issubset(settings_df.columns):
@@ -225,19 +225,20 @@ def validate_settings(
                 f"Slide {slide_name}: Unknown tissue site. Valid tissue sites are: {', '.join(tissue_sites)}. "
             )
             settings_df.at[idx, "Tissue Site"] = "Unknown"
-        if (
-            "Breast" not in settings_df.at[idx, "Cancer Subtype"]
-            and row["IHC Subtype"] != ""
-        ):
-            warnings.append(
-                f"Slide {slide_name}: IHC subtype should be empty for non-breast cancer subtypes. "
-            )
-            settings_df.at[idx, "IHC Subtype"] = ""
-        if row["IHC Subtype"] not in IHC_SUBTYPES:
-            warnings.append(
-                f"Slide {slide_name}: Unknown IHC subtype. Valid subtypes are: {', '.join(IHC_SUBTYPES)}. "
-            )
-            settings_df.at[idx, "IHC Subtype"] = ""
+        # IHC Subtype validation - not yet in use
+        # if (
+        #     "Breast" not in settings_df.at[idx, "Cancer Subtype"]
+        #     and row["IHC Subtype"] != ""
+        # ):
+        #     warnings.append(
+        #         f"Slide {slide_name}: IHC subtype should be empty for non-breast cancer subtypes. "
+        #     )
+        #     settings_df.at[idx, "IHC Subtype"] = ""
+        # if row["IHC Subtype"] not in IHC_SUBTYPES:
+        #     warnings.append(
+        #         f"Slide {slide_name}: Unknown IHC subtype. Valid subtypes are: {', '.join(IHC_SUBTYPES)}. "
+        #     )
+        #     settings_df.at[idx, "IHC Subtype"] = ""
         if row["Segmentation Config"] not in ["Biopsy", "Resection", "TCGA"]:
             warnings.append(
                 f"Slide {slide_name}: Unknown segmentation config. Valid configs are: Biopsy, Resection, TCGA. "

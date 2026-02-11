@@ -27,6 +27,11 @@ Mosaic is a deep learning model designed for predicting cancer subtypes and biom
 - [Output Files](#output-files)
 - [Examples](#examples)
 - [Advanced Usage](#advanced-usage)
+- [User Storage Management (HF Spaces)](#user-storage-management-hf-spaces)
+  - [My Files Tab](#my-files-tab)
+  - [My Results Tab](#my-results-tab)
+  - [Storage Quotas](#storage-quotas)
+  - [Local Debug Mode](#local-debug-mode)
 - [CSV File Format](#csv-file-format)
 - [Cancer Subtypes](#cancer-subtypes)
 - [Troubleshooting](#troubleshooting)
@@ -329,6 +334,116 @@ mosaic --debug
 ```
 
 This will create a `debug.log` file with detailed information about the processing steps.
+
+## User Storage Management (HF Spaces)
+
+When running Mosaic on HuggingFace Spaces, logged-in users have access to ephemeral file storage for uploaded slides and analysis results. This feature allows you to:
+
+- **Re-analyze slides** with different settings without re-uploading
+- **View previous analysis results** from past sessions
+- **Download results** at any time during your session
+
+**Important**: All stored files are **ephemeral** and will be deleted when the HuggingFace Spaces instance restarts. This typically happens during updates or when the instance is idle for extended periods.
+
+### My Files Tab
+
+The **My Files** tab (visible only when logged in) provides access to your uploaded slides:
+
+**Features:**
+- **Storage usage display**: Shows current usage vs. quota (e.g., "2.3 GB / 5 GB")
+- **Color-coded warnings**:
+  - 💾 Normal: < 80% quota used
+  - ⚠️ Warning: 80-99% quota used (delete old files to free space)
+  - ⛔ Error: ≥ 100% quota exceeded (upload blocked until space freed)
+- **File browser**: View all uploaded slides with:
+  - Slide ID (unique identifier)
+  - Original filename
+  - File size
+  - Upload date
+  - Number of analyses performed
+- **File actions**:
+  - **Download**: Download original slide file
+  - **Delete**: Remove slide and all associated analysis results
+  - **Refresh**: Update file list
+
+**Typical workflow:**
+1. Upload slides via main analysis tab
+2. Review uploaded files in My Files tab
+3. Delete old slides when approaching quota limit
+
+### My Results Tab
+
+The **My Results** tab (visible only when logged in) displays all analysis results from your session:
+
+**Features:**
+- **Results browser**: View all analyses with:
+  - Analysis ID (unique identifier)
+  - Slide name
+  - Analysis date/time
+  - Predicted cancer subtype
+  - Analysis settings (sex, tissue site, site type)
+- **Result viewer**: Select an analysis to view:
+  - Full metadata (settings, timestamps)
+  - Tissue segmentation mask (PNG)
+  - Aeon predictions (top cancer subtypes with confidence scores)
+  - Paladin biomarker predictions (if applicable)
+- **Result actions**:
+  - **View**: Display full analysis details
+  - **Download ZIP**: Download all results as a ZIP file
+  - **Delete**: Remove specific analysis result
+  - **Refresh**: Update results list
+
+**Download ZIP contents:**
+```
+{analysis_id}.zip
+├── metadata.json          # Analysis settings and timestamps
+├── slide_mask.png         # Tissue segmentation visualization
+├── {analysis_id}_aeon_results.csv      # Cancer subtype predictions
+└── {analysis_id}_paladin_results.csv   # Biomarker predictions (if available)
+```
+
+### Storage Quotas
+
+**Per-user quota**: 5 GB (default)
+
+This limit is enforced to prevent disk exhaustion on shared HuggingFace Spaces instances. When you approach or exceed your quota:
+
+1. **Automatic cleanup**: Oldest files are deleted automatically (FIFO - First In, First Out)
+2. **Manual cleanup**: You can delete files manually via the My Files tab
+3. **Upload blocking**: New uploads are blocked at 100% quota until space is freed
+
+**Typical storage usage:**
+- Small WSI (biopsy): 100-300 MB
+- Medium WSI (tissue section): 500 MB - 1 GB
+- Large WSI (whole tissue): 1-2 GB
+- Analysis results: ~1-2 MB each (negligible)
+
+**Example**: With a 5 GB quota, you can store approximately **5-10 slides** concurrently.
+
+### Local Debug Mode
+
+When running Mosaic **locally** (not on HuggingFace Spaces), the My Files and My Results tabs are still available for debugging:
+
+- All files are stored under a **universal "local_user"** username
+- Storage path: `/tmp/mosaic_user_data/local_user/`
+- UI shows **🔧 [Local Debug Mode]** indicator
+- Files are still ephemeral (cleared on system reboot)
+- No authentication required
+
+This mode is useful for:
+- Testing the storage feature locally
+- Debugging upload/result workflows
+- Development and testing
+
+**Enable local debug mode:**
+```bash
+# Simply run locally (not on HuggingFace Spaces)
+make run-ui
+# or
+mosaic
+```
+
+The tabs will automatically detect local mode and show the debug indicator.
 
 ## CSV File Format
 

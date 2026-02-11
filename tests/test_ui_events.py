@@ -72,7 +72,7 @@ class TestGeneratorBehavior:
                 "Sex": ["Male"],
                 "Tissue Site": ["Unknown"],
                 "Cancer Subtype": ["Unknown"],
-                "IHC Subtype": [""],
+                # "IHC Subtype": [""],
                 "Segmentation Config": ["Biopsy"],
             }
         )
@@ -141,7 +141,7 @@ class TestGeneratorBehavior:
                 "Sex": ["Male", "Female", "Male"],
                 "Tissue Site": ["Unknown", "Unknown", "Unknown"],
                 "Cancer Subtype": ["Unknown", "Unknown", "Unknown"],
-                "IHC Subtype": ["", "", ""],
+                # "IHC Subtype": ["", "", ""],
                 "Segmentation Config": ["Biopsy", "Biopsy", "Biopsy"],
             }
         )
@@ -237,7 +237,7 @@ class TestGeneratorBehavior:
                 "Sex": ["Male", "Female", "Male"],
                 "Tissue Site": ["Unknown", "Unknown", "Unknown"],
                 "Cancer Subtype": ["Unknown", "Unknown", "Unknown"],
-                "IHC Subtype": ["", "", ""],
+                # "IHC Subtype": ["", "", ""],
                 "Segmentation Config": ["Biopsy", "Biopsy", "Biopsy"],
             }
         )
@@ -337,7 +337,7 @@ class TestGeneratorBehavior:
                 "Sex": ["Male", "Female", "Male"],
                 "Tissue Site": ["Lung", "Lung", "Lung"],
                 "Cancer Subtype": ["LUAD", "LUAD", "LUAD"],
-                "IHC Subtype": ["", "", ""],
+                # "IHC Subtype": ["", "", ""],
                 "Segmentation Config": ["Biopsy", "Biopsy", "Biopsy"],
             }
         )
@@ -418,7 +418,7 @@ class TestErrorDisplay:
                 "Sex": ["Male", "InvalidSex"],
                 "Tissue Site": ["Unknown", "Unknown"],
                 "Cancer Subtype": ["InvalidSubtype", "Unknown"],
-                "IHC Subtype": ["", ""],
+                # "IHC Subtype": ["", ""],
                 "Segmentation Config": ["Biopsy", "InvalidConfig"],
             }
         )
@@ -614,7 +614,7 @@ class TestTCGASegmentationConfig:
                 "Sex": ["Male", "Female", "Male"],
                 "Tissue Site": ["Lung", "Breast", "Liver"],
                 "Cancer Subtype": ["LUAD", "BRCA", "LIHC"],
-                "IHC Subtype": ["", "", ""],
+                # "IHC Subtype": ["", "", ""],
                 "Segmentation Config": ["Biopsy", "Resection", "Biopsy"],
             }
         )

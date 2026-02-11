@@ -219,7 +219,7 @@ def main():
                 "Sex": ["Unknown"] * len(slides),
                 "Tissue Site": ["Unknown"] * len(slides),
                 "Cancer Subtype": ["Unknown"] * len(slides),
-                "IHC Subtype": [""] * len(slides),
+                # "IHC Subtype": [""] * len(slides),
                 "Segmentation Config": ["Biopsy"] * len(slides),
             }
         )

@@ -90,7 +90,7 @@ def sample_settings_df():
             "Sex": ["Male", "Female", "Male"],
             "Tissue Site": ["Lung", "Liver", "Unknown"],
             "Cancer Subtype": ["Unknown", "Lung Adenocarcinoma (LUAD)", "Unknown"],
-            "IHC Subtype": ["", "", ""],
+            # "IHC Subtype": ["", "", ""],  # Not yet in use
             "Segmentation Config": ["Biopsy", "Resection", "TCGA"],
         }
     )
@@ -112,7 +112,7 @@ def create_settings_df(n_rows, **kwargs):
         "Sex": ["Unknown"] * n_rows,
         "Tissue Site": ["Unknown"] * n_rows,
         "Cancer Subtype": ["Unknown"] * n_rows,
-        "IHC Subtype": [""] * n_rows,
+        # "IHC Subtype": [""] * n_rows,  # Not yet in use
         "Segmentation Config": ["Biopsy"] * n_rows,
     }
 
@@ -137,14 +137,12 @@ def create_settings_df(n_rows, **kwargs):
 def sample_csv_valid():
     """Temporary CSV file with valid settings."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write("Slide,Site Type,Sex,Tissue Site,Cancer Subtype,Segmentation Config\n")
+        f.write("slide1.svs,Primary,Unknown,Lung,Unknown,Biopsy\n")
         f.write(
-            "Slide,Site Type,Sex,Tissue Site,Cancer Subtype,IHC Subtype,Segmentation Config\n"
+            "slide2.svs,Metastatic,Female,Liver,Lung Adenocarcinoma (LUAD),Resection\n"
         )
-        f.write("slide1.svs,Primary,Unknown,Lung,Unknown,,Biopsy\n")
-        f.write(
-            "slide2.svs,Metastatic,Female,Liver,Lung Adenocarcinoma (LUAD),,Resection\n"
-        )
-        f.write("slide3.svs,Primary,Male,Unknown,Unknown,,TCGA\n")
+        f.write("slide3.svs,Primary,Male,Unknown,Unknown,TCGA\n")
         f.flush()
         yield f.name
     Path(f.name).unlink(missing_ok=True)
@@ -154,11 +152,9 @@ def sample_csv_valid():
 def sample_csv_invalid():
     """Temporary CSV file with invalid values (for validation testing)."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write("Slide,Site Type,Sex,Tissue Site,Cancer Subtype,Segmentation Config\n")
         f.write(
-            "Slide,Site Type,Sex,Tissue Site,Cancer Subtype,IHC Subtype,Segmentation Config\n"
-        )
-        f.write(
-            "slide1.svs,InvalidSite,InvalidSex,InvalidTissue,InvalidSubtype,InvalidIHC,InvalidConfig\n"
+            "slide1.svs,InvalidSite,InvalidSex,InvalidTissue,InvalidSubtype,InvalidConfig\n"
         )
         f.write(
             "slide2.svs,Primary,Unknown,Lung,BRCA,HR+/HER2+,Biopsy\n"

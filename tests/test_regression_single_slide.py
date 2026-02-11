@@ -143,7 +143,7 @@ class TestSingleSlideRegression:
                     "Sex": ["Male"],
                     "Tissue Site": ["Lung"],
                     "Cancer Subtype": ["Unknown"],
-                    "IHC Subtype": [""],
+                    # "IHC Subtype": [""],
                     "Segmentation Config": ["Biopsy"],
                 }
             )

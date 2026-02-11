@@ -74,7 +74,7 @@ class TestArgumentParsing:
                 "Sex": ["Unknown"],
                 "Tissue Site": ["Unknown"],
                 "Cancer Subtype": ["Unknown"],
-                "IHC Subtype": [""],
+                # "IHC Subtype": [""],  # Not yet in use
                 "Segmentation Config": ["Biopsy"],
             }
         )

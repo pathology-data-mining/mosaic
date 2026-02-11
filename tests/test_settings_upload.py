@@ -234,11 +234,9 @@ class TestCsvFormatEdgeCases:
         from mosaic.ui.utils import load_settings
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
-            f.write(
-                "Slide,Site Type,Sex,Cancer Subtype,IHC Subtype,Segmentation Config\n"
-            )
+            f.write("Slide,Site Type,Sex,Cancer Subtype,Segmentation Config\n")
             # Empty values for optional columns
-            f.write("slide1.svs,Primary,Male,Unknown,,\n")
+            f.write("slide1.svs,Primary,Male,Unknown,\n")
             f.flush()
             temp_path = f.name
 
@@ -250,7 +248,7 @@ class TestCsvFormatEdgeCases:
             assert len(df) == 1
             # Empty strings should be preserved (validation will handle defaults later)
             assert df["Segmentation Config"].iloc[0] == ""
-            assert df["IHC Subtype"].iloc[0] == ""
+            # assert df["IHC Subtype"].iloc[0] == ""  # Not yet in use
         finally:
             Path(temp_path).unlink(missing_ok=True)
 

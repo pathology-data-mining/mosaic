@@ -40,7 +40,7 @@ class TestSettingsValidation:
                 "Sex": ["Male"],
                 "Tissue Site": ["Unknown"],
                 "Cancer Subtype": ["InvalidSubtype"],
-                "IHC Subtype": [""],
+                # "IHC Subtype": [""],
                 "Segmentation Config": ["Biopsy"],
             }
         )
@@ -72,7 +72,7 @@ class TestSettingsValidation:
                 "Sex": ["Male"],
                 "Tissue Site": ["Unknown"],
                 "Cancer Subtype": ["Unknown"],
-                "IHC Subtype": [""],
+                # "IHC Subtype": [""],
                 "Segmentation Config": ["Biopsy"],
             }
         )
@@ -117,7 +117,7 @@ class TestAnalysisWorkflow:
                 "Sex": ["Male"],
                 "Tissue Site": ["Unknown"],
                 "Cancer Subtype": ["Unknown"],
-                "IHC Subtype": [""],
+                # "IHC Subtype": [""],
                 "Segmentation Config": ["Biopsy"],
             }
         )
@@ -197,7 +197,7 @@ class TestAnalysisWorkflow:
                 "Sex": ["Male", "Female", "Male"],
                 "Tissue Site": ["Unknown", "Unknown", "Unknown"],
                 "Cancer Subtype": ["Unknown", "Unknown", "Unknown"],
-                "IHC Subtype": ["", "", ""],
+                # "IHC Subtype": ["", "", ""],
                 "Segmentation Config": ["Biopsy", "Biopsy", "Biopsy"],
             }
         )

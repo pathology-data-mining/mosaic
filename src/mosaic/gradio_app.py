@@ -312,7 +312,7 @@ def main():
                     args.sex,
                     args.tissue_site,
                     args.cancer_subtype,
-                    args.ihc_subtype,
+                    # args.ihc_subtype,  # Not yet in use
                     args.segmentation_config,
                 ]
             ],

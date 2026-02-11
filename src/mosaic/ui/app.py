@@ -189,6 +189,7 @@ def analyze_slides(
     ihc_subtype,
     seg_config,
     user_dir,
+    slide_ids=None,  # Mapping from filename to slide_id
     progress=gr.Progress(track_tqdm=True),
     request: gr.Request = None,
     profile: Optional[gr.OAuthProfile] = None,
@@ -507,6 +508,63 @@ def analyze_slides(
                             f"Results are still valid but won't be cached for future use."
                         )
 
+            # Save results for logged-in users (best-effort, non-blocking)
+            # On HF Spaces: only for logged-in users
+            # Locally: always save for 'local_user' for debugging
+            should_save_results = False
+            save_username = None
+
+            if IS_HF_SPACES:
+                if user_info.is_logged_in and user_info.username:
+                    should_save_results = True
+                    save_username = user_info.username
+            else:
+                # Local mode - always save for debugging
+                from mosaic.ui.user_tabs import LOCAL_DEBUG_USERNAME
+
+                should_save_results = True
+                save_username = LOCAL_DEBUG_USERNAME
+
+            if should_save_results and save_username:
+                try:
+                    from mosaic.user_results import (
+                        save_analysis_results as save_user_results,
+                    )
+
+                    # Prepare settings dict for metadata
+                    settings_dict = {
+                        "seg_config": row["Segmentation Config"],
+                        "site_type": row["Site Type"],
+                        "sex": row["Sex"],
+                        "tissue_site": row.get("Tissue Site", "Unknown"),
+                        "cancer_subtype": row["Cancer Subtype"],
+                        # "ihc_subtype": row.get("IHC Subtype", ""),  # Not yet in use
+                    }
+
+                    # Use analysis_id + slide index for unique ID per slide
+                    slide_analysis_id = f"{analysis_id}_{idx}"
+
+                    # Get slide_id from tracking (if available)
+                    file_slide_id = ""
+                    if slide_ids and slide_name in slide_ids:
+                        file_slide_id = slide_ids[slide_name]
+
+                    save_user_results(
+                        username=save_username,
+                        analysis_id=slide_analysis_id,
+                        slide_id=file_slide_id,
+                        slide_name=slide_name,
+                        settings=settings_dict,
+                        aeon_results=aeon_results,
+                        paladin_results=paladin_results,
+                        slide_mask=slide_mask,
+                    )
+                    logger.debug(
+                        f"Saved results for user {save_username}, slide {slide_name}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to save user results (non-fatal): {e}")
+
             if slide_mask is not None:
                 mask_filename = f"{Path(slide_name).stem}_mask.png"
                 saved = _save_mask_as_png(slide_mask, mask_filename)
@@ -679,6 +737,9 @@ def launch_gradio(server_name, server_port, share):
 
     with gr.Blocks(title="Mosaic") as demo:
         user_dir_state = gr.State(None)
+        slide_ids_state = gr.State(
+            {}
+        )  # Maps slide filename to slide_id for user storage
 
         # Add login button for OAuth (only active on HF Spaces)
         gr.LoginButton()
@@ -879,6 +940,24 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     file_count="multiple",
                 )
 
+                # Storage usage indicator (shown for logged-in users or local mode)
+                storage_usage_warning = gr.Markdown(visible=False)
+
+                # Analyze Existing File option (shown for logged-in users or local mode)
+                with gr.Row(visible=False) as existing_file_row:
+                    gr.Markdown("**Or select an existing slide:**")
+                    existing_slides_dropdown = gr.Dropdown(
+                        label="Previously Uploaded Slides",
+                        choices=[],
+                        value=None,
+                        interactive=True,
+                        multiselect=True,
+                        info="Select one or more slides you've already uploaded to re-analyze",
+                    )
+                    refresh_existing_btn = gr.Button(
+                        "🔄 Refresh List", size="sm", variant="secondary"
+                    )
+
                 # TCGA fetch components (hidden by default)
                 with gr.Group(visible=False) as tcga_input_group:
                     tcga_id_input = gr.Textbox(
@@ -1002,7 +1081,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 )
 
         def get_settings(
-            files, site_type, sex, tissue_site, cancer_subtype, ihc_subtype, seg_config
+            files, site_type, sex, tissue_site, cancer_subtype, seg_config
         ):
             """Generate initial settings DataFrame from uploaded files and dropdown values."""
             if files is None:
@@ -1018,7 +1097,6 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         sex if sex is not None else "",
                         tissue_site,
                         cancer_subtype,
-                        ihc_subtype,
                         seg_config,
                     ]
                 )
@@ -1061,6 +1139,148 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     gr.Dataframe(visible=False),
                     gr.File(visible=False),
                 )
+
+        # Load storage usage and show warnings
+        def load_storage_usage(request: gr.Request = None):
+            """Load and display storage usage with warnings."""
+            from mosaic.ui.user_tabs import _get_username
+
+            username, is_local = _get_username(request)
+
+            if not username:
+                # Not logged in on HF Spaces - hide storage info
+                return gr.Markdown(visible=False), gr.Row(visible=False)
+
+            try:
+                from mosaic.user_storage import get_storage_usage
+
+                usage = get_storage_usage(username)
+                quota_gb = usage.quota_bytes / (1024**3)
+                used_gb = usage.total_bytes / (1024**3)
+                percent = (
+                    (usage.total_bytes / usage.quota_bytes * 100)
+                    if usage.quota_bytes > 0
+                    else 0
+                )
+
+                mode_indicator = " 🔧 [Local Debug]" if is_local else ""
+
+                # Build warning message
+                if percent >= 100:
+                    warning_md = (
+                        f"⛔ **Storage quota exceeded!** {used_gb:.2f} GB / {quota_gb:.0f} GB "
+                        f"({percent:.0f}%){mode_indicator}\n\n"
+                        f"Delete old files from the **My Files** tab before uploading."
+                    )
+                    warning_color = "red"
+                elif percent >= 80:
+                    warning_md = (
+                        f"⚠️ **Storage nearly full:** {used_gb:.2f} GB / {quota_gb:.0f} GB "
+                        f"({percent:.0f}%){mode_indicator}\n\n"
+                        f"Consider deleting old files from the **My Files** tab."
+                    )
+                    warning_color = "orange"
+                else:
+                    warning_md = (
+                        f"💾 **Storage:** {used_gb:.2f} GB / {quota_gb:.0f} GB "
+                        f"({percent:.0f}%) | {usage.file_count} files{mode_indicator}"
+                    )
+                    warning_color = "gray"
+
+                return gr.Markdown(value=warning_md, visible=True), gr.Row(visible=True)
+
+            except Exception as e:
+                logger.error(f"Failed to load storage usage: {e}")
+                return gr.Markdown(visible=False), gr.Row(visible=False)
+
+        # Load list of existing slides for re-analysis
+        def load_existing_slides(request: gr.Request = None):
+            """Load dropdown with user's existing slides."""
+            from mosaic.ui.user_tabs import _get_username
+
+            username, _ = _get_username(request)
+
+            if not username:
+                return gr.Dropdown(choices=[], value=None)
+
+            try:
+                from mosaic.user_storage import list_user_slides
+
+                slides = list_user_slides(username)
+
+                if not slides:
+                    return gr.Dropdown(
+                        choices=[], value=None, info="No slides uploaded yet"
+                    )
+
+                # Create dropdown choices: display name → slide_id
+                choices = [
+                    (
+                        f"{slide.original_filename} ({slide.size_bytes / (1024**2):.1f} MB)",
+                        slide.slide_id,
+                    )
+                    for slide in slides
+                ]
+
+                return gr.Dropdown(
+                    choices=choices,
+                    value=None,
+                    info=f"{len(slides)} slide(s) available for re-analysis",
+                )
+
+            except Exception as e:
+                logger.error(f"Failed to load existing slides: {e}")
+                return gr.Dropdown(choices=[], value=None)
+
+        # Handle slide upload and save to user storage
+        def handle_slide_upload(files, slide_ids, request: gr.Request = None):
+            """Save uploaded slides to user storage and track slide IDs."""
+            if not files:
+                return files, slide_ids or {}
+
+            # Determine username
+            if IS_HF_SPACES:
+                if not request or not request.username:
+                    # Not logged in on HF Spaces - don't save
+                    return files, slide_ids or {}
+                username = request.username
+            else:
+                # Local mode - always use local_user for debugging
+                from mosaic.ui.user_tabs import LOCAL_DEBUG_USERNAME
+
+                username = LOCAL_DEBUG_USERNAME
+
+            try:
+                from mosaic.user_storage import save_uploaded_slide
+
+                new_slide_ids = slide_ids.copy() if slide_ids else {}
+
+                for file in files:
+                    try:
+                        # Save slide to user storage
+                        slide_id, _ = save_uploaded_slide(username, file)
+
+                        # Track mapping from filename to slide_id
+                        filename = (
+                            Path(file.name).name if hasattr(file, "name") else str(file)
+                        )
+                        new_slide_ids[filename] = slide_id
+
+                        logger.info(
+                            f"Saved slide {filename} with ID {slide_id} for user {username}"
+                        )
+                    except Exception as e:
+                        # Best effort - don't fail upload if storage fails
+                        logger.warning(
+                            f"Failed to save slide {file} to user storage: {e}"
+                        )
+
+                return files, new_slide_ids
+
+            except Exception as e:
+                logger.error(f"Error in slide upload handler: {e}")
+                # Don't fail the upload, just log the error
+                return files, slide_ids or {}
 
         # Handle TCGA slide fetch
         def fetch_tcga_slide(tcga_id, seg_config, progress=gr.Progress()):
@@ -1191,6 +1411,97 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         )
 
         # Handle file uploads - regenerate entire settings table
+        # Save uploaded slides to user storage (HF Spaces only)
+        input_slides.upload(
+            handle_slide_upload,
+            inputs=[input_slides, slide_ids_state],
+            outputs=[input_slides, slide_ids_state],
+        ).then(
+            # Refresh storage usage after upload
+            load_storage_usage,
+            inputs=None,
+            outputs=[storage_usage_warning, existing_file_row],
+        ).then(
+            # Refresh existing slides list after upload
+            load_existing_slides,
+            inputs=None,
+            outputs=[existing_slides_dropdown],
+        )
+
+        # Refresh existing slides dropdown
+        refresh_existing_btn.click(
+            load_existing_slides,
+            inputs=None,
+            outputs=[existing_slides_dropdown],
+        )
+
+        # Handle selection of existing slide(s) for re-analysis
+        def select_existing_slide(slide_ids, request: gr.Request = None):
+            """When user selects existing slide(s), load them for analysis.
+
+            Args:
+                slide_ids: Single slide_id (str) or list of slide_ids (multiselect)
+                request: Gradio request object
+
+            Returns:
+                gr.File update with selected slide(s)
+            """
+            if not slide_ids:
+                return None
+
+            # Handle both single selection and multiselect
+            if isinstance(slide_ids, str):
+                slide_ids = [slide_ids]
+
+            from mosaic.ui.user_tabs import _get_username
+
+            username, _ = _get_username(request)
+            if not username:
+                return None
+
+            try:
+                from mosaic.user_storage import get_slide_path, _load_slide_metadata
+
+                metadata = _load_slide_metadata(username)
+                slide_paths = []
+
+                for slide_id in slide_ids:
+                    slide_path = get_slide_path(username, slide_id)
+                    if slide_path is None:
+                        logger.warning(
+                            f"Slide {slide_id} not found for user {username}"
+                        )
+                        continue
+
+                    # Create a symlink with the original filename so the File
+                    # component displays the real name instead of the UUID storage name
+                    if slide_id in metadata:
+                        original_name = metadata[slide_id].original_filename
+                        if slide_path.name != original_name:
+                            tmp_dir = Path(tempfile.mkdtemp(prefix="mosaic_slide_"))
+                            symlink_path = tmp_dir / original_name
+                            symlink_path.symlink_to(slide_path)
+                            slide_paths.append(str(symlink_path))
+                        else:
+                            slide_paths.append(str(slide_path))
+                    else:
+                        slide_paths.append(str(slide_path))
+
+                if not slide_paths:
+                    return None
+
+                return gr.File(value=slide_paths)
+
+            except Exception as e:
+                logger.error(f"Failed to load existing slides {slide_ids}: {e}")
+                return None
+
+        existing_slides_dropdown.change(
+            select_existing_slide,
+            inputs=[existing_slides_dropdown],
+            outputs=[input_slides],
+        )
+
         @input_slides.change(
             inputs=[
                 input_slides,
@@ -1216,7 +1527,6 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 sex,
                 tissue_site,
                 cancer_subtype,
-                ihc_subtype,
                 seg_config,
             )
             # if settings_df is not None:
@@ -1326,6 +1636,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             ihc_subtype,
             seg_config,
             user_dir,
+            slide_ids,
             progress=gr.Progress(track_tqdm=True),
             request: gr.Request = None,
             profile: Optional[gr.OAuthProfile] = None,
@@ -1371,6 +1682,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 ihc_subtype,
                 seg_config,
                 user_dir,
+                slide_ids=slide_ids,
                 progress=progress,
                 request=request,
                 profile=profile,
@@ -1390,6 +1702,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 ihc_subtype_dropdown,
                 seg_config_dropdown,
                 user_dir_state,
+                slide_ids_state,
             ],
             outputs=[
                 settings_input,
@@ -1455,6 +1768,70 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             inputs=[user_dir_state],
             outputs=[user_dir_state],
         )
+
+        # Load storage usage on page load
+        demo.load(
+            load_storage_usage,
+            inputs=None,
+            outputs=[storage_usage_warning, existing_file_row],
+        )
+
+        # Load existing slides dropdown on page load
+        demo.load(
+            load_existing_slides,
+            inputs=None,
+            outputs=[existing_slides_dropdown],
+        )
+
+        # Add My Files and My Results tabs for user storage
+        # On HF Spaces: visible for logged-in users
+        # Locally: always visible with "local_user" for debugging
+        gr.Markdown("---")
+        if IS_HF_SPACES:
+            gr.Markdown("## User Storage (Logged-In Users Only)")
+            gr.Markdown(
+                "The tabs below are only accessible to logged-in users. "
+                "Upload and view your slides and analysis results."
+            )
+        else:
+            gr.Markdown("## User Storage (Local Debug Mode)")
+            gr.Markdown(
+                "🔧 **Debug Mode**: Files stored as user 'local_user' in `/tmp/mosaic_user_data/local_user/`"
+            )
+
+        with gr.Tabs():
+            with gr.Tab("My Files"):
+                from mosaic.ui.user_tabs import create_my_files_tab
+
+                my_files_components = create_my_files_tab()
+
+                # Load files on demo load
+                demo.load(
+                    my_files_components["load_files"],
+                    inputs=None,
+                    outputs=[
+                        my_files_components["storage_usage"],
+                        my_files_components["files_table"],
+                        my_files_components["file_action_status"],
+                        my_files_components["slide_download_file"],
+                    ],
+                )
+
+            with gr.Tab("My Results"):
+                from mosaic.ui.user_tabs import create_my_results_tab
+
+                my_results_components = create_my_results_tab()
+
+                # Load results on demo load
+                demo.load(
+                    my_results_components["load_results"],
+                    inputs=None,
+                    outputs=[
+                        my_results_components["results_table"],
+                        my_results_components["result_action_status"],
+                        my_results_components["result_download_file"],
+                    ],
+                )
 
     # Use hardware-specific concurrency limit
     # T4 GPUs (16GB) can only handle one analysis at a time to prevent OOM

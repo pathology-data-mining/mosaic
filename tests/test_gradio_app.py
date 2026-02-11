@@ -48,7 +48,7 @@ class TestConstants:
             "Slide",
             "Site Type",
             "Cancer Subtype",
-            "IHC Subtype",
+            # "IHC Subtype",  # Not yet in use
             "Segmentation Config",
         ]
         for field in required_fields:
@@ -81,11 +81,9 @@ class TestLoadSettings:
     def temp_settings_csv(self):
         """Create a temporary settings CSV file with all columns."""
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
-            f.write(
-                "Slide,Site Type,Sex,Cancer Subtype,IHC Subtype,Segmentation Config\n"
-            )
-            f.write("slide1.svs,Primary,Male,Unknown,,Biopsy\n")
-            f.write("slide2.svs,Metastatic,Female,Unknown,,Resection\n")
+            f.write("Slide,Site Type,Sex,Cancer Subtype,Segmentation Config\n")
+            f.write("slide1.svs,Primary,Male,Unknown,Biopsy\n")
+            f.write("slide2.svs,Metastatic,Female,Unknown,Resection\n")
             temp_path = f.name
         yield temp_path
         Path(temp_path).unlink()
@@ -117,10 +115,10 @@ class TestLoadSettings:
         df = load_settings(temp_minimal_settings_csv)
         assert "Segmentation Config" in df.columns
         assert "Cancer Subtype" in df.columns
-        assert "IHC Subtype" in df.columns
+        # assert "IHC Subtype" in df.columns  # Not yet in use
         assert df["Segmentation Config"].iloc[0] == "Biopsy"
         assert df["Cancer Subtype"].iloc[0] == "Unknown"
-        assert df["IHC Subtype"].iloc[0] == ""
+        # assert df["IHC Subtype"].iloc[0] == ""  # Not yet in use
 
     def test_load_settings_preserves_data(self, temp_settings_csv):
         """Test that data is preserved correctly."""
