@@ -742,7 +742,7 @@ def launch_gradio(server_name, server_port, share):
         )  # Maps slide filename to slide_id for user storage
 
         # Add login button for OAuth (only active on HF Spaces)
-        gr.LoginButton()
+        login_button = gr.LoginButton()
 
         gr.Markdown(
             "# Mosaic: H&E Whole Slide Image Cancer Subtype and Biomarker Inference"
@@ -941,10 +941,12 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 )
 
                 # Storage usage indicator (shown for logged-in users or local mode)
-                storage_usage_warning = gr.Markdown(visible=False)
+                # Initially visible in local mode, hidden on HF Spaces until login
+                storage_usage_warning = gr.Markdown(visible=not IS_HF_SPACES)
 
                 # Analyze Existing File option (shown for logged-in users or local mode)
-                with gr.Row(visible=False) as existing_file_row:
+                # Initially visible in local mode, hidden on HF Spaces until login
+                with gr.Row(visible=not IS_HF_SPACES) as existing_file_row:
                     gr.Markdown("**Or select an existing slide:**")
                     existing_slides_dropdown = gr.Dropdown(
                         label="Previously Uploaded Slides",
@@ -1121,7 +1123,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         # Handle input mode switching
         @input_mode.change(
             inputs=[input_mode],
-            outputs=[input_slides, tcga_input_group, settings_input, settings_csv],
+            outputs=[input_slides, tcga_input_group, settings_input, settings_csv, existing_file_row],
         )
         def switch_input_mode(mode):
             """Switch between file upload and TCGA fetch modes."""
@@ -1131,6 +1133,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     gr.Group(visible=False),
                     gr.Dataframe(visible=False),
                     gr.File(visible=False),
+                    gr.Row(visible=not IS_HF_SPACES),  # Show existing files row in upload mode
                 )
             else:
                 return (
@@ -1138,6 +1141,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     gr.Group(visible=True),
                     gr.Dataframe(visible=False),
                     gr.File(visible=False),
+                    gr.Row(visible=False),  # Hide existing files row in TCGA mode
                 )
 
         # Load storage usage and show warnings
@@ -1662,7 +1666,6 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                             sex,
                             tissue_site,
                             cancer_subtype,
-                            ihc_subtype,
                             seg_config,
                         ]
                     ],
@@ -1788,8 +1791,8 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         # Locally: always visible with "local_user" for debugging
         gr.Markdown("---")
         if IS_HF_SPACES:
-            gr.Markdown("## User Storage (Logged-In Users Only)")
-            gr.Markdown(
+            user_storage_header = gr.Markdown("## User Storage (Logged-In Users Only)")
+            user_storage_info = gr.Markdown(
                 "The tabs below are only accessible to logged-in users. "
                 "Upload and view your slides and analysis results."
             )
@@ -1799,7 +1802,8 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 "🔧 **Debug Mode**: Files stored as user 'local_user' in `/tmp/mosaic_user_data/local_user/`"
             )
 
-        with gr.Tabs():
+        # User storage tabs - initially hidden on HF Spaces, visible locally
+        with gr.Tabs(visible=not IS_HF_SPACES) as user_storage_tabs:
             with gr.Tab("My Files"):
                 from mosaic.ui.user_tabs import create_my_files_tab
 
@@ -1832,6 +1836,55 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         my_results_components["result_download_file"],
                     ],
                 )
+
+        # Add event handlers for login button to show user storage features
+        # When user logs in on HF Spaces, show storage warning, existing files, and user tabs
+        if IS_HF_SPACES:
+            def show_user_storage_on_login():
+                """Show user storage components when user logs in."""
+                return (
+                    gr.update(visible=True),  # storage_usage_warning
+                    gr.update(visible=True),  # existing_file_row
+                    gr.update(visible=True),  # user_storage_tabs
+                )
+
+            def hide_user_storage_on_logout():
+                """Hide user storage components when user logs out."""
+                return (
+                    gr.update(visible=False),  # storage_usage_warning
+                    gr.update(visible=False),  # existing_file_row
+                    gr.update(visible=False),  # user_storage_tabs
+                )
+
+            login_button.success(
+                show_user_storage_on_login,
+                inputs=None,
+                outputs=[
+                    storage_usage_warning,
+                    existing_file_row,
+                    user_storage_tabs,
+                ],
+            ).then(
+                # After showing components, load user data (storage usage and existing slides)
+                load_storage_usage,
+                inputs=None,
+                outputs=[storage_usage_warning, existing_file_row],
+            ).then(
+                # Load existing slides dropdown
+                load_existing_slides,
+                inputs=None,
+                outputs=[existing_slides_dropdown],
+            )
+
+            login_button.logout(
+                hide_user_storage_on_logout,
+                inputs=None,
+                outputs=[
+                    storage_usage_warning,
+                    existing_file_row,
+                    user_storage_tabs,
+                ],
+            )
 
     # Use hardware-specific concurrency limit
     # T4 GPUs (16GB) can only handle one analysis at a time to prevent OOM
