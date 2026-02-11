@@ -1123,7 +1123,13 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         # Handle input mode switching
         @input_mode.change(
             inputs=[input_mode],
-            outputs=[input_slides, tcga_input_group, settings_input, settings_csv, existing_file_row],
+            outputs=[
+                input_slides,
+                tcga_input_group,
+                settings_input,
+                settings_csv,
+                existing_file_row,
+            ],
         )
         def switch_input_mode(mode):
             """Switch between file upload and TCGA fetch modes."""
@@ -1133,7 +1139,9 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     gr.Group(visible=False),
                     gr.Dataframe(visible=False),
                     gr.File(visible=False),
-                    gr.Row(visible=not IS_HF_SPACES),  # Show existing files row in upload mode
+                    gr.Row(
+                        visible=not IS_HF_SPACES
+                    ),  # Show existing files row in upload mode
                 )
             else:
                 return (
@@ -1145,11 +1153,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 )
 
         # Load storage usage and show warnings
-        def load_storage_usage(request: gr.Request = None):
+        def load_storage_usage(
+            request: gr.Request = None,
+            profile: Optional[gr.OAuthProfile] = None,
+        ):
             """Load and display storage usage with warnings."""
             from mosaic.ui.user_tabs import _get_username
 
-            username, is_local = _get_username(request)
+            username, is_local = _get_username(request, profile)
 
             if not username:
                 # Not logged in on HF Spaces - hide storage info
@@ -1198,11 +1209,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 return gr.Markdown(visible=False), gr.Row(visible=False)
 
         # Load list of existing slides for re-analysis
-        def load_existing_slides(request: gr.Request = None):
+        def load_existing_slides(
+            request: gr.Request = None,
+            profile: Optional[gr.OAuthProfile] = None,
+        ):
             """Load dropdown with user's existing slides."""
             from mosaic.ui.user_tabs import _get_username
 
-            username, _ = _get_username(request)
+            username, _ = _get_username(request, profile)
 
             if not username:
                 return gr.Dropdown(choices=[], value=None)
@@ -1237,22 +1251,22 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 return gr.Dropdown(choices=[], value=None)
 
         # Handle slide upload and save to user storage
-        def handle_slide_upload(files, slide_ids, request: gr.Request = None):
+        def handle_slide_upload(
+            files,
+            slide_ids,
+            request: gr.Request = None,
+            profile: Optional[gr.OAuthProfile] = None,
+        ):
             """Save uploaded slides to user storage and track slide IDs."""
             if not files:
                 return files, slide_ids or {}
 
-            # Determine username
-            if IS_HF_SPACES:
-                if not request or not request.username:
-                    # Not logged in on HF Spaces - don't save
-                    return files, slide_ids or {}
-                username = request.username
-            else:
-                # Local mode - always use local_user for debugging
-                from mosaic.ui.user_tabs import LOCAL_DEBUG_USERNAME
+            # Determine username via OAuthProfile (primary) or request (fallback)
+            from mosaic.ui.user_tabs import _get_username
 
-                username = LOCAL_DEBUG_USERNAME
+            username, _ = _get_username(request, profile)
+            if not username:
+                return files, slide_ids or {}
 
             try:
                 from mosaic.user_storage import save_uploaded_slide
@@ -1440,12 +1454,17 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         )
 
         # Handle selection of existing slide(s) for re-analysis
-        def select_existing_slide(slide_ids, request: gr.Request = None):
+        def select_existing_slide(
+            slide_ids,
+            request: gr.Request = None,
+            profile: Optional[gr.OAuthProfile] = None,
+        ):
             """When user selects existing slide(s), load them for analysis.
 
             Args:
                 slide_ids: Single slide_id (str) or list of slide_ids (multiselect)
                 request: Gradio request object
+                profile: OAuthProfile for HF Spaces login
 
             Returns:
                 gr.File update with selected slide(s)
@@ -1459,7 +1478,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
             from mosaic.ui.user_tabs import _get_username
 
-            username, _ = _get_username(request)
+            username, _ = _get_username(request, profile)
             if not username:
                 return None
 
@@ -1837,53 +1856,21 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     ],
                 )
 
-        # Add event handlers for login button to show user storage features
-        # When user logs in on HF Spaces, show storage warning, existing files, and user tabs
+        # Show/hide user storage features based on login state on page load.
+        # LoginButton.click() fires BEFORE the OAuth redirect so the profile
+        # is never available at that point.  Instead we rely on demo.load()
+        # which fires after the OAuth redirect completes and the page reloads.
         if IS_HF_SPACES:
-            def show_user_storage_on_login():
-                """Show user storage components when user logs in."""
-                return (
-                    gr.update(visible=True),  # storage_usage_warning
-                    gr.update(visible=True),  # existing_file_row
-                    gr.update(visible=True),  # user_storage_tabs
-                )
 
-            def hide_user_storage_on_logout():
-                """Hide user storage components when user logs out."""
-                return (
-                    gr.update(visible=False),  # storage_usage_warning
-                    gr.update(visible=False),  # existing_file_row
-                    gr.update(visible=False),  # user_storage_tabs
-                )
+            def check_login_state(profile: Optional[gr.OAuthProfile] = None):
+                """Toggle user-storage UI visibility based on OAuth state."""
+                is_logged_in = profile is not None
+                return gr.update(visible=is_logged_in)
 
-            login_button.login(
-                show_user_storage_on_login,
+            demo.load(
+                check_login_state,
                 inputs=None,
-                outputs=[
-                    storage_usage_warning,
-                    existing_file_row,
-                    user_storage_tabs,
-                ],
-            ).then(
-                # After showing components, load user data (storage usage and existing slides)
-                load_storage_usage,
-                inputs=None,
-                outputs=[storage_usage_warning, existing_file_row],
-            ).then(
-                # Load existing slides dropdown
-                load_existing_slides,
-                inputs=None,
-                outputs=[existing_slides_dropdown],
-            )
-
-            login_button.logout(
-                hide_user_storage_on_logout,
-                inputs=None,
-                outputs=[
-                    storage_usage_warning,
-                    existing_file_row,
-                    user_storage_tabs,
-                ],
+                outputs=[user_storage_tabs],
             )
 
     # Use hardware-specific concurrency limit

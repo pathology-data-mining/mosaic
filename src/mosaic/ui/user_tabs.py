@@ -29,19 +29,36 @@ from mosaic.user_results import (
 LOCAL_DEBUG_USERNAME = "local_user"
 
 
-def _get_username(request: gr.Request) -> tuple[str, bool]:
+def _get_username(request: gr.Request = None, profile=None) -> tuple[str, bool]:
     """Get username for storage operations.
+
+    Uses the same approach as telemetry's extract_user_info: try
+    OAuthProfile first (reliable on HF Spaces), then fall back to
+    request.username.
 
     Returns:
         Tuple of (username, is_local_mode)
-        - In HF Spaces: (request.username, False) if logged in
+        - In HF Spaces: (profile.username or request.username, False) if logged in
         - Locally: (LOCAL_DEBUG_USERNAME, True)
         - HF Spaces not logged in: (None, False)
     """
     if IS_HF_SPACES:
-        # HF Spaces - use OAuth username if available
-        if request and request.username:
-            return (request.username, False)
+        # Primary: OAuthProfile (set by gr.LoginButton OAuth flow)
+        if profile is not None:
+            try:
+                username = getattr(profile, "username", None)
+                if username:
+                    return (username, False)
+            except Exception:
+                pass
+
+        # Fallback: request.username
+        try:
+            if request and request.username:
+                return (request.username, False)
+        except Exception:
+            pass
+
         return (None, False)
     else:
         # Local mode - use debug username
@@ -95,9 +112,9 @@ def create_my_files_tab():
         # Download output
         slide_download_file = gr.File(label="Download", visible=False)
 
-        def load_files(request: gr.Request):
+        def load_files(request: gr.Request = None, profile: gr.OAuthProfile = None):
             """Load user's uploaded files."""
-            username, is_local = _get_username(request)
+            username, is_local = _get_username(request, profile)
 
             if not username:
                 return (
@@ -174,9 +191,9 @@ def create_my_files_tab():
                     gr.File(visible=False),
                 )
 
-        def download_slide(slide_id_or_name, request: gr.Request):
+        def download_slide(slide_id_or_name, request: gr.Request = None, profile: gr.OAuthProfile = None):
             """Download the original slide file."""
-            username, _ = _get_username(request)
+            username, _ = _get_username(request, profile)
 
             if not username or not slide_id_or_name:
                 return gr.File(visible=False), gr.Textbox(
@@ -208,9 +225,9 @@ def create_my_files_tab():
                     value=f"Error: {str(e)}", visible=True
                 )
 
-        def delete_slide(slide_id_or_name, request: gr.Request):
+        def delete_slide(slide_id_or_name, request: gr.Request = None, profile: gr.OAuthProfile = None):
             """Delete a slide and all associated results."""
-            username, _ = _get_username(request)
+            username, _ = _get_username(request, profile)
 
             if not username or not slide_id_or_name:
                 return gr.Textbox(
@@ -344,9 +361,9 @@ def create_my_results_tab():
         )
         result_download_file = gr.File(label="Download", visible=False)
 
-        def load_results(request: gr.Request):
+        def load_results(request: gr.Request = None, profile: gr.OAuthProfile = None):
             """Load user's analysis results."""
-            username, _ = _get_username(request)
+            username, _ = _get_username(request, profile)
 
             if not username:
                 return [], gr.Textbox(visible=False), gr.File(visible=False)
@@ -382,9 +399,9 @@ def create_my_results_tab():
                     gr.File(visible=False),
                 )
 
-        def view_result_details(analysis_id, request: gr.Request):
+        def view_result_details(analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None):
             """Load and display result details."""
-            username, _ = _get_username(request)
+            username, _ = _get_username(request, profile)
 
             if not username or not analysis_id:
                 return (
@@ -492,9 +509,9 @@ def create_my_results_tab():
                     gr.Textbox(value=f"Error: {str(e)}", visible=True),
                 )
 
-        def download_result_zip(analysis_id, request: gr.Request):
+        def download_result_zip(analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None):
             """Create and download ZIP of result files."""
-            username, _ = _get_username(request)
+            username, _ = _get_username(request, profile)
 
             if not username or not analysis_id:
                 return gr.File(visible=False), gr.Textbox(
@@ -519,9 +536,9 @@ def create_my_results_tab():
                     value=f"Error: {str(e)}", visible=True
                 )
 
-        def delete_result(analysis_id, request: gr.Request):
+        def delete_result(analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None):
             """Delete an analysis result."""
-            username, _ = _get_username(request)
+            username, _ = _get_username(request, profile)
 
             if not username or not analysis_id:
                 return gr.Textbox(
