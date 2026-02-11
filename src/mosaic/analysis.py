@@ -771,6 +771,7 @@ def analyze_slide(
     model_cache=None,
     analysis_id=None,
     session_hash=None,
+    profile=None,
 ):
     """Analyze a whole slide image for cancer subtype and biomarker prediction.
 
@@ -809,7 +810,7 @@ def analyze_slide(
         raise gr.Error("Please upload a slide.")
 
     # Extract user info for telemetry (HF Spaces only)
-    user_info = extract_user_info(request, IS_HF_SPACES)
+    user_info = extract_user_info(request, IS_HF_SPACES, profile)
 
     # Initialize telemetry for resource tracking
     slide_start_time = time_module.time()

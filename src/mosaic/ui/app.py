@@ -14,6 +14,7 @@ import tempfile
 import threading
 import time
 import uuid
+from typing import Optional
 
 import gradio as gr
 import pandas as pd
@@ -190,6 +191,7 @@ def analyze_slides(
     user_dir,
     progress=gr.Progress(track_tqdm=True),
     request: gr.Request = None,
+    profile: Optional[gr.OAuthProfile] = None,
 ):
     global _model_download_thread, _model_download_complete, _core_models_complete
 
@@ -224,8 +226,8 @@ def analyze_slides(
     session_hash = request.session_hash if request else None
 
     # Extract user info for telemetry (HF Spaces only)
-    # Gradio 6.x+ provides username directly via request.username
-    user_info = extract_user_info(request, IS_HF_SPACES)
+    # gr.LoginButton() OAuth provides user info via OAuthProfile
+    user_info = extract_user_info(request, IS_HF_SPACES, profile)
 
     # Wait for core models download to complete (Paladin models can continue in background)
     if _model_download_thread is not None and not _core_models_complete:
@@ -468,6 +470,7 @@ def analyze_slides(
                     model_cache=model_cache,  # Pre-loaded for batch, None for single
                     analysis_id=analysis_id,  # For telemetry tracking
                     session_hash=session_hash,  # For telemetry tracking
+                    profile=profile,  # For OAuth user info
                 )
 
                 # Save results to cache if this is a TCGA slide
@@ -1325,6 +1328,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             user_dir,
             progress=gr.Progress(track_tqdm=True),
             request: gr.Request = None,
+            profile: Optional[gr.OAuthProfile] = None,
         ):
             """Wrapper to handle both file upload and TCGA slide inputs."""
             # Determine the slides to analyze based on input mode
@@ -1369,6 +1373,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 user_dir,
                 progress=progress,
                 request=request,
+                profile=profile,
             )
 
         analyze_button.click(

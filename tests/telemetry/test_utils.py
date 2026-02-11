@@ -244,3 +244,50 @@ class TestExtractUserInfo:
 
         assert user_info.is_logged_in is False
         assert user_info.username is None
+
+    def _create_mock_profile(self, username: str = None):
+        """Helper to create a mock OAuthProfile object."""
+
+        class MockOAuthProfile:
+            def __init__(self, username):
+                self.username = username
+
+        if username is None:
+            return None
+        return MockOAuthProfile(username)
+
+    def test_extract_user_info_from_oauth_profile(self):
+        """Test extraction from OAuthProfile (primary path for LoginButton)."""
+        profile = self._create_mock_profile("oauth_user")
+        user_info = extract_user_info(None, is_hf_spaces=True, profile=profile)
+
+        assert user_info.is_logged_in is True
+        assert user_info.username == "oauth_user"
+
+    def test_extract_user_info_oauth_profile_takes_precedence(self):
+        """Test that OAuthProfile takes precedence over request.username."""
+        request = self._create_mock_request("request_user")
+        profile = self._create_mock_profile("oauth_user")
+
+        user_info = extract_user_info(request, is_hf_spaces=True, profile=profile)
+
+        assert user_info.is_logged_in is True
+        assert user_info.username == "oauth_user"
+
+    def test_extract_user_info_falls_back_to_request(self):
+        """Test fallback to request.username when no OAuthProfile."""
+        request = self._create_mock_request("request_user")
+
+        user_info = extract_user_info(request, is_hf_spaces=True, profile=None)
+
+        assert user_info.is_logged_in is True
+        assert user_info.username == "request_user"
+
+    def test_extract_user_info_no_profile_not_hf_spaces(self):
+        """Test that profile is ignored when not on HF Spaces."""
+        profile = self._create_mock_profile("oauth_user")
+
+        user_info = extract_user_info(None, is_hf_spaces=False, profile=profile)
+
+        assert user_info.is_logged_in is False
+        assert user_info.username is None

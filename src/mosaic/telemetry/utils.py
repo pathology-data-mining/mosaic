@@ -112,72 +112,62 @@ class UserInfo:
     username: Optional[str] = None
 
 
-def extract_user_info(request, is_hf_spaces: bool = False) -> UserInfo:
-    """Extract user info from Gradio request object.
+def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> UserInfo:
+    """Extract user info from Gradio OAuth profile or request object.
 
-    In Gradio 6.x+, the request object has a built-in `username` attribute
-    that is automatically populated when a user is logged in on HuggingFace Spaces.
+    With gr.LoginButton(), Gradio provides user info via gr.OAuthProfile
+    (injected automatically into event handlers). The profile object has
+    a `username` attribute with the HuggingFace username.
 
-    This replaces the old JWT token parsing approach which stopped working when
-    HuggingFace changed how they pass authentication information.
+    Falls back to request.username for non-OAuth auth setups.
 
     Args:
         request: Gradio request object (can be None)
         is_hf_spaces: Whether running on HuggingFace Spaces (only extract on HF)
+        profile: Gradio OAuthProfile object (injected by LoginButton OAuth flow)
 
     Returns:
         UserInfo with is_logged_in and username (or defaults if not available)
 
     Example:
-        user_info = extract_user_info(request, IS_HF_SPACES)
+        user_info = extract_user_info(request, IS_HF_SPACES, profile)
         if user_info.is_logged_in:
             print(f"User: {user_info.username}")
     """
     if not is_hf_spaces:
         return UserInfo()
 
+    # Primary: extract from OAuthProfile (set by gr.LoginButton OAuth flow)
+    if profile is not None:
+        try:
+            username = getattr(profile, "username", None)
+            if username:
+                logger.info(f"Extracted user from OAuthProfile: {username}")
+                return UserInfo(is_logged_in=True, username=username)
+        except Exception as e:
+            logger.debug(f"Could not extract username from OAuthProfile: {e}")
+
+    # Fallback: try request.username (works with Gradio's built-in auth= parameter)
     if request is None:
-        logger.debug("Cannot extract user info: request is None")
+        logger.debug(
+            "Cannot extract user info: request and profile are both None/empty"
+        )
         return UserInfo()
 
     try:
-        # Gradio 6.x+ with OAuth provides username via request.username
-        # However, this is a property that may require authentication middleware
-        # Try to access it, handling potential middleware errors
         username = None
-        
+
         try:
             username = request.username
         except Exception as auth_error:
-            # AuthenticationMiddleware error or other property access issues
-            logger.debug(f"Could not access request.username directly: {auth_error}")
-            
-            # Try alternative: check if request has kwargs with user info
-            if hasattr(request, "kwargs"):
-                username = request.kwargs.get("username") or request.kwargs.get("user")
-                if username:
-                    logger.debug(f"Found username in request.kwargs: {username}")
-            
-            # Try alternative: check request.request (underlying Starlette request)
-            if not username and hasattr(request, "request"):
-                try:
-                    # Try to get user from state or session
-                    if hasattr(request.request, "state") and hasattr(request.request.state, "user"):
-                        user = request.request.state.user
-                        if hasattr(user, "username"):
-                            username = user.username
-                        elif isinstance(user, dict):
-                            username = user.get("username") or user.get("preferred_username")
-                        logger.debug(f"Found user in request.request.state: {username}")
-                except Exception as nested_error:
-                    logger.debug(f"Could not access request.request.state.user: {nested_error}")
+            logger.debug(f"Could not access request.username: {auth_error}")
 
         if username:
-            logger.info(f"Successfully extracted user info: {username}")
+            logger.info(f"Extracted user from request.username: {username}")
             return UserInfo(is_logged_in=True, username=username)
         else:
             logger.debug(
-                "User info not available: username is None (user not logged in)"
+                "User info not available: no OAuthProfile and request.username is None"
             )
             return UserInfo()
 
