@@ -741,8 +741,11 @@ def launch_gradio(server_name, server_port, share):
             {}
         )  # Maps slide filename to slide_id for user storage
 
-        # Add login button for OAuth (only active on HF Spaces)
-        login_button = gr.LoginButton()
+        # Add login button for OAuth (only active on HF Spaces).
+        # On HF Spaces start hidden; demo.load() reveals it after the
+        # server-side OAuthProfile check so the button renders in the
+        # correct state (login vs logout) without a brief flash.
+        login_button = gr.LoginButton(visible=not IS_HF_SPACES)
 
         gr.Markdown(
             "# Mosaic: H&E Whole Slide Image Cancer Subtype and Biomarker Inference"
@@ -1901,14 +1904,17 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         if IS_HF_SPACES:
 
             def check_login_state(profile: Optional[gr.OAuthProfile] = None):
-                """Toggle user-storage UI visibility based on OAuth state."""
+                """Reveal login button and toggle user-storage UI based on OAuth state."""
                 is_logged_in = profile is not None
-                return gr.update(visible=is_logged_in)
+                return (
+                    gr.update(visible=True),  # login_button (now in correct state)
+                    gr.update(visible=is_logged_in),  # user_storage_tabs
+                )
 
             demo.load(
                 check_login_state,
                 inputs=None,
-                outputs=[user_storage_tabs],
+                outputs=[login_button, user_storage_tabs],
             )
 
     # Use hardware-specific concurrency limit
