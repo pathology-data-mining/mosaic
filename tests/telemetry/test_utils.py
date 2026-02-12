@@ -8,6 +8,7 @@ from mosaic.telemetry.utils import (
     StageTimer,
     sanitize_error_message,
     hash_session_id,
+    hash_username,
     UserInfo,
     extract_user_info,
 )
@@ -148,6 +149,40 @@ class TestHashSessionId:
         session_id = "user-session-12345"
         hashes = [hash_session_id(session_id) for _ in range(10)]
         assert len(set(hashes)) == 1  # All hashes should be identical
+
+
+class TestHashUsername:
+    """Tests for username hashing."""
+
+    def test_hash_username(self):
+        """Test basic username hashing."""
+        hashed = hash_username("testuser")
+        assert hashed is not None
+        assert hashed != "testuser"
+        assert len(hashed) == 16
+
+    def test_hash_none_returns_none(self):
+        """Test that None input returns None."""
+        assert hash_username(None) is None
+
+    def test_hash_is_deterministic(self):
+        """Test that same input produces same hash."""
+        hash1 = hash_username("alice")
+        hash2 = hash_username("alice")
+        assert hash1 == hash2
+
+    def test_different_inputs_different_hashes(self):
+        """Test that different usernames produce different hashes."""
+        hash1 = hash_username("alice")
+        hash2 = hash_username("bob")
+        assert hash1 != hash2
+
+    def test_different_salt_from_session_id(self):
+        """Test that username hash uses different salt than session hash."""
+        value = "same_value"
+        username_hash = hash_username(value)
+        session_hash = hash_session_id(value)
+        assert username_hash != session_hash
 
 
 class TestUserInfo:

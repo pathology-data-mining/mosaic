@@ -91,7 +91,9 @@ class TestUsernameExtraction:
         class MockProfile:
             username = "test_user"
 
-        username, is_local = _get_username(mock_request_hf_logged_in, profile=MockProfile())
+        username, is_local = _get_username(
+            mock_request_hf_logged_in, profile=MockProfile()
+        )
         assert username == "test_user"
         assert is_local is False
 

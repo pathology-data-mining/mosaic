@@ -69,7 +69,7 @@ class UsageEvent:
         None  # Number of cached slides (completion only)
     )
     is_logged_in: Optional[bool] = None  # True if HF user logged in
-    hf_username: Optional[str] = None  # Raw HF username (HF Spaces only)
+    hf_username: Optional[str] = None  # Hashed user identifier (HF Spaces only)
     event_id: str = field(default_factory=_generate_event_id)
     timestamp: str = field(default_factory=_timestamp_now)
 
@@ -99,7 +99,7 @@ class ResourceEvent:
     gpu_type: Optional[str] = None
     peak_gpu_memory_gb: Optional[float] = None
     is_logged_in: Optional[bool] = None  # True if HF user logged in
-    hf_username: Optional[str] = None  # Raw HF username (HF Spaces only)
+    hf_username: Optional[str] = None  # Hashed user identifier (HF Spaces only)
     event_id: str = field(default_factory=_generate_event_id)
     timestamp: str = field(default_factory=_timestamp_now)
 
@@ -123,7 +123,7 @@ class FailureEvent:
     slide_count: Optional[int] = None
     gpu_type: Optional[str] = None
     is_logged_in: Optional[bool] = None  # True if HF user logged in
-    hf_username: Optional[str] = None  # Raw HF username (HF Spaces only)
+    hf_username: Optional[str] = None  # Hashed user identifier (HF Spaces only)
     event_id: str = field(default_factory=_generate_event_id)
     timestamp: str = field(default_factory=_timestamp_now)
 

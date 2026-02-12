@@ -99,6 +99,25 @@ def hash_session_id(session_id: Optional[str]) -> Optional[str]:
     return hashlib.sha256(salted.encode()).hexdigest()[:16]
 
 
+def hash_username(username: Optional[str]) -> Optional[str]:
+    """Hash a username for privacy in telemetry.
+
+    Uses SHA-256 with a different salt than session IDs to create a one-way hash.
+    This allows distinguishing users in telemetry without storing actual usernames.
+
+    Args:
+        username: HuggingFace username (can be None for anonymous users)
+
+    Returns:
+        Hashed username or None if input is None
+    """
+    if username is None:
+        return None
+
+    salted = f"mosaic_user:{username}"
+    return hashlib.sha256(salted.encode()).hexdigest()[:16]
+
+
 @dataclass
 class UserInfo:
     """User information extracted from HF Spaces request.

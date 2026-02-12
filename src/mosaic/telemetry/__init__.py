@@ -47,6 +47,7 @@ from mosaic.telemetry.utils import (
     StageTimer,
     sanitize_error_message,
     hash_session_id,
+    hash_username,
     UserInfo,
     extract_user_info,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "StageTimer",
     "sanitize_error_message",
     "hash_session_id",
+    "hash_username",
     "UserInfo",
     "extract_user_info",
 ]

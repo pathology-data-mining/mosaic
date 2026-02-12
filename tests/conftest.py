@@ -52,6 +52,11 @@ class GradioMock(MagicMock):
         return button
 
     @staticmethod
+    def LoginButton(*args, **kwargs):
+        """Mock LoginButton that tracks visible attribute."""
+        return MockComponent(*args, **kwargs)
+
+    @staticmethod
     def update(**kwargs):
         """Mock update() that returns a dict like real Gradio."""
         return kwargs

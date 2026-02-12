@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from mosaic.telemetry import TelemetryTracker, TelemetryConfig
+from mosaic.telemetry.utils import hash_username
 
 
 @pytest.fixture
@@ -152,7 +153,7 @@ class TestUsageEvents:
             event = json.loads(f.read().strip())
 
         assert event["is_logged_in"] is True
-        assert event["hf_username"] == "testuser"
+        assert event["hf_username"] == hash_username("testuser")
 
     def test_log_analysis_complete(self, tracker, temp_dir):
         """Test logging analysis complete event."""
@@ -286,7 +287,7 @@ class TestResourceEvents:
             event = json.loads(f.read().strip())
 
         assert event["is_logged_in"] is True
-        assert event["hf_username"] == "testuser"
+        assert event["hf_username"] == hash_username("testuser")
 
 
 class TestFailureEvents:

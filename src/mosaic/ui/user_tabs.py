@@ -186,7 +186,11 @@ def create_my_files_tab():
                     gr.File(visible=False),
                 )
 
-        def download_slide(slide_id_or_name, request: gr.Request = None, profile: gr.OAuthProfile = None):
+        def download_slide(
+            slide_id_or_name,
+            request: gr.Request = None,
+            profile: gr.OAuthProfile = None,
+        ):
             """Download the original slide file."""
             username, _ = _get_username(request, profile)
 
@@ -220,7 +224,11 @@ def create_my_files_tab():
                     value=f"Error: {str(e)}", visible=True
                 )
 
-        def delete_slide(slide_id_or_name, request: gr.Request = None, profile: gr.OAuthProfile = None):
+        def delete_slide(
+            slide_id_or_name,
+            request: gr.Request = None,
+            profile: gr.OAuthProfile = None,
+        ):
             """Delete a slide and all associated results."""
             username, _ = _get_username(request, profile)
 
@@ -394,7 +402,9 @@ def create_my_results_tab():
                     gr.File(visible=False),
                 )
 
-        def view_result_details(analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None):
+        def view_result_details(
+            analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None
+        ):
             """Load and display result details."""
             username, _ = _get_username(request, profile)
 
@@ -504,7 +514,9 @@ def create_my_results_tab():
                     gr.Textbox(value=f"Error: {str(e)}", visible=True),
                 )
 
-        def download_result_zip(analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None):
+        def download_result_zip(
+            analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None
+        ):
             """Create and download ZIP of result files."""
             username, _ = _get_username(request, profile)
 
@@ -531,7 +543,9 @@ def create_my_results_tab():
                     value=f"Error: {str(e)}", visible=True
                 )
 
-        def delete_result(analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None):
+        def delete_result(
+            analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None
+        ):
             """Delete an analysis result."""
             username, _ = _get_username(request, profile)
 

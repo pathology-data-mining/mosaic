@@ -741,11 +741,18 @@ def launch_gradio(server_name, server_port, share):
             {}
         )  # Maps slide filename to slide_id for user storage
 
-        # Add login button for OAuth (only active on HF Spaces).
-        # On HF Spaces start hidden; demo.load() reveals it after the
-        # server-side OAuthProfile check so the button renders in the
-        # correct state (login vs logout) without a brief flash.
+        # Add login button for OAuth.
+        # On HF Spaces the LoginButton is always hidden because sdk:docker
+        # injects the Space owner's identity into request.username, causing
+        # the button to show "Logged in as <owner>" for all visitors.
+        # Instead we use a custom Markdown with direct OAuth route links.
+        # The LoginButton must still exist in the layout so Gradio registers
+        # the /login/huggingface and /logout OAuth routes.
         login_button = gr.LoginButton(visible=not IS_HF_SPACES)
+
+        # Custom login display for HF Spaces (OAuthProfile-based, not request.username)
+        if IS_HF_SPACES:
+            login_status_md = gr.Markdown(value="", visible=False)
 
         gr.Markdown(
             "# Mosaic: H&E Whole Slide Image Cancer Subtype and Biomarker Inference"
@@ -924,7 +931,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 gr.Markdown(
                     """
 **Logging In:**
-- Click the **Login** button at the top of the page to sign in with your HuggingFace account
+- Click **Sign in with HuggingFace** at the top of the page to sign in with your HuggingFace account
 - Login uses HuggingFace OAuth — you will be redirected to HuggingFace to authorize access
 - After logging in, the page reloads and unlocks additional features
 
@@ -1851,10 +1858,13 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         # Locally: always visible with "local_user" for debugging
         gr.Markdown("---")
         if IS_HF_SPACES:
-            user_storage_header = gr.Markdown("## User Storage (Logged-In Users Only)")
+            user_storage_header = gr.Markdown(
+                "## User Storage (Logged-In Users Only)", visible=False
+            )
             user_storage_info = gr.Markdown(
                 "The tabs below are only accessible to logged-in users. "
-                "Upload and view your slides and analysis results."
+                "Upload and view your slides and analysis results.",
+                visible=False,
             )
         else:
             gr.Markdown("## User Storage (Local Debug Mode)")
@@ -1901,20 +1911,47 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         # LoginButton.click() fires BEFORE the OAuth redirect so the profile
         # is never available at that point.  Instead we rely on demo.load()
         # which fires after the OAuth redirect completes and the page reloads.
+        #
+        # On HF Spaces with sdk:docker, LoginButton is always hidden because
+        # it reads request.username (which returns the Space owner for all
+        # visitors). Instead we use login_status_md with direct OAuth links.
         if IS_HF_SPACES:
 
             def check_login_state(profile: Optional[gr.OAuthProfile] = None):
-                """Reveal login button and toggle user-storage UI based on OAuth state."""
-                is_logged_in = profile is not None
-                return (
-                    gr.update(visible=True),  # login_button (now in correct state)
-                    gr.update(visible=is_logged_in),  # user_storage_tabs
-                )
+                """Toggle login status display and user-storage UI based on OAuth state."""
+                if profile is not None:
+                    username = getattr(profile, "username", None) or getattr(
+                        profile, "name", "User"
+                    )
+                    return (
+                        gr.update(
+                            value=f"Signed in as **{username}** \u00b7 [Sign out](/logout)",
+                            visible=True,
+                        ),  # login_status_md
+                        gr.update(visible=True),  # user_storage_tabs
+                        gr.update(visible=True),  # user_storage_header
+                        gr.update(visible=True),  # user_storage_info
+                    )
+                else:
+                    return (
+                        gr.update(
+                            value="[Sign in with HuggingFace](/login/huggingface) to save slides and results",
+                            visible=True,
+                        ),  # login_status_md
+                        gr.update(visible=False),  # user_storage_tabs
+                        gr.update(visible=False),  # user_storage_header
+                        gr.update(visible=False),  # user_storage_info
+                    )
 
             demo.load(
                 check_login_state,
                 inputs=None,
-                outputs=[login_button, user_storage_tabs],
+                outputs=[
+                    login_status_md,
+                    user_storage_tabs,
+                    user_storage_header,
+                    user_storage_info,
+                ],
             )
 
     # Use hardware-specific concurrency limit
