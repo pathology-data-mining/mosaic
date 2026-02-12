@@ -913,6 +913,44 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
 ---
 
+## Login & User Storage
+"""
+            )
+
+            if IS_HF_SPACES:
+                gr.Markdown(
+                    """
+**Logging In:**
+- Click the **Login** button at the top of the page to sign in with your HuggingFace account
+- Login uses HuggingFace OAuth — you will be redirected to HuggingFace to authorize access
+- After logging in, the page reloads and unlocks additional features
+
+**Features Available After Login:**
+- **My Files** tab: View, download, and delete your previously uploaded slides
+- **My Results** tab: View, download, and delete your past analysis results
+- **Storage Usage**: See how much of your storage quota is used
+- **Re-analyze Existing Slides**: Select a previously uploaded slide from the dropdown without re-uploading
+"""
+                )
+            else:
+                gr.Markdown(
+                    """
+**Local Mode:**
+- Login is not required — all user storage features are available automatically
+- Files are stored under a debug username (`local_user`) in a temporary directory
+
+**User Storage Features:**
+- **My Files** tab: View, download, and delete your previously uploaded slides
+- **My Results** tab: View, download, and delete your past analysis results
+- **Storage Usage**: See how much of your storage quota is used
+- **Re-analyze Existing Slides**: Select a previously uploaded slide from the dropdown without re-uploading
+"""
+                )
+
+            gr.Markdown(
+                """
+---
+
 ## Troubleshooting
 
 **Common Issues:**
