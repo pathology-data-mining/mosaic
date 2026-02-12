@@ -32,18 +32,20 @@ LOCAL_DEBUG_USERNAME = "local_user"
 def _get_username(request: gr.Request = None, profile=None) -> tuple[str, bool]:
     """Get username for storage operations.
 
-    Uses the same approach as telemetry's extract_user_info: try
-    OAuthProfile first (reliable on HF Spaces), then fall back to
-    request.username.
+    On HF Spaces, uses OAuthProfile from gr.LoginButton() to identify
+    the logged-in user. Does NOT use request.username, which returns
+    the Space owner's username rather than the visitor's.
 
     Returns:
         Tuple of (username, is_local_mode)
-        - In HF Spaces: (profile.username or request.username, False) if logged in
+        - In HF Spaces: (profile.username, False) if logged in
         - Locally: (LOCAL_DEBUG_USERNAME, True)
         - HF Spaces not logged in: (None, False)
     """
     if IS_HF_SPACES:
-        # Primary: OAuthProfile (set by gr.LoginButton OAuth flow)
+        # On HF Spaces, only OAuthProfile reliably identifies the logged-in user.
+        # request.username returns the Space owner's username (not the visitor's),
+        # so we must NOT fall back to it.
         if profile is not None:
             try:
                 username = getattr(profile, "username", None)
@@ -51,13 +53,6 @@ def _get_username(request: gr.Request = None, profile=None) -> tuple[str, bool]:
                     return (username, False)
             except Exception:
                 pass
-
-        # Fallback: request.username
-        try:
-            if request and request.username:
-                return (request.username, False)
-        except Exception:
-            pass
 
         return (None, False)
     else:

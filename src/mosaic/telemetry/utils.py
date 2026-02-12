@@ -113,16 +113,17 @@ class UserInfo:
 
 
 def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> UserInfo:
-    """Extract user info from Gradio OAuth profile or request object.
+    """Extract user info from Gradio OAuth profile.
 
     With gr.LoginButton(), Gradio provides user info via gr.OAuthProfile
     (injected automatically into event handlers). The profile object has
     a `username` attribute with the HuggingFace username.
 
-    Falls back to request.username for non-OAuth auth setups.
+    Does NOT use request.username, which on HF Spaces returns the Space
+    owner's username rather than the visitor's.
 
     Args:
-        request: Gradio request object (can be None)
+        request: Gradio request object (unused, kept for API compatibility)
         is_hf_spaces: Whether running on HuggingFace Spaces (only extract on HF)
         profile: Gradio OAuthProfile object (injected by LoginButton OAuth flow)
 
@@ -137,7 +138,9 @@ def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> User
     if not is_hf_spaces:
         return UserInfo()
 
-    # Primary: extract from OAuthProfile (set by gr.LoginButton OAuth flow)
+    # On HF Spaces, only OAuthProfile reliably identifies the logged-in user.
+    # request.username returns the Space owner's username (not the visitor's),
+    # so we must NOT fall back to it.
     if profile is not None:
         try:
             username = getattr(profile, "username", None)
@@ -147,30 +150,5 @@ def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> User
         except Exception as e:
             logger.debug(f"Could not extract username from OAuthProfile: {e}")
 
-    # Fallback: try request.username (works with Gradio's built-in auth= parameter)
-    if request is None:
-        logger.debug(
-            "Cannot extract user info: request and profile are both None/empty"
-        )
-        return UserInfo()
-
-    try:
-        username = None
-
-        try:
-            username = request.username
-        except Exception as auth_error:
-            logger.debug(f"Could not access request.username: {auth_error}")
-
-        if username:
-            logger.info(f"Extracted user from request.username: {username}")
-            return UserInfo(is_logged_in=True, username=username)
-        else:
-            logger.debug(
-                "User info not available: no OAuthProfile and request.username is None"
-            )
-            return UserInfo()
-
-    except Exception as e:
-        logger.error(f"Unexpected error extracting user info: {e}")
-        return UserInfo()
+    logger.debug("User not logged in: no OAuthProfile available")
+    return UserInfo()

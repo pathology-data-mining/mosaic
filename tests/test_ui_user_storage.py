@@ -86,9 +86,20 @@ class TestUsernameExtraction:
 
     @patch("mosaic.ui.user_tabs.IS_HF_SPACES", True)
     def test_hf_logged_in_returns_username(self, mock_request_hf_logged_in):
-        """HF Spaces logged in should return request username."""
-        username, is_local = _get_username(mock_request_hf_logged_in)
+        """HF Spaces logged in should return OAuthProfile username, not request.username."""
+
+        class MockProfile:
+            username = "test_user"
+
+        username, is_local = _get_username(mock_request_hf_logged_in, profile=MockProfile())
         assert username == "test_user"
+        assert is_local is False
+
+    @patch("mosaic.ui.user_tabs.IS_HF_SPACES", True)
+    def test_hf_request_username_ignored(self, mock_request_hf_logged_in):
+        """HF Spaces should NOT use request.username (returns Space owner)."""
+        username, is_local = _get_username(mock_request_hf_logged_in, profile=None)
+        assert username is None
         assert is_local is False
 
     @patch("mosaic.ui.user_tabs.IS_HF_SPACES", True)

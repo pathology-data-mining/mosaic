@@ -182,9 +182,9 @@ class TestExtractUserInfo:
         return MockRequest(username)
 
     def test_extract_user_info_with_logged_in_user(self):
-        """Test extraction with a logged-in user."""
-        request = self._create_mock_request("testuser123")
-        user_info = extract_user_info(request, is_hf_spaces=True)
+        """Test extraction with a logged-in user via OAuthProfile."""
+        profile = self._create_mock_profile("testuser123")
+        user_info = extract_user_info(None, is_hf_spaces=True, profile=profile)
 
         assert user_info.is_logged_in is True
         assert user_info.username == "testuser123"
@@ -229,9 +229,9 @@ class TestExtractUserInfo:
 
     def test_extract_user_info_with_special_characters(self):
         """Test extraction with username containing special characters."""
-        request = self._create_mock_request("user-name_123")
+        profile = self._create_mock_profile("user-name_123")
 
-        user_info = extract_user_info(request, is_hf_spaces=True)
+        user_info = extract_user_info(None, is_hf_spaces=True, profile=profile)
 
         assert user_info.is_logged_in is True
         assert user_info.username == "user-name_123"
@@ -274,14 +274,14 @@ class TestExtractUserInfo:
         assert user_info.is_logged_in is True
         assert user_info.username == "oauth_user"
 
-    def test_extract_user_info_falls_back_to_request(self):
-        """Test fallback to request.username when no OAuthProfile."""
-        request = self._create_mock_request("request_user")
+    def test_extract_user_info_ignores_request_username(self):
+        """Test that request.username is NOT used (it returns Space owner, not visitor)."""
+        request = self._create_mock_request("space_owner")
 
         user_info = extract_user_info(request, is_hf_spaces=True, profile=None)
 
-        assert user_info.is_logged_in is True
-        assert user_info.username == "request_user"
+        assert user_info.is_logged_in is False
+        assert user_info.username is None
 
     def test_extract_user_info_no_profile_not_hf_spaces(self):
         """Test that profile is ignored when not on HF Spaces."""
