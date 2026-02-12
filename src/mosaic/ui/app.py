@@ -747,11 +747,19 @@ def launch_gradio(server_name, server_port, share):
         # the button to show "Logged in as <owner>" for all visitors.
         # Instead we use a custom Markdown with direct OAuth route links.
         # The LoginButton must still exist in the layout so Gradio registers
-        # the /login/huggingface and /logout OAuth routes.
+        # the /login/huggingface and /logout OAuth routes (via expects_oauth).
         login_button = gr.LoginButton(visible=not IS_HF_SPACES)
 
-        # Custom login display for HF Spaces (OAuthProfile-based, not request.username)
         if IS_HF_SPACES:
+            # LoginButton.activate() registers a load event (_check_login_status)
+            # that returns a NEW LoginButton with visible=True, overriding our
+            # visible=False. It reads session oauth_info (populated by the HF
+            # reverse proxy with the Space owner's identity) and shows
+            # "Logout (raylim)" to everyone. Clear the load event so the button
+            # stays permanently hidden.
+            login_button.load_event_to_attach = None
+
+            # Custom login display (OAuthProfile-based, not request.username)
             login_status_md = gr.Markdown(value="", visible=False)
 
         gr.Markdown(
