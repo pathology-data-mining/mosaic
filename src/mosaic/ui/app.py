@@ -1925,23 +1925,21 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         # visitors). Instead we use login_status_md with direct OAuth links.
         if IS_HF_SPACES:
 
-            def check_login_state(request: gr.Request):
-                """Toggle login status display and user-storage UI based on OAuth state.
+            def check_login_state(session_id_from_browser):
+                """Toggle login status display based on localStorage session ID.
 
-                Reads the visitor's identity from our server-side session
-                (``mosaic_auth`` cookie) instead of ``gr.OAuthProfile``, which
-                on HF Spaces with Docker SDK always returns the Space owner's
-                identity due to the forged Starlette session cookie.
+                The HF proxy strips custom cookies, so we persist the session
+                ID in the browser's localStorage.  The ``js=`` parameter on
+                ``demo.load()`` reads it and passes it here as a string.
                 """
-                from mosaic.ui.oauth import get_user_from_server_session, _sessions
+                from mosaic.ui.oauth import get_user_by_session_id, _sessions
 
                 logger.debug(
-                    f"check_login_state: request type={type(request).__name__}, "
-                    f"has_cookies={hasattr(request, 'cookies')}, "
-                    f"has_headers={hasattr(request, 'headers')}, "
+                    f"check_login_state: session_id_from_browser="
+                    f"{session_id_from_browser[:8] + '...' if session_id_from_browser else None!r}, "
                     f"active_sessions={len(_sessions)}"
                 )
-                userinfo = get_user_from_server_session(request)
+                userinfo = get_user_by_session_id(session_id_from_browser)
                 if userinfo is not None:
                     username = userinfo.get("preferred_username", "User")
                     return (
@@ -1964,15 +1962,19 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         gr.update(visible=False),  # user_storage_info
                     )
 
+            # Hidden textbox to receive the session ID from JS
+            session_id_input = gr.Textbox(visible=False)
+
             demo.load(
                 check_login_state,
-                inputs=None,
+                inputs=[session_id_input],
                 outputs=[
                     login_status_md,
                     user_storage_tabs,
                     user_storage_header,
                     user_storage_info,
                 ],
+                js="() => [localStorage.getItem('mosaic_session_id') || '']",
             )
 
     # Use hardware-specific concurrency limit

@@ -13,6 +13,7 @@ from mosaic.ui.oauth import (
     _SESSION_TTL_SEC,
     _STATE_TTL_SEC,
     create_oauth_lifespan,
+    get_user_by_session_id,
     get_user_from_server_session,
     mount_oauth_routes,
 )
@@ -101,6 +102,46 @@ class TestSessionStore:
         # get_user_from_server_session checks hasattr, so pass an object
         # without cookies or headers
         assert get_user_from_server_session(None) is None
+
+
+# ---------------------------------------------------------------------------
+# get_user_by_session_id tests
+# ---------------------------------------------------------------------------
+
+
+class TestGetUserBySessionId:
+    """Tests for get_user_by_session_id (localStorage-based lookup)."""
+
+    def test_valid_session_id(self):
+        """Test lookup with a valid session ID."""
+        _sessions["sid_abc"] = {
+            "userinfo": {"preferred_username": "alice"},
+            "created_at": time.time(),
+        }
+        result = get_user_by_session_id("sid_abc")
+        assert result is not None
+        assert result["preferred_username"] == "alice"
+
+    def test_empty_session_id(self):
+        """Test that empty string returns None."""
+        assert get_user_by_session_id("") is None
+
+    def test_none_session_id(self):
+        """Test that None returns None."""
+        assert get_user_by_session_id(None) is None
+
+    def test_unknown_session_id(self):
+        """Test that unknown session ID returns None."""
+        assert get_user_by_session_id("nonexistent") is None
+
+    def test_expired_session_id(self):
+        """Test that expired session returns None and is cleaned up."""
+        _sessions["expired_sid"] = {
+            "userinfo": {"preferred_username": "bob"},
+            "created_at": time.time() - _SESSION_TTL_SEC - 1,
+        }
+        assert get_user_by_session_id("expired_sid") is None
+        assert "expired_sid" not in _sessions
 
 
 # ---------------------------------------------------------------------------

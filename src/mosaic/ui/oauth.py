@@ -3,9 +3,14 @@
 On HF Spaces with sdk:docker, Gradio's built-in OAuth (gr.LoginButton /
 gr.OAuthProfile) doesn't work because the HF reverse proxy injects the
 Space owner's identity into every session.  This module implements the
-Authorization Code flow directly against HF's OAuth provider and writes
-the visitor's real identity into the Starlette session so that Gradio's
-existing OAuthProfile injection works transparently.
+Authorization Code flow directly against HF's OAuth provider.
+
+The HF proxy strips all custom cookies — only its own forged ``session``
+cookie survives.  To persist the visitor's session ID across page loads,
+the callback stores it in the browser's ``localStorage`` via an
+intermediate HTML page.  The Gradio ``demo.load()`` handler reads it back
+via a ``js=`` parameter and passes it to the Python handler, which looks
+up the server-side session.
 
 Environment variables (set automatically by HF Spaces):
     OAUTH_CLIENT_ID:     OAuth application client ID
@@ -15,11 +20,12 @@ Environment variables (set automatically by HF Spaces):
 
 Routes mounted on the Gradio ASGI app:
     GET /api/auth/login    -> Redirect to HF authorize endpoint
-    GET /api/auth/callback -> Exchange code for token, set session
-    GET /api/auth/logout   -> Clear session, redirect to /
+    GET /api/auth/callback -> Exchange code for token, store session via localStorage
+    GET /api/auth/logout   -> Clear session, clear localStorage, redirect to /
 """
 
 import contextlib
+import html as html_module
 import json
 import os
 import secrets
@@ -29,7 +35,7 @@ from urllib.parse import urlencode
 
 from loguru import logger
 from starlette.requests import Request
-from starlette.responses import RedirectResponse, JSONResponse
+from starlette.responses import RedirectResponse, JSONResponse, HTMLResponse
 from starlette.routing import Route
 
 # ---------------------------------------------------------------------------
@@ -48,10 +54,13 @@ HF_TOKEN_URL = "https://huggingface.co/oauth/token"
 # Server-side session store
 # ---------------------------------------------------------------------------
 
-# {cookie_value: {"userinfo": {...}, "created_at": float}}
+# {session_id: {"userinfo": {...}, "created_at": float}}
 _sessions: dict[str, dict] = {}
 _SESSION_TTL_SEC = 24 * 60 * 60  # 24 hours
-_SESSION_COOKIE = "mosaic_auth"
+_SESSION_COOKIE = "mosaic_auth"  # kept for backward-compat with tests
+
+# localStorage key used by the browser to persist the session ID
+_LOCALSTORAGE_KEY = "mosaic_session_id"
 
 # In-memory CSRF state tokens: {state_value: created_at_float}
 _pending_states: dict[str, float] = {}
@@ -132,6 +141,40 @@ def get_user_from_server_session(request) -> Optional[dict]:
 
     if time.time() - entry["created_at"] > _SESSION_TTL_SEC:
         del _sessions[cookie_val]
+        return None
+
+    return entry.get("userinfo")
+
+
+def get_user_by_session_id(session_id: Optional[str]) -> Optional[dict]:
+    """Look up user info by a raw session ID (from localStorage).
+
+    This is the primary lookup method on HF Spaces where the HF proxy
+    strips custom cookies.  The session ID is stored in the browser's
+    localStorage by the callback page and passed to Gradio handlers via
+    the ``js=`` parameter on ``demo.load()``.
+
+    Args:
+        session_id: The session ID string (from localStorage), or empty/None.
+
+    Returns:
+        userinfo dict with at least ``preferred_username`` key, or None.
+    """
+    _prune_expired()
+
+    if not session_id:
+        return None
+
+    entry = _sessions.get(session_id)
+    if entry is None:
+        logger.debug(
+            f"Session ID ({session_id[:8]}...) not found. "
+            f"Active sessions: {len(_sessions)}"
+        )
+        return None
+
+    if time.time() - entry["created_at"] > _SESSION_TTL_SEC:
+        del _sessions[session_id]
         return None
 
     return entry.get("userinfo")
@@ -261,49 +304,50 @@ async def _callback(request: Request):
     username = userinfo.get("preferred_username") or userinfo.get("sub", "unknown")
     logger.info(f"OAuth callback: authenticated user '{username}'")
 
-    # Write into Gradio's Starlette session so OAuthProfile picks it up
-    # Gradio expects session["oauth_info"]["userinfo"] with at least
-    # "preferred_username" and optionally "name", "picture", etc.
-    oauth_info = {
-        "userinfo": userinfo,
-        "access_token": access_token,
-    }
-    request.session["oauth_info"] = oauth_info
-
-    # Also store in our server-side session as fallback
+    # Store in server-side session dict (keyed by random session ID)
     session_id = secrets.token_urlsafe(32)
     _sessions[session_id] = {
         "userinfo": userinfo,
         "created_at": time.time(),
     }
 
-    # Build redirect response with cookie
-    response = RedirectResponse("/", status_code=302)
-    response.set_cookie(
-        _SESSION_COOKIE,
-        session_id,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=_SESSION_TTL_SEC,
-    )
-    return response
+    # The HF proxy strips custom cookies, so we can't use Set-Cookie to
+    # persist the session ID.  Instead, return a small HTML page that
+    # stores the session ID in localStorage and then redirects to /.
+    safe_sid = html_module.escape(session_id)
+    page = f"""<!DOCTYPE html>
+<html><head><title>Signing in...</title></head>
+<body><p>Signing in&hellip;</p>
+<script>
+try {{ localStorage.setItem('{_LOCALSTORAGE_KEY}', '{safe_sid}'); }}
+catch(e) {{ console.warn('Could not store session:', e); }}
+window.location.replace('/');
+</script>
+<noscript><a href="/">Click here to continue</a></noscript>
+</body></html>"""
+    return HTMLResponse(page)
 
 
 async def _logout(request: Request):
-    """Clear session and redirect to /."""
-    # Clear Gradio's session
-    if "oauth_info" in request.session:
-        del request.session["oauth_info"]
+    """Clear server-side session and browser localStorage, then redirect."""
+    # Try to clear server-side session from query param (set by JS)
+    sid = request.query_params.get("sid", "")
+    if sid and sid in _sessions:
+        del _sessions[sid]
+        logger.info(f"Cleared server-side session for logout ({sid[:8]}...)")
 
-    # Clear server-side session
-    cookie_val = request.cookies.get(_SESSION_COOKIE)
-    if cookie_val and cookie_val in _sessions:
-        del _sessions[cookie_val]
-
-    response = RedirectResponse("/", status_code=302)
-    response.delete_cookie(_SESSION_COOKIE)
-    return response
+    # Return HTML that clears localStorage and redirects
+    page = f"""<!DOCTYPE html>
+<html><head><title>Signing out...</title></head>
+<body><p>Signing out&hellip;</p>
+<script>
+try {{ localStorage.removeItem('{_LOCALSTORAGE_KEY}'); }}
+catch(e) {{ console.warn('Could not clear session:', e); }}
+window.location.replace('/');
+</script>
+<noscript><a href="/">Click here to continue</a></noscript>
+</body></html>"""
+    return HTMLResponse(page)
 
 
 # ---------------------------------------------------------------------------
