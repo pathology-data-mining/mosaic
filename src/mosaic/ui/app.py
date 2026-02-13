@@ -1971,17 +1971,9 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         gr.update(visible=False),  # user_storage_info
                     )
 
-            def handle_logout(session_id_from_browser):
-                """Clear server-side session and return logged-out UI."""
-                from mosaic.ui.oauth import get_user_by_session_id, _sessions
-
-                # Clear server-side session
-                if session_id_from_browser and session_id_from_browser in _sessions:
-                    del _sessions[session_id_from_browser]
-                    logger.info(
-                        f"Logout: cleared server session "
-                        f"({session_id_from_browser[:8]}...)"
-                    )
+            def handle_logout():
+                """Return logged-out UI. localStorage is cleared by js=."""
+                logger.info("Logout: clearing login state in UI")
                 return (
                     gr.update(
                         value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
@@ -2011,7 +2003,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
             logout_button.click(
                 handle_logout,
-                inputs=[session_id_input],
+                inputs=None,
                 outputs=[
                     login_status_md,
                     logout_button,
@@ -2019,7 +2011,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     user_storage_header,
                     user_storage_info,
                 ],
-                js="() => { const sid = localStorage.getItem('mosaic_session_id') || ''; localStorage.removeItem('mosaic_session_id'); return [sid]; }",
+                js="() => { localStorage.removeItem('mosaic_session_id') }",
             )
 
     # Use hardware-specific concurrency limit
