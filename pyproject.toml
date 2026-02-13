@@ -42,6 +42,13 @@ disable = [
   "unspecified-encoding",
 ]
 
+[tool.uv]
+# Override PyTorch dependencies from mussel[torch-gpu] for macOS compatibility
+override-dependencies = [
+  "torch>=2.0.0; sys_platform == 'darwin'",
+  "torchvision>=0.15.0; sys_platform == 'darwin'",
+]
+
 [tool.uv.sources]
 # For local dev with SSH: uv pip install -e .
 # For Docker builds with token: GH_TOKEN=<token> uv pip install -e .

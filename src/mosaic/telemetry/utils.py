@@ -5,7 +5,7 @@ This module provides helper utilities:
 - sanitize_error_message: Remove sensitive data from error messages
 - hash_session_id: Hash session IDs for privacy
 - UserInfo: Dataclass for user information from HF Spaces
-- extract_user_info: Extract user info from Gradio request object
+- extract_user_info: Extract user info from Gradio request/OAuth profile
 """
 
 import hashlib
@@ -99,25 +99,6 @@ def hash_session_id(session_id: Optional[str]) -> Optional[str]:
     return hashlib.sha256(salted.encode()).hexdigest()[:16]
 
 
-def hash_username(username: Optional[str]) -> Optional[str]:
-    """Hash a username for privacy in telemetry.
-
-    Uses SHA-256 with a different salt than session IDs to create a one-way hash.
-    This allows distinguishing users in telemetry without storing actual usernames.
-
-    Args:
-        username: HuggingFace username (can be None for anonymous users)
-
-    Returns:
-        Hashed username or None if input is None
-    """
-    if username is None:
-        return None
-
-    salted = f"mosaic_user:{username}"
-    return hashlib.sha256(salted.encode()).hexdigest()[:16]
-
-
 @dataclass
 class UserInfo:
     """User information extracted from HF Spaces request.
@@ -168,6 +149,20 @@ def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> User
                 return UserInfo(is_logged_in=True, username=username)
         except Exception as e:
             logger.debug(f"Could not extract username from OAuthProfile: {e}")
+
+    # Fallback: check server-side session store (custom OAuth flow)
+    if request is not None:
+        try:
+            from mosaic.ui.oauth import get_user_from_server_session
+
+            userinfo = get_user_from_server_session(request)
+            if userinfo:
+                username = userinfo.get("preferred_username")
+                if username:
+                    logger.info(f"Extracted user from server-side session: {username}")
+                    return UserInfo(is_logged_in=True, username=username)
+        except Exception as e:
+            logger.debug(f"Server-side session lookup failed: {e}")
 
     logger.debug("User not logged in: no OAuthProfile available")
     return UserInfo()

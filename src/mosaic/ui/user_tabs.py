@@ -54,6 +54,19 @@ def _get_username(request: gr.Request = None, profile=None) -> tuple[str, bool]:
             except Exception:
                 pass
 
+        # Fallback: check server-side session store (custom OAuth flow)
+        if request is not None:
+            try:
+                from mosaic.ui.oauth import get_user_from_server_session
+
+                userinfo = get_user_from_server_session(request)
+                if userinfo:
+                    username = userinfo.get("preferred_username")
+                    if username:
+                        return (username, False)
+            except Exception:
+                pass
+
         return (None, False)
     else:
         # Local mode - use debug username
