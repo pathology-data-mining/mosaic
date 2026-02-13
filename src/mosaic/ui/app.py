@@ -2011,6 +2011,9 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     user_storage_header,
                     user_storage_info,
                 ],
+            ).then(
+                fn=None,
+                inputs=None,
                 js="() => { localStorage.removeItem('mosaic_session_id') }",
             )
 
