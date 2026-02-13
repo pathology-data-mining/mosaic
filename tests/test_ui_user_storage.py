@@ -86,16 +86,23 @@ class TestUsernameExtraction:
 
     @patch("mosaic.ui.user_tabs.IS_HF_SPACES", True)
     def test_hf_logged_in_returns_username(self, mock_request_hf_logged_in):
-        """HF Spaces logged in should return OAuthProfile username, not request.username."""
+        """HF Spaces logged in should return username from session_id lookup."""
+        import time
+        from mosaic.ui.oauth import _sessions
 
-        class MockProfile:
-            username = "test_user"
-
-        username, is_local = _get_username(
-            mock_request_hf_logged_in, profile=MockProfile()
-        )
-        assert username == "test_user"
-        assert is_local is False
+        # Set up a server-side session
+        _sessions["test_session_123"] = {
+            "userinfo": {"preferred_username": "test_user"},
+            "created_at": time.time(),
+        }
+        try:
+            username, is_local = _get_username(
+                mock_request_hf_logged_in, session_id="test_session_123"
+            )
+            assert username == "test_user"
+            assert is_local is False
+        finally:
+            _sessions.pop("test_session_123", None)
 
     @patch("mosaic.ui.user_tabs.IS_HF_SPACES", True)
     def test_hf_request_username_ignored(self, mock_request_hf_logged_in):

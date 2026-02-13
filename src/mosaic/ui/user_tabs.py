@@ -29,29 +29,34 @@ from mosaic.user_results import (
 LOCAL_DEBUG_USERNAME = "local_user"
 
 
-def _get_username(request: gr.Request = None, profile=None) -> tuple[str, bool]:
+def _get_username(
+    request: gr.Request = None, profile=None, session_id: str = ""
+) -> tuple[str, bool]:
     """Get username for storage operations.
 
-    On HF Spaces, uses OAuthProfile from gr.LoginButton() to identify
-    the logged-in user. Does NOT use request.username, which returns
-    the Space owner's username rather than the visitor's.
+    On HF Spaces with Docker SDK the HF proxy strips custom cookies and
+    forges the Starlette session so ``gr.OAuthProfile`` always returns the
+    Space owner's identity.  The only trustworthy channel is the session ID
+    stored in the browser's ``localStorage`` and passed via Gradio inputs.
+
+    Args:
+        request: Gradio request (auto-injected).
+        profile: OAuthProfile (auto-injected, **unreliable on HF Spaces**).
+        session_id: Server-side session ID from localStorage (reliable).
 
     Returns:
         Tuple of (username, is_local_mode)
-        - In HF Spaces: (profile.username, False) if logged in
+        - In HF Spaces: (username, False) if session_id is valid
         - Locally: (LOCAL_DEBUG_USERNAME, True)
         - HF Spaces not logged in: (None, False)
     """
     if IS_HF_SPACES:
-        # On HF Spaces with Docker SDK, the HF proxy forges the Starlette
-        # session cookie so gr.OAuthProfile always returns the Space owner's
-        # identity. Our server-side session (mosaic_auth cookie) is
-        # trustworthy — check it first.
-        if request is not None:
+        # Look up user by session ID passed from localStorage via Gradio js=
+        if session_id:
             try:
-                from mosaic.ui.oauth import get_user_from_server_session
+                from mosaic.ui.oauth import get_user_by_session_id
 
-                userinfo = get_user_from_server_session(request)
+                userinfo = get_user_by_session_id(session_id)
                 if userinfo:
                     username = userinfo.get("preferred_username")
                     if username:
@@ -59,23 +64,21 @@ def _get_username(request: gr.Request = None, profile=None) -> tuple[str, bool]:
             except Exception:
                 pass
 
-        # Fallback: OAuthProfile (may be unreliable on Docker SDK Spaces)
-        if profile is not None:
-            try:
-                username = getattr(profile, "username", None)
-                if username:
-                    return (username, False)
-            except Exception:
-                pass
-
+        # Do NOT fall back to OAuthProfile — it always returns the Space
+        # owner's identity on Docker SDK Spaces.
         return (None, False)
     else:
         # Local mode - use debug username
         return (LOCAL_DEBUG_USERNAME, True)
 
 
-def create_my_files_tab():
+def create_my_files_tab(session_id_component=None):
     """Create the My Files tab UI for managing uploaded slides.
+
+    Args:
+        session_id_component: Hidden gr.Textbox carrying the localStorage
+            session ID.  Passed as input to event handlers so that
+            ``_get_username`` can resolve the visitor's identity on HF Spaces.
 
     Returns:
         Dictionary of UI components for event handlers
@@ -121,9 +124,13 @@ def create_my_files_tab():
         # Download output
         slide_download_file = gr.File(label="Download", visible=False)
 
-        def load_files(request: gr.Request = None, profile: gr.OAuthProfile = None):
+        def load_files(
+            session_id: str = "",
+            request: gr.Request = None,
+            profile: gr.OAuthProfile = None,
+        ):
             """Load user's uploaded files."""
-            username, is_local = _get_username(request, profile)
+            username, is_local = _get_username(request, profile, session_id)
 
             if not username:
                 return (
@@ -202,11 +209,12 @@ def create_my_files_tab():
 
         def download_slide(
             slide_id_or_name,
+            session_id: str = "",
             request: gr.Request = None,
             profile: gr.OAuthProfile = None,
         ):
             """Download the original slide file."""
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
 
             if not username or not slide_id_or_name:
                 return gr.File(visible=False), gr.Textbox(
@@ -240,11 +248,12 @@ def create_my_files_tab():
 
         def delete_slide(
             slide_id_or_name,
+            session_id: str = "",
             request: gr.Request = None,
             profile: gr.OAuthProfile = None,
         ):
             """Delete a slide and all associated results."""
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
 
             if not username or not slide_id_or_name:
                 return gr.Textbox(
@@ -271,10 +280,14 @@ def create_my_files_tab():
                 logger.error(f"Failed to delete slide {slide_id_or_name}: {e}")
                 return gr.Textbox(value=f"Error: {str(e)}", visible=True)
 
+        # Build inputs lists — include session_id_component when provided
+        # (HF Spaces) so _get_username can resolve the visitor's identity.
+        _sid = [session_id_component] if session_id_component is not None else []
+
         # Wire up events
         refresh_files_btn.click(
             load_files,
-            inputs=None,
+            inputs=_sid or None,
             outputs=[
                 storage_usage_md,
                 files_table,
@@ -285,17 +298,17 @@ def create_my_files_tab():
 
         download_slide_btn.click(
             download_slide,
-            inputs=[selected_slide_id],
+            inputs=[selected_slide_id] + _sid,
             outputs=[slide_download_file, file_action_status],
         )
 
         delete_slide_btn.click(
             delete_slide,
-            inputs=[selected_slide_id],
+            inputs=[selected_slide_id] + _sid,
             outputs=[file_action_status],
         ).then(
             load_files,  # Refresh after delete
-            inputs=None,
+            inputs=_sid or None,
             outputs=[
                 storage_usage_md,
                 files_table,
@@ -327,8 +340,12 @@ def create_my_files_tab():
     }
 
 
-def create_my_results_tab():
+def create_my_results_tab(session_id_component=None):
     """Create the My Results tab UI for browsing analysis results.
+
+    Args:
+        session_id_component: Hidden gr.Textbox carrying the localStorage
+            session ID (see ``create_my_files_tab`` docstring).
 
     Returns:
         Dictionary of UI components for event handlers
@@ -378,9 +395,13 @@ def create_my_results_tab():
         )
         result_download_file = gr.File(label="Download", visible=False)
 
-        def load_results(request: gr.Request = None, profile: gr.OAuthProfile = None):
+        def load_results(
+            session_id: str = "",
+            request: gr.Request = None,
+            profile: gr.OAuthProfile = None,
+        ):
             """Load user's analysis results."""
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
 
             if not username:
                 return [], gr.Textbox(visible=False), gr.File(visible=False)
@@ -417,10 +438,13 @@ def create_my_results_tab():
                 )
 
         def view_result_details(
-            analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None
+            analysis_id,
+            session_id: str = "",
+            request: gr.Request = None,
+            profile: gr.OAuthProfile = None,
         ):
             """Load and display result details."""
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
 
             if not username or not analysis_id:
                 return (
@@ -529,10 +553,13 @@ def create_my_results_tab():
                 )
 
         def download_result_zip(
-            analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None
+            analysis_id,
+            session_id: str = "",
+            request: gr.Request = None,
+            profile: gr.OAuthProfile = None,
         ):
             """Create and download ZIP of result files."""
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
 
             if not username or not analysis_id:
                 return gr.File(visible=False), gr.Textbox(
@@ -558,10 +585,13 @@ def create_my_results_tab():
                 )
 
         def delete_result(
-            analysis_id, request: gr.Request = None, profile: gr.OAuthProfile = None
+            analysis_id,
+            session_id: str = "",
+            request: gr.Request = None,
+            profile: gr.OAuthProfile = None,
         ):
             """Delete an analysis result."""
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
 
             if not username or not analysis_id:
                 return gr.Textbox(
@@ -582,16 +612,19 @@ def create_my_results_tab():
                 logger.error(f"Failed to delete result {analysis_id}: {e}")
                 return gr.Textbox(value=f"Error: {str(e)}", visible=True)
 
+        # Build inputs lists — include session_id_component when provided
+        _sid = [session_id_component] if session_id_component is not None else []
+
         # Wire up events
         refresh_results_btn.click(
             load_results,
-            inputs=None,
+            inputs=_sid or None,
             outputs=[results_table, result_action_status, result_download_file],
         )
 
         view_result_btn.click(
             view_result_details,
-            inputs=[selected_analysis_id],
+            inputs=[selected_analysis_id] + _sid,
             outputs=[
                 result_details,
                 result_metadata_md,
@@ -604,17 +637,17 @@ def create_my_results_tab():
 
         download_zip_btn.click(
             download_result_zip,
-            inputs=[selected_analysis_id],
+            inputs=[selected_analysis_id] + _sid,
             outputs=[result_download_file, result_action_status],
         )
 
         delete_result_btn.click(
             delete_result,
-            inputs=[selected_analysis_id],
+            inputs=[selected_analysis_id] + _sid,
             outputs=[result_action_status],
         ).then(
             load_results,  # Refresh after delete
-            inputs=None,
+            inputs=_sid or None,
             outputs=[results_table, result_action_status, result_download_file],
         )
 

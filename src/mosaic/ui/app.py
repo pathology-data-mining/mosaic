@@ -1868,6 +1868,13 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             outputs=[existing_slides_dropdown],
         )
 
+        # Hidden textbox that carries the localStorage session ID into
+        # every Gradio event handler that needs the visitor's identity.
+        # On HF Spaces the js= parameter on demo.load() fills this from
+        # localStorage; locally it stays empty and _get_username() falls
+        # back to LOCAL_DEBUG_USERNAME.
+        session_id_input = gr.Textbox(visible=False, elem_id="session_id_input")
+
         # Add My Files and My Results tabs for user storage
         # On HF Spaces: visible for logged-in users
         # Locally: always visible with "local_user" for debugging
@@ -1887,39 +1894,53 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 "🔧 **Debug Mode**: Files stored as user 'local_user' in `/tmp/mosaic_user_data/local_user/`"
             )
 
+        _LS_JS = "() => [localStorage.getItem('mosaic_session_id') || '']"
+
+        # Populate session_id_input from localStorage on page load so that
+        # subsequent button clicks (refresh, download, delete) can read it.
+        # demo.load events that need it also use js=_LS_JS directly.
+        demo.load(
+            fn=lambda sid: sid,
+            inputs=[session_id_input],
+            outputs=[session_id_input],
+            js=_LS_JS,
+        )
+
         # User storage tabs - initially hidden on HF Spaces, visible locally
         with gr.Tabs(visible=not IS_HF_SPACES) as user_storage_tabs:
             with gr.Tab("My Files"):
                 from mosaic.ui.user_tabs import create_my_files_tab
 
-                my_files_components = create_my_files_tab()
+                my_files_components = create_my_files_tab(session_id_input)
 
                 # Load files on demo load
                 demo.load(
                     my_files_components["load_files"],
-                    inputs=None,
+                    inputs=[session_id_input],
                     outputs=[
                         my_files_components["storage_usage"],
                         my_files_components["files_table"],
                         my_files_components["file_action_status"],
                         my_files_components["slide_download_file"],
                     ],
+                    js=_LS_JS,
                 )
 
             with gr.Tab("My Results"):
                 from mosaic.ui.user_tabs import create_my_results_tab
 
-                my_results_components = create_my_results_tab()
+                my_results_components = create_my_results_tab(session_id_input)
 
                 # Load results on demo load
                 demo.load(
                     my_results_components["load_results"],
-                    inputs=None,
+                    inputs=[session_id_input],
                     outputs=[
                         my_results_components["results_table"],
                         my_results_components["result_action_status"],
                         my_results_components["result_download_file"],
                     ],
+                    js=_LS_JS,
                 )
 
         # Show/hide user storage features based on login state on page load.
@@ -1971,9 +1992,6 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         gr.update(visible=False),  # user_storage_info
                     )
 
-            # Hidden textbox to receive the session ID from JS
-            session_id_input = gr.Textbox(visible=False)
-
             demo.load(
                 check_login_state,
                 inputs=[session_id_input],
@@ -1984,7 +2002,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     user_storage_header,
                     user_storage_info,
                 ],
-                js="() => [localStorage.getItem('mosaic_session_id') || '']",
+                js=_LS_JS,
             )
 
             # Sign-out: pure JS — clear localStorage and reload.
