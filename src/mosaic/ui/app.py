@@ -759,8 +759,15 @@ def launch_gradio(server_name, server_port, share):
             # stays permanently hidden.
             login_button.load_event_to_attach = None
 
-            # Custom login display (OAuthProfile-based, not request.username)
-            login_status_md = gr.Markdown(value="", visible=False)
+            # Custom login display — sign-in via markdown link,
+            # sign-out via a Gradio button (stays in Gradio event system,
+            # avoiding navigation away from the SPA).
+            with gr.Row():
+                login_status_md = gr.Markdown(value="", visible=False)
+                logout_button = gr.Button(
+                    "Sign out", visible=False, size="sm", scale=0,
+                    min_width=80,
+                )
 
         gr.Markdown(
             "# Mosaic: H&E Whole Slide Image Cancer Subtype and Biomarker Inference"
@@ -1944,9 +1951,10 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     username = userinfo.get("preferred_username", "User")
                     return (
                         gr.update(
-                            value=f"Signed in as **{username}** \u00b7 [Sign out](/api/auth/logout)",
+                            value=f"Signed in as **{username}**",
                             visible=True,
                         ),  # login_status_md
+                        gr.update(visible=True),  # logout_button
                         gr.update(visible=True),  # user_storage_tabs
                         gr.update(visible=True),  # user_storage_header
                         gr.update(visible=True),  # user_storage_info
@@ -1957,10 +1965,33 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                             value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
                             visible=True,
                         ),  # login_status_md
+                        gr.update(visible=False),  # logout_button
                         gr.update(visible=False),  # user_storage_tabs
                         gr.update(visible=False),  # user_storage_header
                         gr.update(visible=False),  # user_storage_info
                     )
+
+            def handle_logout(session_id_from_browser):
+                """Clear server-side session and return logged-out UI."""
+                from mosaic.ui.oauth import get_user_by_session_id, _sessions
+
+                # Clear server-side session
+                if session_id_from_browser and session_id_from_browser in _sessions:
+                    del _sessions[session_id_from_browser]
+                    logger.info(
+                        f"Logout: cleared server session "
+                        f"({session_id_from_browser[:8]}...)"
+                    )
+                return (
+                    gr.update(
+                        value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
+                        visible=True,
+                    ),  # login_status_md
+                    gr.update(visible=False),  # logout_button
+                    gr.update(visible=False),  # user_storage_tabs
+                    gr.update(visible=False),  # user_storage_header
+                    gr.update(visible=False),  # user_storage_info
+                )
 
             # Hidden textbox to receive the session ID from JS
             session_id_input = gr.Textbox(visible=False)
@@ -1970,11 +2001,25 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 inputs=[session_id_input],
                 outputs=[
                     login_status_md,
+                    logout_button,
                     user_storage_tabs,
                     user_storage_header,
                     user_storage_info,
                 ],
                 js="() => [localStorage.getItem('mosaic_session_id') || '']",
+            )
+
+            logout_button.click(
+                handle_logout,
+                inputs=[session_id_input],
+                outputs=[
+                    login_status_md,
+                    logout_button,
+                    user_storage_tabs,
+                    user_storage_header,
+                    user_storage_info,
+                ],
+                js="() => { const sid = localStorage.getItem('mosaic_session_id') || ''; localStorage.removeItem('mosaic_session_id'); return [sid]; }",
             )
 
     # Use hardware-specific concurrency limit
