@@ -86,31 +86,48 @@ def get_user_from_server_session(request) -> Optional[dict]:
     _prune_expired()
 
     cookie_val = None
-    # Gradio's gr.Request wraps a Starlette Request; try .cookies first
+    # Gradio's gr.Request wraps cookies/headers through dict_to_obj() which
+    # returns a gradio.route_utils.Obj, NOT a plain dict.  Use hasattr/get
+    # instead of isinstance(dict) to support both dict and Obj.
     if hasattr(request, "cookies"):
         cookies = request.cookies
-        if isinstance(cookies, dict):
+        if hasattr(cookies, "get"):
             cookie_val = cookies.get(_SESSION_COOKIE)
+        logger.debug(
+            f"Session lookup: cookies type={type(cookies).__name__}, "
+            f"cookie_val={cookie_val!r}"
+        )
     # Fallback: parse Cookie header
     if cookie_val is None and hasattr(request, "headers"):
         headers = request.headers
-        cookie_header = None
-        if isinstance(headers, dict):
-            cookie_header = headers.get("cookie", "")
-        elif hasattr(headers, "get"):
-            cookie_header = headers.get("cookie", "")
+        cookie_header = ""
+        if hasattr(headers, "get"):
+            cookie_header = headers.get("cookie", "") or ""
         if cookie_header:
             for part in cookie_header.split(";"):
                 part = part.strip()
                 if part.startswith(f"{_SESSION_COOKIE}="):
                     cookie_val = part[len(f"{_SESSION_COOKIE}=") :]
                     break
+        logger.debug(
+            f"Session lookup header fallback: has_cookie_header={bool(cookie_header)}, "
+            f"cookie_val={cookie_val!r}"
+        )
 
     if not cookie_val:
+        logger.debug(
+            f"No {_SESSION_COOKIE} cookie found. "
+            f"Active sessions: {len(_sessions)}"
+        )
         return None
 
     entry = _sessions.get(cookie_val)
     if entry is None:
+        logger.debug(
+            f"{_SESSION_COOKIE} cookie present ({cookie_val[:8]}...) "
+            f"but no matching server session. "
+            f"Active sessions: {list(_sessions.keys())[:3]}"
+        )
         return None
 
     if time.time() - entry["created_at"] > _SESSION_TTL_SEC:

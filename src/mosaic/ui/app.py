@@ -1933,8 +1933,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 on HF Spaces with Docker SDK always returns the Space owner's
                 identity due to the forged Starlette session cookie.
                 """
-                from mosaic.ui.oauth import get_user_from_server_session
+                from mosaic.ui.oauth import get_user_from_server_session, _sessions
 
+                logger.debug(
+                    f"check_login_state: request type={type(request).__name__}, "
+                    f"has_cookies={hasattr(request, 'cookies')}, "
+                    f"has_headers={hasattr(request, 'headers')}, "
+                    f"active_sessions={len(_sessions)}"
+                )
                 userinfo = get_user_from_server_session(request)
                 if userinfo is not None:
                     username = userinfo.get("preferred_username", "User")
