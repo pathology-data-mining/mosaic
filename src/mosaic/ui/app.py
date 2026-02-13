@@ -1908,85 +1908,90 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
                 my_results_components = create_my_results_tab(session_id_input)
 
-        # On HF Spaces: single chained demo.load sequence on page load:
-        # 1. JS reads localStorage → sets session_id_input
-        # 2. check_login_state → shows/hides login UI and storage tabs
-        # 3. load_files → populates My Files tab
-        # 4. load_results → populates My Results tab
-        # Chaining guarantees session_id_input is set before handlers run.
+        # On HF Spaces: a single demo.load() reads the session ID from
+        # localStorage via JS and does ALL page-load work in one Python
+        # call — check login, load files, load results.  This avoids
+        # .then() chaining issues where intermediate component updates
+        # may not propagate to the frontend before the next handler reads
+        # them as inputs.
         if IS_HF_SPACES:
+            _load_files = my_files_components["load_files"]
+            _load_results = my_results_components["load_results"]
 
-            def check_login_state(session_id_from_browser):
-                """Toggle login status display based on localStorage session ID."""
+            def on_page_load(session_id_from_browser):
+                """Handle page load: check login, load files, load results."""
                 from mosaic.ui.oauth import get_user_by_session_id, _sessions
 
                 logger.debug(
-                    f"check_login_state: session_id="
+                    f"on_page_load: session_id="
                     f"{session_id_from_browser[:8] + '...' if session_id_from_browser else '(empty)'!r}, "
                     f"active_sessions={len(_sessions)}"
                 )
+
                 userinfo = get_user_by_session_id(session_id_from_browser)
+
                 if userinfo is not None:
                     username = userinfo.get("preferred_username", "User")
-                    return (
+                    login_out = (
                         gr.update(
                             value=f"Signed in as **{username}**",
                             visible=True,
-                        ),  # login_status_md
-                        gr.update(visible=True),  # logout_button
-                        gr.update(visible=True),  # user_storage_tabs
-                        gr.update(visible=True),  # user_storage_header
-                        gr.update(visible=True),  # user_storage_info
+                        ),
+                        gr.update(visible=True),   # logout_button
+                        gr.update(visible=True),   # user_storage_tabs
+                        gr.update(visible=True),   # user_storage_header
+                        gr.update(visible=True),   # user_storage_info
                     )
                 else:
-                    return (
+                    login_out = (
                         gr.update(
                             value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
                             visible=True,
-                        ),  # login_status_md
+                        ),
                         gr.update(visible=False),  # logout_button
                         gr.update(visible=False),  # user_storage_tabs
                         gr.update(visible=False),  # user_storage_header
                         gr.update(visible=False),  # user_storage_info
                     )
 
+                # Call load functions directly with session_id kwarg.
+                # On HF Spaces _get_username only uses session_id (ignores
+                # request/profile which are None when called outside Gradio
+                # event dispatch).
+                files_out = _load_files(session_id=session_id_from_browser)
+                results_out = _load_results(session_id=session_id_from_browser)
+
+                # Return: login(5) + session_id(1) + files(4) + results(3)
+                return (*login_out, session_id_from_browser, *files_out, *results_out)
+
             demo.load(
-                fn=lambda sid: sid,
-                inputs=[session_id_input],
-                outputs=[session_id_input],
-                js=_LS_JS,
-            ).then(
-                check_login_state,
+                on_page_load,
                 inputs=[session_id_input],
                 outputs=[
+                    # login state (5)
                     login_status_md,
                     logout_button,
                     user_storage_tabs,
                     user_storage_header,
                     user_storage_info,
-                ],
-            ).then(
-                my_files_components["load_files"],
-                inputs=[session_id_input],
-                outputs=[
+                    # persist session_id for subsequent button clicks (1)
+                    session_id_input,
+                    # files tab (4)
                     my_files_components["storage_usage"],
                     my_files_components["files_table"],
                     my_files_components["file_action_status"],
                     my_files_components["slide_download_file"],
-                ],
-            ).then(
-                my_results_components["load_results"],
-                inputs=[session_id_input],
-                outputs=[
+                    # results tab (3)
                     my_results_components["results_table"],
                     my_results_components["result_action_status"],
                     my_results_components["result_download_file"],
                 ],
+                js=_LS_JS,
             )
 
             # Sign-out: pure JS — clear localStorage and reload.
             # On reload demo.load() fires, reads empty localStorage,
-            # and renders the logged-out state.
+            # and on_page_load renders the logged-out state.
             logout_button.click(
                 fn=None,
                 inputs=None,
