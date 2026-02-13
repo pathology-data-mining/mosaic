@@ -29,7 +29,7 @@ from urllib.parse import urlencode
 from loguru import logger
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, JSONResponse
-from starlette.routing import Route
+from starlette.routing import Route, Router
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -298,14 +298,20 @@ _oauth_routes = [
     Route("/api/auth/logout", _logout, methods=["GET"]),
 ]
 
+# Router that handles just our OAuth paths
+_oauth_router = Router(routes=_oauth_routes)
 
-def mount_oauth_routes(app) -> None:
-    """Mount custom OAuth routes on the Gradio ASGI app.
+
+def mount_oauth_routes(demo) -> None:
+    """Mount custom OAuth routes on the Gradio app via ASGI middleware.
+
+    Uses middleware instead of route prepending so that our routes take
+    priority over Gradio's internal ``/api/*`` catch-all router.
 
     Should be called after ``demo.queue()`` and before ``demo.launch()``.
 
     Args:
-        app: The Starlette/FastAPI app (``demo.app``)
+        demo: The Gradio Blocks instance (``demo``, not ``demo.app``)
     """
     if not OAUTH_CLIENT_ID:
         logger.warning(
@@ -314,8 +320,18 @@ def mount_oauth_routes(app) -> None:
         )
         return
 
-    # Insert our routes at the beginning so they take priority
-    app.routes[:0] = _oauth_routes
+    _AUTH_PATHS = {"/api/auth/login", "/api/auth/callback", "/api/auth/logout"}
+
+    original_app = demo.app
+
+    async def oauth_middleware(scope, receive, send):
+        if scope["type"] == "http" and scope.get("path") in _AUTH_PATHS:
+            await _oauth_router(scope, receive, send)
+        else:
+            await original_app(scope, receive, send)
+
+    demo.app = oauth_middleware
     logger.info(
-        f"Mounted custom OAuth routes: /api/auth/login, /api/auth/callback, /api/auth/logout"
+        "Mounted custom OAuth routes (middleware): "
+        "/api/auth/login, /api/auth/callback, /api/auth/logout"
     )

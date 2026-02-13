@@ -148,26 +148,24 @@ class TestMountOAuthRoutes:
     @patch("mosaic.ui.oauth.OAUTH_CLIENT_ID", "")
     def test_no_routes_when_client_id_missing(self):
         """Test that routes are not mounted when OAUTH_CLIENT_ID is empty."""
-        app = MagicMock()
-        app.routes = []
+        demo = MagicMock()
+        original_app = demo.app
 
-        mount_oauth_routes(app)
+        mount_oauth_routes(demo)
 
-        assert len(app.routes) == 0
+        # app should not be replaced when OAuth is not configured
+        assert demo.app is original_app
 
     @patch("mosaic.ui.oauth.OAUTH_CLIENT_ID", "test-client-id")
     def test_routes_mounted_when_configured(self):
-        """Test that routes are mounted when OAuth is configured."""
-        app = MagicMock()
-        app.routes = []
+        """Test that middleware is installed when OAuth is configured."""
+        demo = MagicMock()
+        original_app = demo.app
 
-        mount_oauth_routes(app)
+        mount_oauth_routes(demo)
 
-        assert len(app.routes) == 3
-        paths = [r.path for r in app.routes]
-        assert "/api/auth/login" in paths
-        assert "/api/auth/callback" in paths
-        assert "/api/auth/logout" in paths
+        # app should be replaced with middleware
+        assert demo.app is not original_app
 
 
 # ---------------------------------------------------------------------------

@@ -1970,7 +1970,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
     # Mount custom OAuth routes for HF Spaces (sdk:docker)
     if IS_HF_SPACES:
-        mount_oauth_routes(demo.app)
+        mount_oauth_routes(demo)
 
     # Register cleanup handler for graceful shutdown
     import atexit
