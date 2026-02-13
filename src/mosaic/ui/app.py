@@ -1925,15 +1925,22 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         # visitors). Instead we use login_status_md with direct OAuth links.
         if IS_HF_SPACES:
 
-            def check_login_state(profile: Optional[gr.OAuthProfile] = None):
-                """Toggle login status display and user-storage UI based on OAuth state."""
-                if profile is not None:
-                    username = getattr(profile, "username", None) or getattr(
-                        profile, "name", "User"
-                    )
+            def check_login_state(request: gr.Request):
+                """Toggle login status display and user-storage UI based on OAuth state.
+
+                Reads the visitor's identity from our server-side session
+                (``mosaic_auth`` cookie) instead of ``gr.OAuthProfile``, which
+                on HF Spaces with Docker SDK always returns the Space owner's
+                identity due to the forged Starlette session cookie.
+                """
+                from mosaic.ui.oauth import get_user_from_server_session
+
+                userinfo = get_user_from_server_session(request)
+                if userinfo is not None:
+                    username = userinfo.get("preferred_username", "User")
                     return (
                         gr.update(
-                            value=f"Signed in as **{username}** \u00b7 [Sign out](/logout)",
+                            value=f"Signed in as **{username}** \u00b7 [Sign out](/api/auth/logout)",
                             visible=True,
                         ),  # login_status_md
                         gr.update(visible=True),  # user_storage_tabs
@@ -1943,7 +1950,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 else:
                     return (
                         gr.update(
-                            value="[Sign in with HuggingFace](/login/huggingface) to save slides and results",
+                            value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
                             visible=True,
                         ),  # login_status_md
                         gr.update(visible=False),  # user_storage_tabs
@@ -1968,11 +1975,11 @@ This tool is for research purposes only and not approved for clinical diagnosis.
     demo.queue(max_size=10, default_concurrency_limit=DEFAULT_CONCURRENCY_LIMIT)
 
     # OAuth routes for HF Spaces (sdk:docker):
-    # Gradio's built-in routes (/login/huggingface, /login/callback, /logout) are
-    # registered during App.create_app() via attach_oauth(), which also adds the
-    # SessionMiddleware. Custom routes cannot be prepended to demo.app because
-    # launch() recreates the app from scratch. Instead, we link directly to
-    # Gradio's routes in the login_status_md Markdown.
+    # Custom OAuth routes (/api/auth/login, /api/auth/callback, /api/auth/logout)
+    # are mounted via the lifespan protocol in create_oauth_lifespan(). This
+    # ensures routes survive launch() recreating the app. Identity is read from
+    # our server-side session (mosaic_auth cookie), not gr.OAuthProfile, which
+    # returns the Space owner's identity on Docker SDK Spaces.
 
     # Register cleanup handler for graceful shutdown
     import atexit
@@ -2005,10 +2012,20 @@ This tool is for research purposes only and not approved for clinical diagnosis.
     heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
     heartbeat_thread.start()
 
+    # On HF Spaces, mount custom OAuth routes via the lifespan protocol.
+    # Gradio's launch() recreates the app, but the lifespan handler receives
+    # the final App instance, so routes added there survive.
+    launch_kwargs = {}
+    if IS_HF_SPACES:
+        from mosaic.ui.oauth import create_oauth_lifespan
+
+        launch_kwargs["app_kwargs"] = {"lifespan": create_oauth_lifespan}
+
     demo.launch(
         server_name=server_name,
         share=share,
         server_port=server_port,
         show_error=True,
         favicon_path=current_dir / "favicon.svg",
+        **launch_kwargs,
     )

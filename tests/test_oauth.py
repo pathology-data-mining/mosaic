@@ -12,6 +12,7 @@ from mosaic.ui.oauth import (
     _SESSION_COOKIE,
     _SESSION_TTL_SEC,
     _STATE_TTL_SEC,
+    create_oauth_lifespan,
     get_user_from_server_session,
     mount_oauth_routes,
 )
@@ -362,3 +363,60 @@ class TestGetUserFromServerSession:
             pass
 
         assert get_user_from_server_session(Bare()) is None
+
+
+# ---------------------------------------------------------------------------
+# create_oauth_lifespan tests
+# ---------------------------------------------------------------------------
+
+
+class TestCreateOAuthLifespan:
+    """Tests for the create_oauth_lifespan async context manager."""
+
+    @patch("mosaic.ui.oauth.OAUTH_CLIENT_ID", "test-client-id")
+    def test_routes_mounted_when_configured(self):
+        """Test that OAuth routes are mounted on app when OAUTH_CLIENT_ID is set."""
+        import asyncio
+
+        app = MagicMock()
+        app.routes = []
+
+        async def _run():
+            async with create_oauth_lifespan(app):
+                assert len(app.routes) == 3
+                paths = [r.path for r in app.routes]
+                assert "/api/auth/login" in paths
+                assert "/api/auth/callback" in paths
+                assert "/api/auth/logout" in paths
+
+        asyncio.run(_run())
+
+    @patch("mosaic.ui.oauth.OAUTH_CLIENT_ID", "")
+    def test_routes_skipped_when_not_configured(self):
+        """Test that no routes are mounted when OAUTH_CLIENT_ID is empty."""
+        import asyncio
+
+        app = MagicMock()
+        app.routes = []
+
+        async def _run():
+            async with create_oauth_lifespan(app):
+                assert len(app.routes) == 0
+
+        asyncio.run(_run())
+
+    @patch("mosaic.ui.oauth.OAUTH_CLIENT_ID", "test-client-id")
+    def test_routes_persist_after_yield(self):
+        """Test that routes remain on the app after the lifespan exits."""
+        import asyncio
+
+        app = MagicMock()
+        app.routes = []
+
+        async def _run():
+            async with create_oauth_lifespan(app):
+                pass
+            # Routes should still be present after context manager exits
+            assert len(app.routes) == 3
+
+        asyncio.run(_run())

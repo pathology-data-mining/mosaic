@@ -19,6 +19,7 @@ Routes mounted on the Gradio ASGI app:
     GET /api/auth/logout   -> Clear session, redirect to /
 """
 
+import contextlib
 import json
 import os
 import secrets
@@ -303,9 +304,9 @@ def mount_oauth_routes(app) -> None:
 
     .. deprecated::
         Gradio's ``launch()`` recreates ``demo.app`` from scratch, discarding
-        any routes prepended beforehand.  Use Gradio's built-in OAuth routes
-        (``/login/huggingface``, ``/login/callback``, ``/logout``) instead,
-        which are registered inside ``App.create_app()`` via ``attach_oauth()``.
+        any routes prepended beforehand.  Use :func:`create_oauth_lifespan`
+        instead, which mounts routes on the **final** app instance via the
+        lifespan protocol.
 
     Args:
         app: The Starlette/FastAPI app (``demo.app``)
@@ -322,3 +323,25 @@ def mount_oauth_routes(app) -> None:
     logger.info(
         f"Mounted custom OAuth routes: /api/auth/login, /api/auth/callback, /api/auth/logout"
     )
+
+
+@contextlib.asynccontextmanager
+async def create_oauth_lifespan(app):
+    """ASGI lifespan handler that mounts custom OAuth routes.
+
+    Gradio's ``launch()`` recreates ``demo.app`` via ``App.create_app()``,
+    discarding any routes prepended before launch.  However,
+    ``create_lifespan_handler()`` (in Gradio's ``route_utils.py``) wraps
+    user-supplied lifespan and calls it with the **final** App instance.
+    Routes added here are on the real app with the full middleware stack
+    (including ``SessionMiddleware``).
+
+    Pass this to ``demo.launch(app_kwargs={"lifespan": create_oauth_lifespan})``.
+    """
+    if OAUTH_CLIENT_ID:
+        app.routes[:0] = _oauth_routes
+        logger.info(
+            "Custom OAuth routes mounted via lifespan: "
+            "/api/auth/login, /api/auth/callback, /api/auth/logout"
+        )
+    yield

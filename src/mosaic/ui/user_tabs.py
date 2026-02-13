@@ -43,18 +43,10 @@ def _get_username(request: gr.Request = None, profile=None) -> tuple[str, bool]:
         - HF Spaces not logged in: (None, False)
     """
     if IS_HF_SPACES:
-        # On HF Spaces, only OAuthProfile reliably identifies the logged-in user.
-        # request.username returns the Space owner's username (not the visitor's),
-        # so we must NOT fall back to it.
-        if profile is not None:
-            try:
-                username = getattr(profile, "username", None)
-                if username:
-                    return (username, False)
-            except Exception:
-                pass
-
-        # Fallback: check server-side session store (custom OAuth flow)
+        # On HF Spaces with Docker SDK, the HF proxy forges the Starlette
+        # session cookie so gr.OAuthProfile always returns the Space owner's
+        # identity. Our server-side session (mosaic_auth cookie) is
+        # trustworthy — check it first.
         if request is not None:
             try:
                 from mosaic.ui.oauth import get_user_from_server_session
@@ -64,6 +56,15 @@ def _get_username(request: gr.Request = None, profile=None) -> tuple[str, bool]:
                     username = userinfo.get("preferred_username")
                     if username:
                         return (username, False)
+            except Exception:
+                pass
+
+        # Fallback: OAuthProfile (may be unreliable on Docker SDK Spaces)
+        if profile is not None:
+            try:
+                username = getattr(profile, "username", None)
+                if username:
+                    return (username, False)
             except Exception:
                 pass
 

@@ -138,19 +138,9 @@ def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> User
     if not is_hf_spaces:
         return UserInfo()
 
-    # On HF Spaces, only OAuthProfile reliably identifies the logged-in user.
-    # request.username returns the Space owner's username (not the visitor's),
-    # so we must NOT fall back to it.
-    if profile is not None:
-        try:
-            username = getattr(profile, "username", None)
-            if username:
-                logger.info(f"Extracted user from OAuthProfile: {username}")
-                return UserInfo(is_logged_in=True, username=username)
-        except Exception as e:
-            logger.debug(f"Could not extract username from OAuthProfile: {e}")
-
-    # Fallback: check server-side session store (custom OAuth flow)
+    # On HF Spaces with Docker SDK, the HF proxy forges the Starlette session
+    # cookie so gr.OAuthProfile always returns the Space owner's identity.
+    # Our server-side session (mosaic_auth cookie) is trustworthy — check it first.
     if request is not None:
         try:
             from mosaic.ui.oauth import get_user_from_server_session
@@ -164,5 +154,15 @@ def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> User
         except Exception as e:
             logger.debug(f"Server-side session lookup failed: {e}")
 
-    logger.debug("User not logged in: no OAuthProfile available")
+    # Fallback: OAuthProfile (may be unreliable on Docker SDK Spaces)
+    if profile is not None:
+        try:
+            username = getattr(profile, "username", None)
+            if username:
+                logger.info(f"Extracted user from OAuthProfile: {username}")
+                return UserInfo(is_logged_in=True, username=username)
+        except Exception as e:
+            logger.debug(f"Could not extract username from OAuthProfile: {e}")
+
+    logger.debug("User not logged in: no session or OAuthProfile available")
     return UserInfo()
