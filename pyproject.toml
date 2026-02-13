@@ -43,10 +43,13 @@ disable = [
 ]
 
 [tool.uv]
-# Override PyTorch dependencies from mussel[torch-gpu] for macOS compatibility
+# Override PyTorch version constraints from mussel[torch-gpu].
+# mussel pins torch<2.6 which may be too strict; we relax to >=2.0.0.
+# The override applies on ALL platforms (not just macOS) so Docker builds
+# still get torch installed.
 override-dependencies = [
-  "torch>=2.0.0; sys_platform == 'darwin'",
-  "torchvision>=0.15.0; sys_platform == 'darwin'",
+  "torch>=2.0.0",
+  "torchvision>=0.15.0",
 ]
 
 [tool.uv.sources]
