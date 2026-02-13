@@ -37,7 +37,6 @@ from mosaic.data_directory import get_tcga_cache_directory
 from mosaic.model_manager import load_all_models
 from mosaic.hardware import DEFAULT_CONCURRENCY_LIMIT, IS_HF_SPACES, IS_T4_GPU, GPU_TYPE
 from mosaic.telemetry import extract_user_info
-from mosaic.ui.oauth import mount_oauth_routes
 from mosaic.tcga import (
     compute_settings_hash,
     download_results_from_hf,
@@ -1934,7 +1933,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     )
                     return (
                         gr.update(
-                            value=f"Signed in as **{username}** \u00b7 [Sign out](/api/auth/logout)",
+                            value=f"Signed in as **{username}** \u00b7 [Sign out](/logout)",
                             visible=True,
                         ),  # login_status_md
                         gr.update(visible=True),  # user_storage_tabs
@@ -1944,7 +1943,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 else:
                     return (
                         gr.update(
-                            value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
+                            value="[Sign in with HuggingFace](/login/huggingface) to save slides and results",
                             visible=True,
                         ),  # login_status_md
                         gr.update(visible=False),  # user_storage_tabs
@@ -1968,9 +1967,12 @@ This tool is for research purposes only and not approved for clinical diagnosis.
     # Higher-memory GPUs and ZeroGPU can handle multiple concurrent analyses
     demo.queue(max_size=10, default_concurrency_limit=DEFAULT_CONCURRENCY_LIMIT)
 
-    # Mount custom OAuth routes for HF Spaces (sdk:docker)
-    if IS_HF_SPACES:
-        mount_oauth_routes(demo)
+    # OAuth routes for HF Spaces (sdk:docker):
+    # Gradio's built-in routes (/login/huggingface, /login/callback, /logout) are
+    # registered during App.create_app() via attach_oauth(), which also adds the
+    # SessionMiddleware. Custom routes cannot be prepended to demo.app because
+    # launch() recreates the app from scratch. Instead, we link directly to
+    # Gradio's routes in the login_status_md Markdown.
 
     # Register cleanup handler for graceful shutdown
     import atexit
