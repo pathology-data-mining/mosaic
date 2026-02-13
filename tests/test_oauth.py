@@ -220,15 +220,19 @@ class TestMountOAuthRoutes:
 class TestLoginRoute:
     """Tests for the /api/auth/login route."""
 
-    @pytest.mark.asyncio
     @patch("mosaic.ui.oauth.OAUTH_CLIENT_ID", "test-client-id")
     @patch("mosaic.ui.oauth.SPACE_HOST", "user-space.hf.space")
-    async def test_login_redirects_to_hf(self):
+    def test_login_redirects_to_hf(self):
         """Test that login redirects to HF authorize URL."""
+        import asyncio
+
         from mosaic.ui.oauth import _login
 
-        request = MagicMock()
-        response = await _login(request)
+        async def _run():
+            request = MagicMock()
+            return await _login(request)
+
+        response = asyncio.run(_run())
 
         assert response.status_code == 302
         location = response.headers["location"]
@@ -239,14 +243,18 @@ class TestLoginRoute:
         # Should have stored a CSRF state
         assert len(_pending_states) == 1
 
-    @pytest.mark.asyncio
     @patch("mosaic.ui.oauth.OAUTH_CLIENT_ID", "")
-    async def test_login_returns_error_when_not_configured(self):
+    def test_login_returns_error_when_not_configured(self):
         """Test that login returns error when OAuth is not configured."""
+        import asyncio
+
         from mosaic.ui.oauth import _login
 
-        request = MagicMock()
-        response = await _login(request)
+        async def _run():
+            request = MagicMock()
+            return await _login(request)
+
+        response = asyncio.run(_run())
 
         assert response.status_code == 500
 
@@ -259,34 +267,40 @@ class TestLoginRoute:
 class TestCallbackRoute:
     """Tests for the /api/auth/callback route."""
 
-    @pytest.mark.asyncio
-    async def test_callback_missing_params(self):
+    def test_callback_missing_params(self):
         """Test callback with missing code/state parameters."""
+        import asyncio
+
         from mosaic.ui.oauth import _callback
 
-        request = MagicMock()
-        request.query_params = {}
+        async def _run():
+            request = MagicMock()
+            request.query_params = {}
+            return await _callback(request)
 
-        response = await _callback(request)
+        response = asyncio.run(_run())
         assert response.status_code == 400
 
-    @pytest.mark.asyncio
-    async def test_callback_invalid_state(self):
+    def test_callback_invalid_state(self):
         """Test callback with invalid CSRF state."""
+        import asyncio
+
         from mosaic.ui.oauth import _callback
 
-        request = MagicMock()
-        request.query_params = {"code": "test-code", "state": "invalid-state"}
+        async def _run():
+            request = MagicMock()
+            request.query_params = {"code": "test-code", "state": "invalid-state"}
+            return await _callback(request)
 
-        response = await _callback(request)
+        response = asyncio.run(_run())
         assert response.status_code == 400
 
-    @pytest.mark.asyncio
     @patch("mosaic.ui.oauth.OAUTH_CLIENT_ID", "test-client-id")
     @patch("mosaic.ui.oauth.OAUTH_CLIENT_SECRET", "test-secret")
     @patch("mosaic.ui.oauth.SPACE_HOST", "user-space.hf.space")
-    async def test_callback_exchanges_code_for_token(self):
+    def test_callback_exchanges_code_for_token(self):
         """Test successful callback with mocked token exchange."""
+        import asyncio
         import json
         import base64
 
@@ -321,20 +335,17 @@ class TestCallbackRoute:
 
         request = MagicMock()
         request.query_params = {"code": "auth-code", "state": valid_state}
-        request.session = {}
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            response = await _callback(request)
+        async def _run():
+            with patch("httpx.AsyncClient", return_value=mock_client):
+                return await _callback(request)
 
-        # Should redirect to /
-        assert response.status_code == 302
+        response = asyncio.run(_run())
 
-        # Session should have oauth_info
-        assert "oauth_info" in request.session
-        assert (
-            request.session["oauth_info"]["userinfo"]["preferred_username"]
-            == "visitor123"
-        )
+        # Callback returns an HTML page that stores session in localStorage
+        assert response.status_code == 200
+        assert "localStorage.setItem" in response.body.decode()
+        assert "mosaic_session_id" in response.body.decode()
 
         # Server-side session should be stored
         assert len(_sessions) == 1
@@ -351,26 +362,31 @@ class TestCallbackRoute:
 class TestLogoutRoute:
     """Tests for the /api/auth/logout route."""
 
-    @pytest.mark.asyncio
-    async def test_logout_clears_session(self):
-        """Test that logout clears session data."""
+    def test_logout_clears_session(self):
+        """Test that logout clears session data and returns localStorage-clearing HTML."""
+        import asyncio
+
         from mosaic.ui.oauth import _logout
 
         # Set up server-side session
-        _sessions["session_id"] = {
+        _sessions["session_id_abc"] = {
             "userinfo": {"preferred_username": "user"},
             "created_at": time.time(),
         }
 
         request = MagicMock()
-        request.session = {"oauth_info": {"userinfo": {"preferred_username": "user"}}}
-        request.cookies = {_SESSION_COOKIE: "session_id"}
+        request.query_params = {"sid": "session_id_abc"}
 
-        response = await _logout(request)
+        async def _run():
+            return await _logout(request)
 
-        assert response.status_code == 302
-        assert "oauth_info" not in request.session
-        assert "session_id" not in _sessions
+        response = asyncio.run(_run())
+
+        # Returns HTML page that clears localStorage
+        assert response.status_code == 200
+        assert "localStorage.removeItem" in response.body.decode()
+        assert "mosaic_session_id" in response.body.decode()
+        assert "session_id_abc" not in _sessions
 
 
 # ---------------------------------------------------------------------------

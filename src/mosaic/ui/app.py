@@ -1896,16 +1896,6 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
         _LS_JS = "() => [localStorage.getItem('mosaic_session_id') || '']"
 
-        # Populate session_id_input from localStorage on page load so that
-        # subsequent button clicks (refresh, download, delete) can read it.
-        # demo.load events that need it also use js=_LS_JS directly.
-        demo.load(
-            fn=lambda sid: sid,
-            inputs=[session_id_input],
-            outputs=[session_id_input],
-            js=_LS_JS,
-        )
-
         # User storage tabs - initially hidden on HF Spaces, visible locally
         with gr.Tabs(visible=not IS_HF_SPACES) as user_storage_tabs:
             with gr.Tab("My Files"):
@@ -1913,58 +1903,26 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
                 my_files_components = create_my_files_tab(session_id_input)
 
-                # Load files on demo load
-                demo.load(
-                    my_files_components["load_files"],
-                    inputs=[session_id_input],
-                    outputs=[
-                        my_files_components["storage_usage"],
-                        my_files_components["files_table"],
-                        my_files_components["file_action_status"],
-                        my_files_components["slide_download_file"],
-                    ],
-                    js=_LS_JS,
-                )
-
             with gr.Tab("My Results"):
                 from mosaic.ui.user_tabs import create_my_results_tab
 
                 my_results_components = create_my_results_tab(session_id_input)
 
-                # Load results on demo load
-                demo.load(
-                    my_results_components["load_results"],
-                    inputs=[session_id_input],
-                    outputs=[
-                        my_results_components["results_table"],
-                        my_results_components["result_action_status"],
-                        my_results_components["result_download_file"],
-                    ],
-                    js=_LS_JS,
-                )
-
-        # Show/hide user storage features based on login state on page load.
-        # LoginButton.click() fires BEFORE the OAuth redirect so the profile
-        # is never available at that point.  Instead we rely on demo.load()
-        # which fires after the OAuth redirect completes and the page reloads.
-        #
-        # On HF Spaces with sdk:docker, LoginButton is always hidden because
-        # it reads request.username (which returns the Space owner for all
-        # visitors). Instead we use login_status_md with direct OAuth links.
+        # On HF Spaces: single chained demo.load sequence on page load:
+        # 1. JS reads localStorage → sets session_id_input
+        # 2. check_login_state → shows/hides login UI and storage tabs
+        # 3. load_files → populates My Files tab
+        # 4. load_results → populates My Results tab
+        # Chaining guarantees session_id_input is set before handlers run.
         if IS_HF_SPACES:
 
             def check_login_state(session_id_from_browser):
-                """Toggle login status display based on localStorage session ID.
-
-                The HF proxy strips custom cookies, so we persist the session
-                ID in the browser's localStorage.  The ``js=`` parameter on
-                ``demo.load()`` reads it and passes it here as a string.
-                """
+                """Toggle login status display based on localStorage session ID."""
                 from mosaic.ui.oauth import get_user_by_session_id, _sessions
 
                 logger.debug(
-                    f"check_login_state: session_id_from_browser="
-                    f"{session_id_from_browser[:8] + '...' if session_id_from_browser else None!r}, "
+                    f"check_login_state: session_id="
+                    f"{session_id_from_browser[:8] + '...' if session_id_from_browser else '(empty)'!r}, "
                     f"active_sessions={len(_sessions)}"
                 )
                 userinfo = get_user_by_session_id(session_id_from_browser)
@@ -1993,6 +1951,11 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     )
 
             demo.load(
+                fn=lambda sid: sid,
+                inputs=[session_id_input],
+                outputs=[session_id_input],
+                js=_LS_JS,
+            ).then(
                 check_login_state,
                 inputs=[session_id_input],
                 outputs=[
@@ -2002,7 +1965,23 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     user_storage_header,
                     user_storage_info,
                 ],
-                js=_LS_JS,
+            ).then(
+                my_files_components["load_files"],
+                inputs=[session_id_input],
+                outputs=[
+                    my_files_components["storage_usage"],
+                    my_files_components["files_table"],
+                    my_files_components["file_action_status"],
+                    my_files_components["slide_download_file"],
+                ],
+            ).then(
+                my_results_components["load_results"],
+                inputs=[session_id_input],
+                outputs=[
+                    my_results_components["results_table"],
+                    my_results_components["result_action_status"],
+                    my_results_components["result_download_file"],
+                ],
             )
 
             # Sign-out: pure JS — clear localStorage and reload.
