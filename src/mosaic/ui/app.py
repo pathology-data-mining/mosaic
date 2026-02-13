@@ -1971,20 +1971,6 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         gr.update(visible=False),  # user_storage_info
                     )
 
-            def handle_logout():
-                """Return logged-out UI. localStorage is cleared by js=."""
-                logger.info("Logout: clearing login state in UI")
-                return (
-                    gr.update(
-                        value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
-                        visible=True,
-                    ),  # login_status_md
-                    gr.update(visible=False),  # logout_button
-                    gr.update(visible=False),  # user_storage_tabs
-                    gr.update(visible=False),  # user_storage_header
-                    gr.update(visible=False),  # user_storage_info
-                )
-
             # Hidden textbox to receive the session ID from JS
             session_id_input = gr.Textbox(visible=False)
 
@@ -2001,20 +1987,13 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 js="() => [localStorage.getItem('mosaic_session_id') || '']",
             )
 
+            # Sign-out: pure JS — clear localStorage and reload.
+            # On reload demo.load() fires, reads empty localStorage,
+            # and renders the logged-out state.
             logout_button.click(
-                handle_logout,
-                inputs=None,
-                outputs=[
-                    login_status_md,
-                    logout_button,
-                    user_storage_tabs,
-                    user_storage_header,
-                    user_storage_info,
-                ],
-            ).then(
                 fn=None,
                 inputs=None,
-                js="() => { localStorage.removeItem('mosaic_session_id') }",
+                js="() => { localStorage.removeItem('mosaic_session_id'); location.reload(); }",
             )
 
     # Use hardware-specific concurrency limit
