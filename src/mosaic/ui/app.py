@@ -1921,24 +1921,20 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             _load_files = my_files_components["load_files"]
             _load_results = my_results_components["load_results"]
 
-            # Number of output components from on_page_load:
-            # login(5) + session_id(1) + files(4) + results(3) = 13
-            _N_PAGE_LOAD_OUTPUTS = 13
+            # Cache the last successful page-load output so that Gradio
+            # reconnection events (which re-fire demo.load without running
+            # the js= parameter) can replay the correct state instead of
+            # resetting to defaults.
+            _last_page_load_result: dict[str, tuple] = {}
 
             def on_page_load(session_id_from_browser):
                 """Handle page load: check login, load files, load results.
 
-                Gradio fires demo.load() both on initial page load AND on
+                Gradio fires demo.load() on initial page load AND on
                 WebSocket reconnections.  The ``js=`` parameter only runs
-                on the initial page load; reconnection events pass the
-                *current component value* (empty string for a Textbox with
-                no value set).  If we blindly apply the logged-out state
-                on reconnection, it overwrites a successful login.
-
-                Fix: when session_id is empty, return ``gr.update()`` for
-                every output (no-op).  The default UI is already set to
-                the logged-out state, so this is safe on the very first
-                load too.
+                on the first load; reconnections pass the component's
+                default value (empty string).  We cache the last successful
+                result and replay it when session_id is empty.
                 """
                 from mosaic.ui.oauth import get_user_by_session_id, _sessions
 
@@ -1953,15 +1949,17 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     f"active_sessions={n_sessions}"
                 )
 
-                # Empty session_id means either:
-                #  a) user is genuinely not logged in (initial load), OR
-                #  b) Gradio reconnection where js= didn't re-execute.
-                # In both cases, return no-ops so we don't overwrite a
-                # potentially logged-in state.  The default UI already
-                # shows the sign-in prompt.
+                # Empty session_id → reconnection or genuinely not logged in.
+                # Replay cached result if available; otherwise return the
+                # explicit logged-out state (not gr.update() which Gradio 6
+                # may treat as "reset to defaults").
                 if not session_id_from_browser:
-                    logger.debug("on_page_load: empty sid, returning no-ops")
-                    return tuple(gr.update() for _ in range(_N_PAGE_LOAD_OUTPUTS))
+                    if _last_page_load_result:
+                        logger.debug("on_page_load: empty sid, replaying cached result")
+                        return _last_page_load_result["result"]
+                    logger.debug("on_page_load: empty sid, no cache, returning logged-out state")
+                    result = _build_logged_out_result()
+                    return result
 
                 userinfo = get_user_by_session_id(session_id_from_browser)
 
@@ -1980,21 +1978,11 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 else:
                     # Session_id present but not found server-side
                     # (expired or server restarted). Show sign-in prompt.
-                    login_out = (
-                        gr.update(
-                            value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
-                            visible=True,
-                        ),
-                        gr.update(visible=False),  # logout_button
-                        gr.update(visible=False),  # user_storage_tabs
-                        gr.update(visible=False),  # user_storage_header
-                        gr.update(visible=False),  # user_storage_info
-                    )
+                    result = _build_logged_out_result()
+                    _last_page_load_result.clear()
+                    return result
 
                 # Call load functions directly with session_id kwarg.
-                # On HF Spaces _get_username only uses session_id (ignores
-                # request/profile which are None when called outside Gradio
-                # event dispatch).
                 try:
                     files_out = _load_files(session_id=session_id_from_browser)
                 except Exception as e:
@@ -2017,12 +2005,35 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         gr.File(visible=False),
                     )
 
-                # Return: login(5) + session_id(1) + files(4) + results(3)
-                return (
+                # login(5) + session_id(1) + files(4) + results(3) = 13
+                result = (
                     *login_out,
                     session_id_from_browser,
                     *files_out,
                     *results_out,
+                )
+                _last_page_load_result["result"] = result
+                return result
+
+            def _build_logged_out_result():
+                """Build the explicit logged-out output tuple."""
+                return (
+                    gr.update(
+                        value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
+                        visible=True,
+                    ),
+                    gr.update(visible=False),  # logout_button
+                    gr.update(visible=False),  # user_storage_tabs
+                    gr.update(visible=False),  # user_storage_header
+                    gr.update(visible=False),  # user_storage_info
+                    "",  # session_id_input
+                    "**Storage:** Not logged in",
+                    [],  # files_table
+                    gr.Textbox(visible=False),
+                    gr.File(visible=False),
+                    [],  # results_table
+                    gr.Textbox(visible=False),
+                    gr.File(visible=False),
                 )
 
             demo.load(
