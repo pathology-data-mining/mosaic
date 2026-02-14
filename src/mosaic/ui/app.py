@@ -1497,6 +1497,18 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             ],
         )
 
+        # Hidden textbox that carries the localStorage session ID into
+        # every Gradio event handler that needs the visitor's identity.
+        # On HF Spaces the js= parameter on demo.load() fills this from
+        # localStorage; locally it stays empty and _get_username() falls
+        # back to LOCAL_DEBUG_USERNAME.
+        session_id_input = gr.Textbox(visible=False, elem_id="session_id_input")
+        # Hidden flag set to "1" only by the demo.load js= parameter.
+        # On WebSocket reconnections JS doesn't re-run, so this stays
+        # at its default "".  The Python handler uses it to detect
+        # reconnections and return gr.skip() to preserve UI state.
+        _js_ran_flag = gr.Textbox(visible=False, value="")
+
         # Handle file uploads - regenerate entire settings table
         # Save uploaded slides to user storage (HF Spaces only)
         input_slides.upload(
@@ -1861,18 +1873,6 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             inputs=[user_dir_state],
             outputs=[user_dir_state],
         )
-
-        # Hidden textbox that carries the localStorage session ID into
-        # every Gradio event handler that needs the visitor's identity.
-        # On HF Spaces the js= parameter on demo.load() fills this from
-        # localStorage; locally it stays empty and _get_username() falls
-        # back to LOCAL_DEBUG_USERNAME.
-        session_id_input = gr.Textbox(visible=False, elem_id="session_id_input")
-        # Hidden flag set to "1" only by the demo.load js= parameter.
-        # On WebSocket reconnections JS doesn't re-run, so this stays
-        # at its default "".  The Python handler uses it to detect
-        # reconnections and return gr.skip() to preserve UI state.
-        _js_ran_flag = gr.Textbox(visible=False, value="")
 
         # Add My Files and My Results tabs for user storage
         # On HF Spaces: visible for logged-in users
