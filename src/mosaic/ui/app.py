@@ -763,7 +763,10 @@ def launch_gradio(server_name, server_port, share):
             # sign-out via a Gradio button (stays in Gradio event system,
             # avoiding navigation away from the SPA).
             with gr.Row():
-                login_status_md = gr.Markdown(value="", visible=False)
+                login_status_md = gr.Markdown(
+                    value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
+                    visible=True,
+                )
                 logout_button = gr.Button(
                     "Sign out", visible=False, size="sm", scale=0,
                     min_width=80,
@@ -1918,8 +1921,25 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             _load_files = my_files_components["load_files"]
             _load_results = my_results_components["load_results"]
 
+            # Number of output components from on_page_load:
+            # login(5) + session_id(1) + files(4) + results(3) = 13
+            _N_PAGE_LOAD_OUTPUTS = 13
+
             def on_page_load(session_id_from_browser):
-                """Handle page load: check login, load files, load results."""
+                """Handle page load: check login, load files, load results.
+
+                Gradio fires demo.load() both on initial page load AND on
+                WebSocket reconnections.  The ``js=`` parameter only runs
+                on the initial page load; reconnection events pass the
+                *current component value* (empty string for a Textbox with
+                no value set).  If we blindly apply the logged-out state
+                on reconnection, it overwrites a successful login.
+
+                Fix: when session_id is empty, return ``gr.update()`` for
+                every output (no-op).  The default UI is already set to
+                the logged-out state, so this is safe on the very first
+                load too.
+                """
                 from mosaic.ui.oauth import get_user_by_session_id, _sessions
 
                 sid_repr = (
@@ -1932,6 +1952,16 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     f"on_page_load: sid={sid_repr}, "
                     f"active_sessions={n_sessions}"
                 )
+
+                # Empty session_id means either:
+                #  a) user is genuinely not logged in (initial load), OR
+                #  b) Gradio reconnection where js= didn't re-execute.
+                # In both cases, return no-ops so we don't overwrite a
+                # potentially logged-in state.  The default UI already
+                # shows the sign-in prompt.
+                if not session_id_from_browser:
+                    logger.debug("on_page_load: empty sid, returning no-ops")
+                    return tuple(gr.update() for _ in range(_N_PAGE_LOAD_OUTPUTS))
 
                 userinfo = get_user_by_session_id(session_id_from_browser)
 
@@ -1948,16 +1978,11 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         gr.update(visible=True),   # user_storage_info
                     )
                 else:
-                    # Show debug info in the sign-in prompt so we can
-                    # diagnose whether JS passed the session_id correctly.
+                    # Session_id present but not found server-side
+                    # (expired or server restarted). Show sign-in prompt.
                     login_out = (
                         gr.update(
-                            value=(
-                                "[Sign in with HuggingFace]"
-                                "(/api/auth/login) to save slides and results"
-                                f"\n\n<sub>sid={sid_repr} | "
-                                f"sessions={n_sessions}</sub>"
-                            ),
+                            value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
                             visible=True,
                         ),
                         gr.update(visible=False),  # logout_button
