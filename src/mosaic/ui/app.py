@@ -1220,13 +1220,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
         # Load storage usage and show warnings
         def load_storage_usage(
+            session_id: str = "",
             request: gr.Request = None,
             profile: Optional[gr.OAuthProfile] = None,
         ):
             """Load and display storage usage with warnings."""
             from mosaic.ui.user_tabs import _get_username
 
-            username, is_local = _get_username(request, profile)
+            username, is_local = _get_username(request, profile, session_id)
 
             if not username:
                 # Not logged in on HF Spaces - hide storage info
@@ -1276,13 +1277,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
         # Load list of existing slides for re-analysis
         def load_existing_slides(
+            session_id: str = "",
             request: gr.Request = None,
             profile: Optional[gr.OAuthProfile] = None,
         ):
             """Load dropdown with user's existing slides."""
             from mosaic.ui.user_tabs import _get_username
 
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
 
             if not username:
                 return gr.Dropdown(choices=[], value=None)
@@ -1320,6 +1322,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         def handle_slide_upload(
             files,
             slide_ids,
+            session_id: str = "",
             request: gr.Request = None,
             profile: Optional[gr.OAuthProfile] = None,
         ):
@@ -1330,7 +1333,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             # Determine username via OAuthProfile (primary) or request (fallback)
             from mosaic.ui.user_tabs import _get_username
 
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
             if not username:
                 return files, slide_ids or {}
 
@@ -1498,30 +1501,31 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         # Save uploaded slides to user storage (HF Spaces only)
         input_slides.upload(
             handle_slide_upload,
-            inputs=[input_slides, slide_ids_state],
+            inputs=[input_slides, slide_ids_state, session_id_input],
             outputs=[input_slides, slide_ids_state],
         ).then(
             # Refresh storage usage after upload
             load_storage_usage,
-            inputs=None,
+            inputs=[session_id_input],
             outputs=[storage_usage_warning, existing_file_row],
         ).then(
             # Refresh existing slides list after upload
             load_existing_slides,
-            inputs=None,
+            inputs=[session_id_input],
             outputs=[existing_slides_dropdown],
         )
 
         # Refresh existing slides dropdown
         refresh_existing_btn.click(
             load_existing_slides,
-            inputs=None,
+            inputs=[session_id_input],
             outputs=[existing_slides_dropdown],
         )
 
         # Handle selection of existing slide(s) for re-analysis
         def select_existing_slide(
             slide_ids,
+            session_id: str = "",
             request: gr.Request = None,
             profile: Optional[gr.OAuthProfile] = None,
         ):
@@ -1529,6 +1533,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
             Args:
                 slide_ids: Single slide_id (str) or list of slide_ids (multiselect)
+                session_id: Server-side session ID from localStorage
                 request: Gradio request object
                 profile: OAuthProfile for HF Spaces login
 
@@ -1544,7 +1549,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
             from mosaic.ui.user_tabs import _get_username
 
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
             if not username:
                 return None
 
@@ -1587,7 +1592,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
         existing_slides_dropdown.change(
             select_existing_slide,
-            inputs=[existing_slides_dropdown],
+            inputs=[existing_slides_dropdown, session_id_input],
             outputs=[input_slides],
         )
 
@@ -1857,20 +1862,6 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             outputs=[user_dir_state],
         )
 
-        # Load storage usage on page load
-        demo.load(
-            load_storage_usage,
-            inputs=None,
-            outputs=[storage_usage_warning, existing_file_row],
-        )
-
-        # Load existing slides dropdown on page load
-        demo.load(
-            load_existing_slides,
-            inputs=None,
-            outputs=[existing_slides_dropdown],
-        )
-
         # Hidden textbox that carries the localStorage session ID into
         # every Gradio event handler that needs the visitor's identity.
         # On HF Spaces the js= parameter on demo.load() fills this from
@@ -1971,7 +1962,11 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 else:
                     return _build_logged_out_result()
 
-                # Load files and results
+                # Load storage usage + existing slides for the analysis page
+                storage_out = load_storage_usage(session_id=session_id_from_browser)
+                existing_out = load_existing_slides(session_id=session_id_from_browser)
+
+                # Load user files and results tabs
                 try:
                     files_out = _load_files(session_id=session_id_from_browser)
                 except Exception as e:
@@ -1994,16 +1989,19 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         gr.File(visible=False),
                     )
 
-                # login(5) + session_id(1) + files(4) + results(3) = 13
+                # login(5) + session_id(1) + storage(2) + existing(1)
+                # + files(4) + results(3) = 16
                 return (
                     *login_out,
                     session_id_from_browser,
+                    *storage_out,
+                    existing_out,
                     *files_out,
                     *results_out,
                 )
 
             def _build_logged_out_result():
-                """Build the full logged-out output tuple (13 elements)."""
+                """Build the full logged-out output tuple (16 elements)."""
                 return (
                     gr.update(
                         value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
@@ -2014,6 +2012,9 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     gr.update(visible=False),  # user_storage_header
                     gr.update(visible=False),  # user_storage_info
                     "",  # session_id_input
+                    gr.Markdown(visible=False),  # storage_usage_warning
+                    gr.Row(visible=False),  # existing_file_row
+                    gr.Dropdown(choices=[], value=None),  # existing_slides_dropdown
                     "**Storage:** Not logged in",
                     [],  # files_table
                     gr.Textbox(visible=False),
@@ -2035,6 +2036,10 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     user_storage_info,
                     # persist session_id for subsequent button clicks (1)
                     session_id_input,
+                    # analysis page: storage + existing slides (3)
+                    storage_usage_warning,
+                    existing_file_row,
+                    existing_slides_dropdown,
                     # files tab (4)
                     my_files_components["storage_usage"],
                     my_files_components["files_table"],
