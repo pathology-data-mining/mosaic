@@ -735,7 +735,33 @@ def launch_gradio(server_name, server_port, share):
     # Start downloading models in background
     start_background_model_download()
 
-    with gr.Blocks(title="Mosaic") as demo:
+    # On HF Spaces, inject page-load JavaScript that reads the OAuth
+    # session ID from localStorage and writes it into the hidden
+    # session_id_input textbox.  This triggers a .change() event that
+    # runs on_page_load — unlike demo.load(js=...), which Gradio
+    # re-fires on WebSocket reconnections without re-executing the JS.
+    _PAGE_LOAD_JS = """
+    () => {
+        const sid = localStorage.getItem('mosaic_session_id') || '';
+        if (!sid) return;
+        const trySet = () => {
+            const el = document.querySelector('#session_id_input textarea, #session_id_input input');
+            if (!el) { setTimeout(trySet, 200); return; }
+            if (el.value === sid) return;
+            const setter = Object.getOwnPropertyDescriptor(
+                window.HTMLTextAreaElement.prototype, 'value'
+            )?.set || Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 'value'
+            )?.set;
+            if (setter) { setter.call(el, sid); }
+            else { el.value = sid; }
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        setTimeout(trySet, 500);
+    }
+    """ if IS_HF_SPACES else None
+
+    with gr.Blocks(title="Mosaic", js=_PAGE_LOAD_JS) as demo:
         user_dir_state = gr.State(None)
         slide_ids_state = gr.State(
             {}
@@ -1897,8 +1923,6 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 "🔧 **Debug Mode**: Files stored as user 'local_user' in `/tmp/mosaic_user_data/local_user/`"
             )
 
-        _LS_JS = "() => [localStorage.getItem('mosaic_session_id') || '']"
-
         # User storage tabs - initially hidden on HF Spaces, visible locally
         with gr.Tabs(visible=not IS_HF_SPACES) as user_storage_tabs:
             with gr.Tab("My Files"):
@@ -1911,30 +1935,22 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
                 my_results_components = create_my_results_tab(session_id_input)
 
-        # On HF Spaces: a single demo.load() reads the session ID from
-        # localStorage via JS and does ALL page-load work in one Python
-        # call — check login, load files, load results.  This avoids
-        # .then() chaining issues where intermediate component updates
-        # may not propagate to the frontend before the next handler reads
-        # them as inputs.
+        # On HF Spaces: the page-load JS (in gr.Blocks(js=...)) reads
+        # the session ID from localStorage and writes it into the hidden
+        # session_id_input textbox.  This triggers session_id_input.change()
+        # which runs on_page_load exactly ONCE — unlike demo.load(js=...),
+        # which Gradio re-fires on WebSocket reconnections without
+        # re-executing the JS, causing the logged-in state to be overwritten.
         if IS_HF_SPACES:
             _load_files = my_files_components["load_files"]
             _load_results = my_results_components["load_results"]
 
-            # Cache the last successful page-load output so that Gradio
-            # reconnection events (which re-fire demo.load without running
-            # the js= parameter) can replay the correct state instead of
-            # resetting to defaults.
-            _last_page_load_result: dict[str, tuple] = {}
-
             def on_page_load(session_id_from_browser):
-                """Handle page load: check login, load files, load results.
+                """Handle login state, load files and results.
 
-                Gradio fires demo.load() on initial page load AND on
-                WebSocket reconnections.  The ``js=`` parameter only runs
-                on the first load; reconnections pass the component's
-                default value (empty string).  We cache the last successful
-                result and replay it when session_id is empty.
+                Triggered by session_id_input.change() — fires once when
+                the page-load JS writes the localStorage session ID into
+                the hidden textbox.  Does NOT fire on Gradio reconnections.
                 """
                 from mosaic.ui.oauth import get_user_by_session_id, _sessions
 
@@ -1943,23 +1959,21 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     if session_id_from_browser
                     else "(empty)"
                 )
-                n_sessions = len(_sessions)
                 logger.info(
                     f"on_page_load: sid={sid_repr}, "
-                    f"active_sessions={n_sessions}"
+                    f"active_sessions={len(_sessions)}"
                 )
 
-                # Empty session_id → reconnection or genuinely not logged in.
-                # Replay cached result if available; otherwise return the
-                # explicit logged-out state (not gr.update() which Gradio 6
-                # may treat as "reset to defaults").
                 if not session_id_from_browser:
-                    if _last_page_load_result:
-                        logger.debug("on_page_load: empty sid, replaying cached result")
-                        return _last_page_load_result["result"]
-                    logger.debug("on_page_load: empty sid, no cache, returning logged-out state")
-                    result = _build_logged_out_result()
-                    return result
+                    # Shouldn't happen (JS only sets non-empty values),
+                    # but handle gracefully.
+                    return (
+                        gr.update(),  # login_status_md (keep default)
+                        gr.update(visible=False),
+                        gr.update(visible=False),
+                        gr.update(visible=False),
+                        gr.update(visible=False),
+                    )
 
                 userinfo = get_user_by_session_id(session_id_from_browser)
 
@@ -1976,94 +1990,58 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         gr.update(visible=True),   # user_storage_info
                     )
                 else:
-                    # Session_id present but not found server-side
-                    # (expired or server restarted). Show sign-in prompt.
-                    result = _build_logged_out_result()
-                    _last_page_load_result.clear()
-                    return result
-
-                # Call load functions directly with session_id kwarg.
-                try:
-                    files_out = _load_files(session_id=session_id_from_browser)
-                except Exception as e:
-                    logger.error(f"on_page_load: _load_files error: {e}")
-                    files_out = (
-                        f"**Storage:** Error: {e}",
-                        [],
-                        gr.Textbox(visible=False),
-                        gr.File(visible=False),
-                    )
-                try:
-                    results_out = _load_results(
-                        session_id=session_id_from_browser
-                    )
-                except Exception as e:
-                    logger.error(f"on_page_load: _load_results error: {e}")
-                    results_out = (
-                        [],
-                        gr.Textbox(visible=False),
-                        gr.File(visible=False),
+                    # Session expired or server restarted.
+                    login_out = (
+                        gr.update(
+                            value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
+                            visible=True,
+                        ),
+                        gr.update(visible=False),
+                        gr.update(visible=False),
+                        gr.update(visible=False),
+                        gr.update(visible=False),
                     )
 
-                # login(5) + session_id(1) + files(4) + results(3) = 13
-                result = (
-                    *login_out,
-                    session_id_from_browser,
-                    *files_out,
-                    *results_out,
-                )
-                _last_page_load_result["result"] = result
-                return result
+                return login_out
 
-            def _build_logged_out_result():
-                """Build the explicit logged-out output tuple."""
-                return (
-                    gr.update(
-                        value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
-                        visible=True,
-                    ),
-                    gr.update(visible=False),  # logout_button
-                    gr.update(visible=False),  # user_storage_tabs
-                    gr.update(visible=False),  # user_storage_header
-                    gr.update(visible=False),  # user_storage_info
-                    "",  # session_id_input
-                    "**Storage:** Not logged in",
-                    [],  # files_table
-                    gr.Textbox(visible=False),
-                    gr.File(visible=False),
-                    [],  # results_table
-                    gr.Textbox(visible=False),
-                    gr.File(visible=False),
-                )
+            # Outputs: login_status_md, logout_button, user_storage_tabs,
+            # user_storage_header, user_storage_info (5 total).
+            # Files and results are loaded separately below.
+            _login_outputs = [
+                login_status_md,
+                logout_button,
+                user_storage_tabs,
+                user_storage_header,
+                user_storage_info,
+            ]
 
-            demo.load(
+            session_id_input.change(
                 on_page_load,
                 inputs=[session_id_input],
+                outputs=_login_outputs,
+            ).then(
+                _load_files,
+                inputs=[session_id_input],
                 outputs=[
-                    # login state (5)
-                    login_status_md,
-                    logout_button,
-                    user_storage_tabs,
-                    user_storage_header,
-                    user_storage_info,
-                    # persist session_id for subsequent button clicks (1)
-                    session_id_input,
-                    # files tab (4)
                     my_files_components["storage_usage"],
                     my_files_components["files_table"],
                     my_files_components["file_action_status"],
                     my_files_components["slide_download_file"],
-                    # results tab (3)
+                ],
+            ).then(
+                _load_results,
+                inputs=[session_id_input],
+                outputs=[
                     my_results_components["results_table"],
                     my_results_components["result_action_status"],
                     my_results_components["result_download_file"],
                 ],
-                js=_LS_JS,
             )
 
-            # Sign-out: pure JS — clear localStorage and reload.
-            # On reload demo.load() fires, reads empty localStorage,
-            # and on_page_load renders the logged-out state.
+            # Sign-out: clear localStorage and reload.
+            # On reload, the page-load JS reads empty localStorage and
+            # does NOT set session_id_input, so on_page_load doesn't fire.
+            # The default UI (sign-in prompt, tabs hidden) stays.
             logout_button.click(
                 fn=None,
                 inputs=None,
