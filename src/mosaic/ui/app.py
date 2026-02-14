@@ -1205,9 +1205,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     gr.Group(visible=False),
                     gr.Dataframe(visible=False),
                     gr.File(visible=False),
-                    gr.Row(
-                        visible=not IS_HF_SPACES
-                    ),  # Show existing files row in upload mode
+                    gr.Row(visible=True),  # Show existing files row in upload mode
                 )
             else:
                 return (
