@@ -1922,10 +1922,15 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 """Handle page load: check login, load files, load results."""
                 from mosaic.ui.oauth import get_user_by_session_id, _sessions
 
-                logger.debug(
-                    f"on_page_load: session_id="
-                    f"{session_id_from_browser[:8] + '...' if session_id_from_browser else '(empty)'!r}, "
-                    f"active_sessions={len(_sessions)}"
+                sid_repr = (
+                    session_id_from_browser[:8] + "..."
+                    if session_id_from_browser
+                    else "(empty)"
+                )
+                n_sessions = len(_sessions)
+                logger.info(
+                    f"on_page_load: sid={sid_repr}, "
+                    f"active_sessions={n_sessions}"
                 )
 
                 userinfo = get_user_by_session_id(session_id_from_browser)
@@ -1943,9 +1948,16 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         gr.update(visible=True),   # user_storage_info
                     )
                 else:
+                    # Show debug info in the sign-in prompt so we can
+                    # diagnose whether JS passed the session_id correctly.
                     login_out = (
                         gr.update(
-                            value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
+                            value=(
+                                "[Sign in with HuggingFace]"
+                                "(/api/auth/login) to save slides and results"
+                                f"\n\n<sub>sid={sid_repr} | "
+                                f"sessions={n_sessions}</sub>"
+                            ),
                             visible=True,
                         ),
                         gr.update(visible=False),  # logout_button
@@ -1958,11 +1970,35 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 # On HF Spaces _get_username only uses session_id (ignores
                 # request/profile which are None when called outside Gradio
                 # event dispatch).
-                files_out = _load_files(session_id=session_id_from_browser)
-                results_out = _load_results(session_id=session_id_from_browser)
+                try:
+                    files_out = _load_files(session_id=session_id_from_browser)
+                except Exception as e:
+                    logger.error(f"on_page_load: _load_files error: {e}")
+                    files_out = (
+                        f"**Storage:** Error: {e}",
+                        [],
+                        gr.Textbox(visible=False),
+                        gr.File(visible=False),
+                    )
+                try:
+                    results_out = _load_results(
+                        session_id=session_id_from_browser
+                    )
+                except Exception as e:
+                    logger.error(f"on_page_load: _load_results error: {e}")
+                    results_out = (
+                        [],
+                        gr.Textbox(visible=False),
+                        gr.File(visible=False),
+                    )
 
                 # Return: login(5) + session_id(1) + files(4) + results(3)
-                return (*login_out, session_id_from_browser, *files_out, *results_out)
+                return (
+                    *login_out,
+                    session_id_from_browser,
+                    *files_out,
+                    *results_out,
+                )
 
             demo.load(
                 on_page_load,
