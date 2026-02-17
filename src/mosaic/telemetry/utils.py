@@ -112,7 +112,12 @@ class UserInfo:
     username: Optional[str] = None
 
 
-def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> UserInfo:
+def extract_user_info(
+    request,
+    is_hf_spaces: bool = False,
+    profile=None,
+    session_id: Optional[str] = None,
+) -> UserInfo:
     """Extract user info from Gradio OAuth profile.
 
     With gr.LoginButton(), Gradio provides user info via gr.OAuthProfile
@@ -126,21 +131,37 @@ def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> User
         request: Gradio request object (unused, kept for API compatibility)
         is_hf_spaces: Whether running on HuggingFace Spaces (only extract on HF)
         profile: Gradio OAuthProfile object (injected by LoginButton OAuth flow)
+        session_id: Session ID from localStorage (primary lookup on HF Spaces
+            where the HF proxy strips custom cookies)
 
     Returns:
         UserInfo with is_logged_in and username (or defaults if not available)
 
     Example:
-        user_info = extract_user_info(request, IS_HF_SPACES, profile)
+        user_info = extract_user_info(request, IS_HF_SPACES, profile, session_id)
         if user_info.is_logged_in:
             print(f"User: {user_info.username}")
     """
     if not is_hf_spaces:
         return UserInfo()
 
-    # On HF Spaces with Docker SDK, the HF proxy forges the Starlette session
-    # cookie so gr.OAuthProfile always returns the Space owner's identity.
-    # Our server-side session (mosaic_auth cookie) is trustworthy — check it first.
+    # On HF Spaces with Docker SDK, the HF proxy strips custom cookies.
+    # The most reliable method is looking up the session ID that was stored
+    # in localStorage by the OAuth callback page.
+    if session_id:
+        try:
+            from mosaic.ui.oauth import get_user_by_session_id
+
+            userinfo = get_user_by_session_id(session_id)
+            if userinfo:
+                username = userinfo.get("preferred_username")
+                if username:
+                    logger.info(f"Extracted user from session ID: {username}")
+                    return UserInfo(is_logged_in=True, username=username)
+        except Exception as e:
+            logger.debug(f"Session ID lookup failed: {e}")
+
+    # Fallback: server-side session via mosaic_auth cookie
     if request is not None:
         try:
             from mosaic.ui.oauth import get_user_from_server_session

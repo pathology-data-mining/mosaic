@@ -190,6 +190,7 @@ def analyze_slides(
     seg_config,
     user_dir,
     slide_ids=None,  # Mapping from filename to slide_id
+    session_id: str = "",
     progress=gr.Progress(track_tqdm=True),
     request: gr.Request = None,
     profile: Optional[gr.OAuthProfile] = None,
@@ -228,7 +229,7 @@ def analyze_slides(
 
     # Extract user info for telemetry (HF Spaces only)
     # gr.LoginButton() OAuth provides user info via OAuthProfile
-    user_info = extract_user_info(request, IS_HF_SPACES, profile)
+    user_info = extract_user_info(request, IS_HF_SPACES, profile, session_id)
 
     # Wait for core models download to complete (Paladin models can continue in background)
     if _model_download_thread is not None and not _core_models_complete:
@@ -472,6 +473,7 @@ def analyze_slides(
                     analysis_id=analysis_id,  # For telemetry tracking
                     session_hash=session_hash,  # For telemetry tracking
                     profile=profile,  # For OAuth user info
+                    session_id=session_id,  # For OAuth session lookup
                 )
 
                 # Save results to cache if this is a TCGA slide
@@ -1741,6 +1743,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             seg_config,
             user_dir,
             slide_ids,
+            session_id,
             progress=gr.Progress(track_tqdm=True),
             request: gr.Request = None,
             profile: Optional[gr.OAuthProfile] = None,
@@ -1786,6 +1789,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 seg_config,
                 user_dir,
                 slide_ids=slide_ids,
+                session_id=session_id,
                 progress=progress,
                 request=request,
                 profile=profile,
@@ -1806,6 +1810,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 seg_config_dropdown,
                 user_dir_state,
                 slide_ids_state,
+                session_id_input,
             ],
             outputs=[
                 settings_input,
