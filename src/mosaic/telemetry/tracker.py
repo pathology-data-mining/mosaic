@@ -22,7 +22,6 @@ from mosaic.telemetry.events import (
 from mosaic.telemetry.storage import TelemetryStorage
 from mosaic.telemetry.utils import (
     hash_session_id,
-    hash_username,
     sanitize_error_message,
 )
 
@@ -256,7 +255,7 @@ class TelemetryTracker:
             success=success,
             cached_slide_count=cached_slide_count,
             is_logged_in=is_logged_in,
-            hf_username=hash_username(hf_username),
+            hf_username=hf_username,
         )
         self.storage.write_usage_event(event)
 
@@ -332,7 +331,7 @@ class TelemetryTracker:
             gpu_type=gpu_type,
             peak_gpu_memory_gb=peak_gpu_memory_gb,
             is_logged_in=is_logged_in,
-            hf_username=hash_username(hf_username),
+            hf_username=hf_username,
         )
         self.storage.write_resource_event(event)
 
@@ -377,7 +376,7 @@ class TelemetryTracker:
             slide_count=slide_count,
             gpu_type=gpu_type,
             is_logged_in=is_logged_in,
-            hf_username=hash_username(hf_username),
+            hf_username=hf_username,
         )
         self.storage.write_failure_event(event)
 

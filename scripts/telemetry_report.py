@@ -1013,9 +1013,14 @@ def main():
         print(f"Downloading telemetry from {args.hf_repo}...")
         if not download_from_hf(args.hf_repo, temp_dir):
             print(
-                "Warning: Failed to download some or all telemetry data",
+                f"ERROR: Failed to download telemetry data from {args.hf_repo}",
                 file=sys.stderr,
             )
+            print(
+                "Please check HF_TOKEN is set and you have access to the repository",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         # Use the temp directory for report generation
         args.telemetry_dir = temp_dir
 

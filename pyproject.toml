@@ -42,6 +42,16 @@ disable = [
   "unspecified-encoding",
 ]
 
+[tool.uv]
+# Override PyTorch version constraints from mussel[torch-gpu].
+# mussel pins torch<2.6 which may be too strict; we relax to >=2.0.0.
+# The override applies on ALL platforms (not just macOS) so Docker builds
+# still get torch installed.
+override-dependencies = [
+  "torch>=2.0.0",
+  "torchvision>=0.15.0",
+]
+
 [tool.uv.sources]
 # For local dev with SSH: uv pip install -e .
 # For Docker builds with token: GH_TOKEN=<token> uv pip install -e .
