@@ -855,17 +855,33 @@ Standardized cancer classification system (e.g., LUAD = Lung Adenocarcinoma, BRC
 
 ## CSV Batch Upload Format
 
-Upload a CSV file with these columns:
+A settings CSV lets you specify per-slide metadata for batch processing. Upload the CSV alongside your slide files.
+
+**Columns:**
+
+| Column | Required | Valid Values | Default |
+|--------|----------|--------------|---------|
+| `Slide` | ✅ Yes | Filename matching an uploaded slide (e.g., `slide1.svs`) | — |
+| `Site Type` | ✅ Yes | `Primary`, `Metastatic` | `Primary` if invalid |
+| `Sex` | ✅ Yes | `Male`, `Female` | Must be provided; empty = prompted at analysis |
+| `Tissue Site` | No | Any valid anatomical site (see dropdown), or `Unknown` | `Unknown` |
+| `Cancer Subtype` | No | OncoTree code (e.g., `LUAD`) or display name, or `Unknown` | `Unknown` (auto-inferred by Aeon) |
+| `Segmentation Config` | No | `Biopsy`, `Resection`, `TCGA` | `Biopsy` |
+
+**Example:**
 ```
 Slide,Site Type,Sex,Tissue Site,Cancer Subtype,Segmentation Config
 slide1.svs,Primary,Female,Breast,Unknown,Resection
 slide2.tif,Metastatic,Male,Lung,LUAD,Biopsy
+slide3.svs,Primary,Female,Unknown,Unknown,Biopsy
 ```
 
-**Tips:**
-- Slide names must match uploaded filenames
-- Use "Unknown" for automatic cancer subtype inference
-- All rows must have Sex specified (Male or Female)
+**Notes:**
+- The CSV file itself can have any name (e.g., `my_batch.csv`, `settings.csv`)
+- `Slide` values must exactly match the filenames of slides uploaded in the same session
+- Omitting `Cancer Subtype` (or using `Unknown`) lets the Aeon model infer the subtype automatically
+- Omitting optional columns entirely is allowed — defaults are applied automatically
+- Rows with invalid `Site Type` or `Segmentation Config` values fall back to their defaults with a warning
 
 ---
 
@@ -1036,7 +1052,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         label="Example TCGA Slide IDs (click to use)",
                     )
                     with gr.Row():
-                        fetch_button = gr.Button("Fetch Slide", variant="secondary")
+                        fetch_button = gr.Button("Fetch Slide", variant="primary")
                     tcga_status = gr.Textbox(
                         label="Fetch Status",
                         interactive=False,
@@ -1097,7 +1113,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 with gr.Row():
                     settings_csv = gr.File(
                         file_types=[".csv"],
-                        label="Upload Settings CSV (columns: Slide, Site Type, Sex, Tissue Site, Cancer Subtype, Segmentation Config)",
+                        label="Upload Settings CSV",
                         visible=False,
                     )
 
