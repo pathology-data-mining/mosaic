@@ -5,7 +5,7 @@ This module provides helper utilities:
 - sanitize_error_message: Remove sensitive data from error messages
 - hash_session_id: Hash session IDs for privacy
 - UserInfo: Dataclass for user information from HF Spaces
-- extract_user_info: Extract user info from Gradio request object
+- extract_user_info: Extract user info from Gradio request/OAuth profile
 """
 
 import hashlib
@@ -99,25 +99,6 @@ def hash_session_id(session_id: Optional[str]) -> Optional[str]:
     return hashlib.sha256(salted.encode()).hexdigest()[:16]
 
 
-def hash_username(username: Optional[str]) -> Optional[str]:
-    """Hash a username for privacy in telemetry.
-
-    Uses SHA-256 with a different salt than session IDs to create a one-way hash.
-    This allows distinguishing users in telemetry without storing actual usernames.
-
-    Args:
-        username: HuggingFace username (can be None for anonymous users)
-
-    Returns:
-        Hashed username or None if input is None
-    """
-    if username is None:
-        return None
-
-    salted = f"mosaic_user:{username}"
-    return hashlib.sha256(salted.encode()).hexdigest()[:16]
-
-
 @dataclass
 class UserInfo:
     """User information extracted from HF Spaces request.
@@ -131,7 +112,12 @@ class UserInfo:
     username: Optional[str] = None
 
 
-def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> UserInfo:
+def extract_user_info(
+    request,
+    is_hf_spaces: bool = False,
+    profile=None,
+    session_id: Optional[str] = None,
+) -> UserInfo:
     """Extract user info from Gradio OAuth profile.
 
     With gr.LoginButton(), Gradio provides user info via gr.OAuthProfile
@@ -145,21 +131,51 @@ def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> User
         request: Gradio request object (unused, kept for API compatibility)
         is_hf_spaces: Whether running on HuggingFace Spaces (only extract on HF)
         profile: Gradio OAuthProfile object (injected by LoginButton OAuth flow)
+        session_id: Session ID from localStorage (primary lookup on HF Spaces
+            where the HF proxy strips custom cookies)
 
     Returns:
         UserInfo with is_logged_in and username (or defaults if not available)
 
     Example:
-        user_info = extract_user_info(request, IS_HF_SPACES, profile)
+        user_info = extract_user_info(request, IS_HF_SPACES, profile, session_id)
         if user_info.is_logged_in:
             print(f"User: {user_info.username}")
     """
     if not is_hf_spaces:
         return UserInfo()
 
-    # On HF Spaces, only OAuthProfile reliably identifies the logged-in user.
-    # request.username returns the Space owner's username (not the visitor's),
-    # so we must NOT fall back to it.
+    # On HF Spaces with Docker SDK, the HF proxy strips custom cookies.
+    # The most reliable method is looking up the session ID that was stored
+    # in localStorage by the OAuth callback page.
+    if session_id:
+        try:
+            from mosaic.ui.oauth import get_user_by_session_id
+
+            userinfo = get_user_by_session_id(session_id)
+            if userinfo:
+                username = userinfo.get("preferred_username")
+                if username:
+                    logger.info(f"Extracted user from session ID: {username}")
+                    return UserInfo(is_logged_in=True, username=username)
+        except Exception as e:
+            logger.debug(f"Session ID lookup failed: {e}")
+
+    # Fallback: server-side session via mosaic_auth cookie
+    if request is not None:
+        try:
+            from mosaic.ui.oauth import get_user_from_server_session
+
+            userinfo = get_user_from_server_session(request)
+            if userinfo:
+                username = userinfo.get("preferred_username")
+                if username:
+                    logger.info(f"Extracted user from server-side session: {username}")
+                    return UserInfo(is_logged_in=True, username=username)
+        except Exception as e:
+            logger.debug(f"Server-side session lookup failed: {e}")
+
+    # Fallback: OAuthProfile (may be unreliable on Docker SDK Spaces)
     if profile is not None:
         try:
             username = getattr(profile, "username", None)
@@ -169,5 +185,5 @@ def extract_user_info(request, is_hf_spaces: bool = False, profile=None) -> User
         except Exception as e:
             logger.debug(f"Could not extract username from OAuthProfile: {e}")
 
-    logger.debug("User not logged in: no OAuthProfile available")
+    logger.debug("User not logged in: no session or OAuthProfile available")
     return UserInfo()

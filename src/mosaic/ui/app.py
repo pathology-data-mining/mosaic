@@ -190,6 +190,7 @@ def analyze_slides(
     seg_config,
     user_dir,
     slide_ids=None,  # Mapping from filename to slide_id
+    session_id: str = "",
     progress=gr.Progress(track_tqdm=True),
     request: gr.Request = None,
     profile: Optional[gr.OAuthProfile] = None,
@@ -228,7 +229,7 @@ def analyze_slides(
 
     # Extract user info for telemetry (HF Spaces only)
     # gr.LoginButton() OAuth provides user info via OAuthProfile
-    user_info = extract_user_info(request, IS_HF_SPACES, profile)
+    user_info = extract_user_info(request, IS_HF_SPACES, profile, session_id)
 
     # Wait for core models download to complete (Paladin models can continue in background)
     if _model_download_thread is not None and not _core_models_complete:
@@ -472,6 +473,7 @@ def analyze_slides(
                     analysis_id=analysis_id,  # For telemetry tracking
                     session_hash=session_hash,  # For telemetry tracking
                     profile=profile,  # For OAuth user info
+                    session_id=session_id,  # For OAuth session lookup
                 )
 
                 # Save results to cache if this is a TCGA slide
@@ -759,8 +761,18 @@ def launch_gradio(server_name, server_port, share):
             # stays permanently hidden.
             login_button.load_event_to_attach = None
 
-            # Custom login display (OAuthProfile-based, not request.username)
-            login_status_md = gr.Markdown(value="", visible=False)
+            # Custom login display — sign-in via markdown link,
+            # sign-out via a Gradio button (stays in Gradio event system,
+            # avoiding navigation away from the SPA).
+            with gr.Row():
+                login_status_md = gr.Markdown(
+                    value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
+                    visible=True,
+                )
+                logout_button = gr.Button(
+                    "Sign out", visible=False, size="sm", scale=0,
+                    min_width=80,
+                )
 
         gr.Markdown(
             "# Mosaic: H&E Whole Slide Image Cancer Subtype and Biomarker Inference"
@@ -1211,9 +1223,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     gr.Group(visible=False),
                     gr.Dataframe(visible=False),
                     gr.File(visible=False),
-                    gr.Row(
-                        visible=not IS_HF_SPACES
-                    ),  # Show existing files row in upload mode
+                    gr.Row(visible=True),  # Show existing files row in upload mode
                 )
             else:
                 return (
@@ -1226,13 +1236,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
         # Load storage usage and show warnings
         def load_storage_usage(
+            session_id: str = "",
             request: gr.Request = None,
             profile: Optional[gr.OAuthProfile] = None,
         ):
             """Load and display storage usage with warnings."""
             from mosaic.ui.user_tabs import _get_username
 
-            username, is_local = _get_username(request, profile)
+            username, is_local = _get_username(request, profile, session_id)
 
             if not username:
                 # Not logged in on HF Spaces - hide storage info
@@ -1282,13 +1293,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
         # Load list of existing slides for re-analysis
         def load_existing_slides(
+            session_id: str = "",
             request: gr.Request = None,
             profile: Optional[gr.OAuthProfile] = None,
         ):
             """Load dropdown with user's existing slides."""
             from mosaic.ui.user_tabs import _get_username
 
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
 
             if not username:
                 return gr.Dropdown(choices=[], value=None)
@@ -1326,6 +1338,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         def handle_slide_upload(
             files,
             slide_ids,
+            session_id: str = "",
             request: gr.Request = None,
             profile: Optional[gr.OAuthProfile] = None,
         ):
@@ -1336,7 +1349,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             # Determine username via OAuthProfile (primary) or request (fallback)
             from mosaic.ui.user_tabs import _get_username
 
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
             if not username:
                 return files, slide_ids or {}
 
@@ -1500,34 +1513,47 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             ],
         )
 
+        # Hidden textbox that carries the localStorage session ID into
+        # every Gradio event handler that needs the visitor's identity.
+        # On HF Spaces the js= parameter on demo.load() fills this from
+        # localStorage; locally it stays empty and _get_username() falls
+        # back to LOCAL_DEBUG_USERNAME.
+        session_id_input = gr.Textbox(visible=False, elem_id="session_id_input")
+        # Hidden flag set to "1" only by the demo.load js= parameter.
+        # On WebSocket reconnections JS doesn't re-run, so this stays
+        # at its default "".  The Python handler uses it to detect
+        # reconnections and return gr.skip() to preserve UI state.
+        _js_ran_flag = gr.Textbox(visible=False, value="")
+
         # Handle file uploads - regenerate entire settings table
         # Save uploaded slides to user storage (HF Spaces only)
         input_slides.upload(
             handle_slide_upload,
-            inputs=[input_slides, slide_ids_state],
+            inputs=[input_slides, slide_ids_state, session_id_input],
             outputs=[input_slides, slide_ids_state],
         ).then(
             # Refresh storage usage after upload
             load_storage_usage,
-            inputs=None,
+            inputs=[session_id_input],
             outputs=[storage_usage_warning, existing_file_row],
         ).then(
             # Refresh existing slides list after upload
             load_existing_slides,
-            inputs=None,
+            inputs=[session_id_input],
             outputs=[existing_slides_dropdown],
         )
 
         # Refresh existing slides dropdown
         refresh_existing_btn.click(
             load_existing_slides,
-            inputs=None,
+            inputs=[session_id_input],
             outputs=[existing_slides_dropdown],
         )
 
         # Handle selection of existing slide(s) for re-analysis
         def select_existing_slide(
             slide_ids,
+            session_id: str = "",
             request: gr.Request = None,
             profile: Optional[gr.OAuthProfile] = None,
         ):
@@ -1535,6 +1561,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
             Args:
                 slide_ids: Single slide_id (str) or list of slide_ids (multiselect)
+                session_id: Server-side session ID from localStorage
                 request: Gradio request object
                 profile: OAuthProfile for HF Spaces login
 
@@ -1550,7 +1577,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
             from mosaic.ui.user_tabs import _get_username
 
-            username, _ = _get_username(request, profile)
+            username, _ = _get_username(request, profile, session_id)
             if not username:
                 return None
 
@@ -1593,7 +1620,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
         existing_slides_dropdown.change(
             select_existing_slide,
-            inputs=[existing_slides_dropdown],
+            inputs=[existing_slides_dropdown, session_id_input],
             outputs=[input_slides],
         )
 
@@ -1732,6 +1759,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             seg_config,
             user_dir,
             slide_ids,
+            session_id,
             progress=gr.Progress(track_tqdm=True),
             request: gr.Request = None,
             profile: Optional[gr.OAuthProfile] = None,
@@ -1777,6 +1805,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 seg_config,
                 user_dir,
                 slide_ids=slide_ids,
+                session_id=session_id,
                 progress=progress,
                 request=request,
                 profile=profile,
@@ -1797,6 +1826,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 seg_config_dropdown,
                 user_dir_state,
                 slide_ids_state,
+                session_id_input,
             ],
             outputs=[
                 settings_input,
@@ -1863,20 +1893,6 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             outputs=[user_dir_state],
         )
 
-        # Load storage usage on page load
-        demo.load(
-            load_storage_usage,
-            inputs=None,
-            outputs=[storage_usage_warning, existing_file_row],
-        )
-
-        # Load existing slides dropdown on page load
-        demo.load(
-            load_existing_slides,
-            inputs=None,
-            outputs=[existing_slides_dropdown],
-        )
-
         # Add My Files and My Results tabs for user storage
         # On HF Spaces: visible for logged-in users
         # Locally: always visible with "local_user" for debugging
@@ -1901,87 +1917,182 @@ This tool is for research purposes only and not approved for clinical diagnosis.
             with gr.Tab("My Files"):
                 from mosaic.ui.user_tabs import create_my_files_tab
 
-                my_files_components = create_my_files_tab()
-
-                # Load files on demo load
-                demo.load(
-                    my_files_components["load_files"],
-                    inputs=None,
-                    outputs=[
-                        my_files_components["storage_usage"],
-                        my_files_components["files_table"],
-                        my_files_components["file_action_status"],
-                        my_files_components["slide_download_file"],
-                    ],
-                )
+                my_files_components = create_my_files_tab(session_id_input)
 
             with gr.Tab("My Results"):
                 from mosaic.ui.user_tabs import create_my_results_tab
 
-                my_results_components = create_my_results_tab()
+                my_results_components = create_my_results_tab(session_id_input)
 
-                # Load results on demo load
-                demo.load(
-                    my_results_components["load_results"],
-                    inputs=None,
-                    outputs=[
-                        my_results_components["results_table"],
-                        my_results_components["result_action_status"],
-                        my_results_components["result_download_file"],
-                    ],
+        # On HF Spaces: demo.load(js=...) reads the session ID from
+        # localStorage AND sets a "JS ran" flag.  Gradio re-fires
+        # demo.load() on WebSocket reconnections WITHOUT re-executing
+        # the JS — so the flag stays at its default "".  The Python
+        # handler detects this and returns gr.skip() to preserve the
+        # UI state instead of overwriting the logged-in display.
+        if IS_HF_SPACES:
+            _load_files = my_files_components["load_files"]
+            _load_results = my_results_components["load_results"]
+
+            _LS_JS = "() => [localStorage.getItem('mosaic_session_id') || '', '1']"
+
+            def on_page_load(session_id_from_browser, js_ran):
+                """Handle page load: check login, load files, load results.
+
+                On WebSocket reconnections, Gradio re-fires demo.load()
+                but does NOT re-execute the js= parameter.  The js_ran
+                flag stays at its default "" on reconnections, allowing
+                us to return gr.skip() and preserve the current UI state.
+                """
+                from mosaic.ui.oauth import get_user_by_session_id, _sessions
+
+                # Reconnection detection: JS didn't run → skip all updates
+                if js_ran != "1":
+                    logger.debug("on_page_load: reconnection detected, skipping")
+                    return gr.skip()
+
+                sid_repr = (
+                    session_id_from_browser[:8] + "..."
+                    if session_id_from_browser
+                    else "(empty)"
+                )
+                logger.info(
+                    f"on_page_load: sid={sid_repr}, "
+                    f"active_sessions={len(_sessions)}"
                 )
 
-        # Show/hide user storage features based on login state on page load.
-        # LoginButton.click() fires BEFORE the OAuth redirect so the profile
-        # is never available at that point.  Instead we rely on demo.load()
-        # which fires after the OAuth redirect completes and the page reloads.
-        #
-        # On HF Spaces with sdk:docker, LoginButton is always hidden because
-        # it reads request.username (which returns the Space owner for all
-        # visitors). Instead we use login_status_md with direct OAuth links.
-        if IS_HF_SPACES:
+                if not session_id_from_browser:
+                    return _build_logged_out_result()
 
-            def check_login_state(profile: Optional[gr.OAuthProfile] = None):
-                """Toggle login status display and user-storage UI based on OAuth state."""
-                if profile is not None:
-                    username = getattr(profile, "username", None) or getattr(
-                        profile, "name", "User"
-                    )
-                    return (
+                userinfo = get_user_by_session_id(session_id_from_browser)
+
+                if userinfo is not None:
+                    username = userinfo.get("preferred_username", "User")
+                    login_out = (
                         gr.update(
-                            value=f"Signed in as **{username}** \u00b7 [Sign out](/logout)",
+                            value=f"Signed in as **{username}**",
                             visible=True,
-                        ),  # login_status_md
-                        gr.update(visible=True),  # user_storage_tabs
-                        gr.update(visible=True),  # user_storage_header
-                        gr.update(visible=True),  # user_storage_info
+                        ),
+                        gr.update(visible=True),   # logout_button
+                        gr.update(visible=True),   # user_storage_tabs
+                        gr.update(visible=True),   # user_storage_header
+                        gr.update(visible=True),   # user_storage_info
                     )
                 else:
-                    return (
-                        gr.update(
-                            value="[Sign in with HuggingFace](/login/huggingface) to save slides and results",
-                            visible=True,
-                        ),  # login_status_md
-                        gr.update(visible=False),  # user_storage_tabs
-                        gr.update(visible=False),  # user_storage_header
-                        gr.update(visible=False),  # user_storage_info
+                    return _build_logged_out_result()
+
+                # Load storage usage + existing slides for the analysis page
+                storage_out = load_storage_usage(session_id=session_id_from_browser)
+                existing_out = load_existing_slides(session_id=session_id_from_browser)
+
+                # Load user files and results tabs
+                try:
+                    files_out = _load_files(session_id=session_id_from_browser)
+                except Exception as e:
+                    logger.error(f"on_page_load: _load_files error: {e}")
+                    files_out = (
+                        f"**Storage:** Error: {e}",
+                        [],
+                        gr.Textbox(visible=False),
+                        gr.File(visible=False),
+                    )
+                try:
+                    results_out = _load_results(
+                        session_id=session_id_from_browser
+                    )
+                except Exception as e:
+                    logger.error(f"on_page_load: _load_results error: {e}")
+                    results_out = (
+                        [],
+                        gr.Textbox(visible=False),
+                        gr.File(visible=False),
                     )
 
+                # login(5) + session_id(1) + storage(2) + existing(1)
+                # + files(4) + results(3) = 16
+                return (
+                    *login_out,
+                    session_id_from_browser,
+                    *storage_out,
+                    existing_out,
+                    *files_out,
+                    *results_out,
+                )
+
+            def _build_logged_out_result():
+                """Build the full logged-out output tuple (16 elements)."""
+                return (
+                    gr.update(
+                        value="[Sign in with HuggingFace](/api/auth/login) to save slides and results",
+                        visible=True,
+                    ),
+                    gr.update(visible=False),  # logout_button
+                    gr.update(visible=False),  # user_storage_tabs
+                    gr.update(visible=False),  # user_storage_header
+                    gr.update(visible=False),  # user_storage_info
+                    "",  # session_id_input
+                    gr.Markdown(visible=False),  # storage_usage_warning
+                    gr.Row(visible=False),  # existing_file_row
+                    gr.Dropdown(choices=[], value=None),  # existing_slides_dropdown
+                    "**Storage:** Not logged in",
+                    [],  # files_table
+                    gr.Textbox(visible=False),
+                    gr.File(visible=False),
+                    [],  # results_table
+                    gr.Textbox(visible=False),
+                    gr.File(visible=False),
+                )
+
             demo.load(
-                check_login_state,
-                inputs=None,
+                on_page_load,
+                inputs=[session_id_input, _js_ran_flag],
                 outputs=[
+                    # login state (5)
                     login_status_md,
+                    logout_button,
                     user_storage_tabs,
                     user_storage_header,
                     user_storage_info,
+                    # persist session_id for subsequent button clicks (1)
+                    session_id_input,
+                    # analysis page: storage + existing slides (3)
+                    storage_usage_warning,
+                    existing_file_row,
+                    existing_slides_dropdown,
+                    # files tab (4)
+                    my_files_components["storage_usage"],
+                    my_files_components["files_table"],
+                    my_files_components["file_action_status"],
+                    my_files_components["slide_download_file"],
+                    # results tab (3)
+                    my_results_components["results_table"],
+                    my_results_components["result_action_status"],
+                    my_results_components["result_download_file"],
                 ],
+                js=_LS_JS,
+            )
+
+            # Sign-out: clear localStorage and reload.
+            # On reload, demo.load fires; JS reads empty localStorage
+            # and returns ['', '1']; on_page_load sees empty session_id
+            # and returns the logged-out state.
+            logout_button.click(
+                fn=None,
+                inputs=None,
+                js="() => { localStorage.removeItem('mosaic_session_id'); location.reload(); }",
             )
 
     # Use hardware-specific concurrency limit
     # T4 GPUs (16GB) can only handle one analysis at a time to prevent OOM
     # Higher-memory GPUs and ZeroGPU can handle multiple concurrent analyses
     demo.queue(max_size=10, default_concurrency_limit=DEFAULT_CONCURRENCY_LIMIT)
+
+    # OAuth routes for HF Spaces (sdk:docker):
+    # Custom OAuth routes (/api/auth/login, /api/auth/callback, /api/auth/logout)
+    # are mounted via the lifespan protocol in create_oauth_lifespan(). This
+    # ensures routes survive launch() recreating the app. Identity is read from
+    # our server-side session (mosaic_auth cookie), not gr.OAuthProfile, which
+    # returns the Space owner's identity on Docker SDK Spaces.
 
     # Register cleanup handler for graceful shutdown
     import atexit
@@ -2014,10 +2125,20 @@ This tool is for research purposes only and not approved for clinical diagnosis.
     heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
     heartbeat_thread.start()
 
+    # On HF Spaces, mount custom OAuth routes via the lifespan protocol.
+    # Gradio's launch() recreates the app, but the lifespan handler receives
+    # the final App instance, so routes added there survive.
+    launch_kwargs = {}
+    if IS_HF_SPACES:
+        from mosaic.ui.oauth import create_oauth_lifespan
+
+        launch_kwargs["app_kwargs"] = {"lifespan": create_oauth_lifespan}
+
     demo.launch(
         server_name=server_name,
         share=share,
         server_port=server_port,
         show_error=True,
         favicon_path=current_dir / "favicon.svg",
+        **launch_kwargs,
     )
