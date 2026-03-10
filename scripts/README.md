@@ -156,7 +156,91 @@ uv run python scripts/verify_aeon_results.py \
 #   Maximum: 0.9961 (99.61%)
 ```
 
-## Workflow
+## Paladin Model Sync
+
+### sync_paladin_models.py
+
+Idempotent script for syncing paladin model checkpoints to HuggingFace.
+Works for any project name (`paladin-redo`, or future variants).
+
+**Prerequisites:**
+- HF token in `~/.hf_cred.env` (loaded automatically)
+- For `gen-configs`: checkpoints at `/gpfs/mskmind_ess/boehmk/paladin/storage/{project}/`
+- For SLURM jobs: paladin venv at `/gpfs/mskmind_ess/limr/repos/paladin/venv`
+
+**Phases:**
+
+#### Phase 1: Generate SLURM configs
+
+```bash
+python scripts/sync_paladin_models.py --project paladin-redo --phase gen-configs
+# Or:
+make gen-pkl-configs PROJECT=paladin-redo
+```
+
+Reads `aggregated_auroc.freeze.corrected.csv`, picks the best-auroc run per
+`(histology, target_name)` combo, writes Hydra pkl configs to
+`/gpfs/mskmind_ess/limr/repos/paladin/conf/train/pkl_{run_id}.yaml`, and
+generates `scripts/submit_paladin_redo_pickles.sh`.
+
+#### SLURM pkl export (user action)
+
+After `gen-configs`, run the SLURM jobs to export pkl files:
+
+```bash
+cd /gpfs/mskmind_ess/limr/repos/paladin
+bash /path/to/mosaic/scripts/submit_paladin_redo_pickles.sh
+```
+
+Jobs use the paladin venv and output `{run_id}.epoch=E-step=S.model.pkl` alongside
+the checkpoint. Wait for all jobs to complete before proceeding.
+
+#### Phase 2: Upload to HuggingFace
+
+```bash
+python scripts/sync_paladin_models.py --project paladin-redo --phase upload
+# Or:
+make upload-paladin-models PROJECT=paladin-redo
+```
+
+Uploads new pkl files to `PDM-Group/paladin-aeon-models` HF repo under
+`paladin_redo/`. Skips files already present (idempotent). Exits non-zero
+if any expected pkls are missing.
+
+#### Phase 3: Update model map
+
+```bash
+python scripts/sync_paladin_models.py --project paladin-redo --phase update-map
+# Or:
+make update-model-map PROJECT=paladin-redo
+```
+
+Updates `data/paladin_model_map.csv` (replacing existing entries or adding new ones)
+and pushes the CSV to HF. Then commit locally:
+
+```bash
+git add data/paladin_model_map.csv
+git commit -m "feat: add paladin-redo models to paladin_model_map.csv"
+git push
+```
+
+#### Run upload + update-map together
+
+```bash
+make sync-paladin-models PROJECT=paladin-redo
+```
+
+**For future paladin variants**, just pass the new project name:
+
+```bash
+python scripts/sync_paladin_models.py --project paladin-v2 --phase gen-configs
+# ... run SLURM jobs ...
+make sync-paladin-models PROJECT=paladin-v2
+```
+
+---
+
+## Aeon Model Scripts
 
 ### Complete Testing Workflow
 

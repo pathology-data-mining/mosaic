@@ -200,6 +200,20 @@ download-models: ## Download required models from HuggingFace
 	@echo "Downloading models from HuggingFace Hub..."
 	$(PYTHON) -m mosaic.gradio_app --download-models-only
 
+##@ Paladin Model Sync
+
+gen-pkl-configs: ## Generate Hydra pkl configs for SLURM export (usage: make gen-pkl-configs PROJECT=paladin-redo)
+	$(PYTHON) scripts/sync_paladin_models.py --project $(PROJECT) --phase gen-configs
+
+upload-paladin-models: ## Upload pkl files to HF repo (usage: make upload-paladin-models PROJECT=paladin-redo)
+	$(PYTHON) scripts/sync_paladin_models.py --project $(PROJECT) --phase upload
+
+update-model-map: ## Update paladin_model_map.csv and push to HF (usage: make update-model-map PROJECT=paladin-redo)
+	$(PYTHON) scripts/sync_paladin_models.py --project $(PROJECT) --phase update-map
+
+sync-paladin-models: ## Run upload + update-map phases (usage: make sync-paladin-models PROJECT=paladin-redo)
+	$(PYTHON) scripts/sync_paladin_models.py --project $(PROJECT)
+
 ##@ Documentation
 
 docs-requirements: ## Show what needs to be documented
