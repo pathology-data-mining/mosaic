@@ -16,6 +16,7 @@ compatibility.
 import os
 import threading
 import time
+from typing import Optional
 
 import gradio as gr
 import pandas as pd

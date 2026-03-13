@@ -36,6 +36,9 @@ test-fast: ## Run tests without coverage (faster)
 test-coverage: ## Run tests with detailed coverage report
 	$(PYTEST) tests/ -v --cov=src/mosaic --cov-report=term-missing --cov-report=html
 
+test-integration: ## Run Gradio UI integration tests (starts real server, no GPU needed)
+	$(PYTEST) integration/ -v --no-cov -s
+
 test-ui: ## Run only UI tests
 	$(PYTEST) tests/test_ui_components.py tests/test_ui_events.py -v
 
