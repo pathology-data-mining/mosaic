@@ -88,7 +88,7 @@ class TestSettingsValidation:
 class TestAnalysisWorkflow:
     """Test analysis workflow with mocked analyze_slide."""
 
-    @patch("mosaic.ui.app.analyze_slide")
+    @patch("mosaic.ui.pipeline.analyze_slide")
     @patch("mosaic.ui.app.create_user_directory")
     def test_single_slide_analysis_no_model_cache(
         self,
@@ -148,8 +148,8 @@ class TestAnalysisWorkflow:
         call_kwargs = mock_analyze.call_args[1]
         assert call_kwargs["model_cache"] is None
 
-    @patch("mosaic.ui.app.load_all_models")
-    @patch("mosaic.ui.app.analyze_slide")
+    @patch("mosaic.ui.pipeline.load_all_models")
+    @patch("mosaic.ui.pipeline.analyze_slide")
     @patch("mosaic.ui.app.create_user_directory")
     def test_batch_analysis_loads_model_cache_once(
         self,

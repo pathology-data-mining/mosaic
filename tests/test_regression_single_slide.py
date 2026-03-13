@@ -116,7 +116,7 @@ class TestSingleSlideRegression:
         assert isinstance(aeon_results, pd.DataFrame)
         assert isinstance(paladin_results, pd.DataFrame)
 
-    @patch("mosaic.ui.app.analyze_slide")
+    @patch("mosaic.ui.pipeline.analyze_slide")
     @patch("mosaic.ui.app.create_user_directory")
     @patch("mosaic.ui.app.validate_settings")
     @patch("pandas.DataFrame.to_csv")  # Mock CSV writing to avoid directory issues
@@ -160,7 +160,7 @@ class TestSingleSlideRegression:
 
             # Call analyze_slides with a single slide (generator function)
             with patch(
-                "mosaic.ui.app.get_oncotree_code_name",
+                "mosaic.ui.pipeline.get_oncotree_code_name",
                 return_value="Lung Adenocarcinoma",
             ):
                 gen = analyze_slides(

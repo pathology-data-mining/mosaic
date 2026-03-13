@@ -15,7 +15,7 @@ from loguru import logger
 
 from mosaic.data_directory import set_data_directory
 from mosaic.ui import launch_gradio
-from mosaic.ui.app import set_cancer_subtype_maps
+from mosaic.ui.pipeline import set_cancer_subtype_maps
 from mosaic.ui.utils import (
     get_oncotree_code_name,
     load_settings,
