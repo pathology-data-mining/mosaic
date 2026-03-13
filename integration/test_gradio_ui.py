@@ -16,8 +16,6 @@ import pytest
 from gradio_client import Client, handle_file
 from unittest.mock import patch, MagicMock
 from PIL import Image
-import tempfile
-import io
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +210,7 @@ class TestAnalysisPipeline:
 
             try:
                 job = client.submit(
-                    input_mode_val="upload",
+                    input_mode_val="Upload Files",
                     slides=[handle_file(str(fake_slide_path))],
                     settings_input_val=settings_payload,
                     site_type="Primary",
@@ -230,3 +228,159 @@ class TestAnalysisPipeline:
         # Most important: the server is still alive after the pipeline call
         status, _ = _get(gradio_server["url"] + "/")
         assert status == 200, "Server should still respond after a pipeline call"
+
+
+# ---------------------------------------------------------------------------
+# End-to-end analysis test
+# ---------------------------------------------------------------------------
+
+
+class TestE2EAnalysis:
+    """True end-to-end analysis: upload a slide, run the pipeline, verify results.
+
+    The ML models (analyze_slide) are mocked to return deterministic outputs so
+    the test runs without GPU or large model downloads.  Everything else —
+    Gradio event routing, pipeline.analyze_slides(), result serialisation, and
+    HTTP transport — is real and exercised.
+    """
+
+    # Aeon / Paladin results that the mocked analyze_slide will return.
+    CANCER_SUBTYPE = "LUAD"
+    BIOMARKERS = ["TP53", "KRAS", "EGFR"]
+
+    @pytest.fixture(scope="class")
+    def fake_slide(self, tmp_path_factory):
+        """256×256 TIFF named as an SVS so the pipeline accepts it as a slide."""
+        d = tmp_path_factory.mktemp("e2e_slides")
+        path = d / "test_slide.svs"
+        img = Image.new("RGB", (256, 256), color=(210, 185, 165))
+        img.save(str(path), format="TIFF")
+        return path
+
+    @pytest.fixture(scope="class")
+    def analysis_result(self):
+        """Deterministic (mask, aeon_df, paladin_df) tuple for the mock."""
+        mask = Image.new("RGB", (128, 128), color=(200, 100, 100))
+        aeon_df = pd.DataFrame(
+            {
+                "Cancer Subtype": [self.CANCER_SUBTYPE],
+                "Confidence": [0.9412],
+            }
+        )
+        paladin_df = pd.DataFrame(
+            {
+                "Cancer Subtype": [self.CANCER_SUBTYPE] * len(self.BIOMARKERS),
+                "Biomarker": self.BIOMARKERS,
+                "Score": [0.85, 0.72, 0.63],
+            }
+        )
+        return (mask, aeon_df, paladin_df)
+
+    @pytest.fixture(scope="class")
+    def e2e_result(self, gradio_server, fake_slide, analysis_result):
+        """Run the full analysis via the Gradio API and return the final output."""
+        with (
+            patch("mosaic.ui.pipeline.analyze_slide", return_value=analysis_result),
+            patch("mosaic.ui.pipeline.load_all_models", return_value=MagicMock()),
+            patch("mosaic.ui.pipeline.save_analysis_results"),
+            patch("mosaic.ui.pipeline.load_analysis_results", return_value=None),
+            patch(
+                "mosaic.ui.pipeline.get_oncotree_code_name",
+                side_effect=lambda code: f"Mock {code}",
+            ),
+        ):
+            client = Client(gradio_server["url"], verbose=False)
+            result = client.predict(
+                input_mode_val="Upload Files",
+                slides=[handle_file(str(fake_slide))],
+                settings_input_val={
+                    "headers": [
+                        "Slide",
+                        "Site Type",
+                        "Sex",
+                        "Tissue Site",
+                        "Cancer Subtype",
+                        "Segmentation Config",
+                    ],
+                    "data": [
+                        [
+                            fake_slide.name,
+                            "Primary",
+                            "Male",
+                            "Unknown",
+                            "Unknown",
+                            "Biopsy",
+                        ]
+                    ],
+                },
+                site_type="Primary",
+                sex="Male",
+                tissue_site="Unknown",
+                cancer_subtype="Unknown",
+                seg_config="Biopsy",
+                session_id=None,
+                api_name="/analyze_with_tcga_support",
+            )
+        # result is a 6-tuple: (settings, masks, aeon, aeon_dl, paladin, paladin_dl)
+        return result
+
+    def test_returns_six_outputs(self, e2e_result):
+        """Analysis returns exactly the expected number of output components."""
+        assert len(e2e_result) == 6, (
+            f"Expected 6 outputs (settings, masks, aeon, aeon_dl, paladin, paladin_dl), "
+            f"got {len(e2e_result)}"
+        )
+
+    def test_aeon_results_contain_cancer_subtype(self, e2e_result):
+        """Aeon output DataFrame contains a Cancer Subtype column with a result."""
+        _, _, aeon_out, _, _, _ = e2e_result
+        # When all_subtypes_known=False, Gradio returns a gr.update dict:
+        # {"visible": True, "value": {"headers": [...], "data": [...]}, "__type__": "update"}
+        # When it's a plain DataFrame it comes as {"headers": [...], "data": [...]}
+        assert aeon_out is not None, "Aeon results should not be None"
+        aeon_value = aeon_out.get("value", aeon_out)
+        headers = aeon_value.get("headers", [])
+        assert any(
+            "cancer" in h.lower() or "subtype" in h.lower() for h in headers
+        ), f"Expected a Cancer Subtype column, got headers: {headers}"
+        assert len(aeon_value.get("data", [])) >= 1, "Aeon results should have at least one row"
+
+    def test_aeon_predicts_correct_cancer_type(self, e2e_result):
+        """Aeon output contains the mocked cancer subtype (LUAD)."""
+        _, _, aeon_out, _, _, _ = e2e_result
+        aeon_value = aeon_out.get("value", aeon_out)
+        all_values = [str(v) for row in aeon_value["data"] for v in row]
+        assert any(self.CANCER_SUBTYPE in v for v in all_values), (
+            f"Expected '{self.CANCER_SUBTYPE}' in aeon results, got: {aeon_value['data']}"
+        )
+
+    def test_paladin_results_contain_biomarkers(self, e2e_result):
+        """Paladin output DataFrame contains biomarker predictions."""
+        _, _, _, _, paladin_out, _ = e2e_result
+        assert paladin_out is not None, "Paladin results should not be None"
+        assert len(paladin_out.get("data", [])) >= 1, (
+            "Paladin results should have at least one row"
+        )
+
+    def test_paladin_predicts_expected_biomarkers(self, e2e_result):
+        """Paladin output contains the mocked biomarker scores."""
+        _, _, _, _, paladin_out, _ = e2e_result
+        all_values = [str(v) for row in paladin_out["data"] for v in row]
+        found = [b for b in self.BIOMARKERS if any(b in v for v in all_values)]
+        assert found, (
+            f"Expected at least one of {self.BIOMARKERS} in paladin results. "
+            f"Got: {paladin_out['data']}"
+        )
+
+    def test_slide_mask_is_returned(self, e2e_result):
+        """Mask gallery contains an image for the analysed slide."""
+        _, masks_out, _, _, _, _ = e2e_result
+        # Gallery output is a list of image paths / dicts
+        assert masks_out is not None, "Masks gallery should not be None"
+        assert len(masks_out) >= 1, "At least one mask image should be returned"
+
+    def test_download_buttons_are_populated(self, e2e_result):
+        """Aeon and Paladin download buttons have a file path after analysis."""
+        _, _, _, aeon_dl, _, paladin_dl = e2e_result
+        assert aeon_dl is not None, "Aeon download button should be populated"
+        assert paladin_dl is not None, "Paladin download button should be populated"
