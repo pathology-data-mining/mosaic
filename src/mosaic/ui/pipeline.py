@@ -9,9 +9,6 @@ Public surface (re-exported by ``mosaic.ui.app`` for backward compatibility):
 - ``analyze_slides`` — main generator used by the Gradio ``analyze_button``
 - ``set_cancer_subtype_maps`` — called by ``gradio_app.py`` after model download
 - ``cancer_subtype_name_map`` — module-level dict (read by ``launch_gradio``)
-- ``reversed_cancer_subtype_name_map`` — module-level dict
-- ``cancer_subtypes`` — module-level list
-- ``start_background_model_download`` — called by ``launch_gradio`` on startup
 """
 
 import os
@@ -36,7 +33,7 @@ from mosaic.ui.utils import (
 from mosaic.analysis import analyze_slide
 from mosaic.data_directory import get_tcga_cache_directory
 from mosaic.model_manager import load_all_models
-from mosaic.hardware import IS_HF_SPACES, IS_T4_GPU, GPU_TYPE
+from mosaic.hardware import IS_HF_SPACES, IS_T4_GPU, GPU_TYPE, DEFAULT_NUM_WORKERS
 from mosaic.telemetry import extract_user_info
 from mosaic.tcga import (
     compute_settings_hash,
@@ -95,7 +92,6 @@ _global_model_cache = None
 
 # Background download thread for model initialization
 _model_download_thread = None
-_model_download_complete = False
 _core_models_complete = False  # Track core models separately
 _shutdown_requested = False  # Flag to signal graceful shutdown
 
@@ -108,20 +104,26 @@ def set_cancer_subtype_maps(csn_map, rcsn_map, cs):
     cancer_subtypes = cs
 
 
+def request_shutdown():
+    """Signal the background model download thread to stop gracefully."""
+    global _shutdown_requested
+    _shutdown_requested = True
+
+
 def start_background_model_download():
     """Start downloading all models in a background thread.
 
     Downloads core models (CTransPath, Optimus, Aeon) and Paladin models asynchronously.
     This allows Gradio to start immediately and satisfy HF Spaces health checks.
     """
-    global _model_download_thread, _model_download_complete, _core_models_complete
+    global _model_download_thread, _core_models_complete
 
     if _model_download_thread is not None:
         logger.info("Background model download already started, skipping")
         return
 
     def download_worker():
-        global _core_models_complete, _model_download_complete, _shutdown_requested
+        global _core_models_complete, _shutdown_requested
         try:
             from mosaic.gradio_app import download_core_models, download_paladin_models
 
@@ -142,7 +144,6 @@ def start_background_model_download():
                 return
 
             download_paladin_models()
-            _model_download_complete = True
             logger.info("✅ All model downloads complete")
         except RuntimeError as e:
             if "interpreter shutdown" in str(e) or "cannot schedule new futures" in str(
@@ -153,15 +154,9 @@ def start_background_model_download():
                 )
                 _core_models_complete = True  # Mark as complete to avoid blocking
             else:
-                logger.error(f"❌ Error during background model download: {e}")
-                import traceback
-
-                traceback.print_exc()
+                logger.exception(f"❌ Error during background model download: {e}")
         except Exception as e:
-            logger.error(f"❌ Error during background model download: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.exception(f"❌ Error during background model download: {e}")
 
     import threading
 
@@ -186,7 +181,7 @@ def analyze_slides(
     request: gr.Request = None,
     profile: Optional[gr.OAuthProfile] = None,
 ):
-    global _model_download_thread, _model_download_complete, _core_models_complete
+    global _model_download_thread, _core_models_complete
 
     def _truncate_name(name: str, max_length: int = 40) -> str:
         """Truncate long filenames for progress display.
@@ -251,7 +246,7 @@ def analyze_slides(
         settings = []
         for file in slides:
             filename = file.name if hasattr(file, "name") else file
-            slide_name = filename.split("/")[-1]
+            slide_name = Path(filename).name
             settings.append(
                 [
                     slide_name,
@@ -286,7 +281,6 @@ def analyze_slides(
     all_aeon_results = []
     all_paladin_results = []
     cached_slides = 0
-    fresh_slides = 0
 
     # Log analysis start event
     tracker.log_usage_event(
@@ -426,7 +420,6 @@ def analyze_slides(
 
             # If no cached results, run analysis
             if slide_mask is None or aeon_results is None or paladin_results is None:
-                fresh_slides += 1
                 # Lazy model loading: load on first cache miss
                 if model_cache is None:
                     if IS_T4_GPU:
@@ -457,7 +450,7 @@ def analyze_slides(
                     cancer_subtype=row["Cancer Subtype"],
                     cancer_subtype_name_map=cancer_subtype_name_map,
                     ihc_subtype=row.get("IHC Subtype", ""),
-                    num_workers=4,
+                    num_workers=DEFAULT_NUM_WORKERS,
                     progress=slide_progress_wrapper,  # Pass wrapped progress
                     request=request,
                     model_cache=model_cache,  # Pre-loaded for batch, None for single

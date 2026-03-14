@@ -62,14 +62,15 @@ def gradio_server():
         from mosaic.ui.app import launch_gradio
         from mosaic.ui.pipeline import set_cancer_subtype_maps
 
-        # Populate cancer subtype maps so dropdown choices are non-empty
+        # Populate cancer subtype maps in production format: display_name → code
+        # (e.g. {"Lung Adenocarcinoma (LUAD)": "LUAD", "Unknown": "UNK"})
         sample_map = {
-            "LUAD": "Lung Adenocarcinoma",
-            "BLCA": "Bladder Urothelial Carcinoma",
-            "Unknown": "Unknown",
+            "Lung Adenocarcinoma (LUAD)": "LUAD",
+            "Bladder Urothelial Carcinoma (BLCA)": "BLCA",
+            "Unknown": "UNK",
         }
         reversed_map = {v: k for k, v in sample_map.items()}
-        cancer_subtypes = list(sample_map.keys())
+        cancer_subtypes = [v for v in sample_map.values() if v != "UNK"]
         set_cancer_subtype_maps(sample_map, reversed_map, cancer_subtypes)
 
         thread = threading.Thread(

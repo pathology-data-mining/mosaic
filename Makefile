@@ -27,10 +27,10 @@ install-dev: ## Install development dependencies using uv
 
 ##@ Testing
 
-test: ## Run all tests
-	$(PYTEST) tests/ -v
+test: ## Run all tests (unit + integration)
+	$(PYTEST) tests/ -v && $(PYTEST) integration/ -v --no-cov -s
 
-test-fast: ## Run tests without coverage (faster)
+test-fast: ## Run unit tests without coverage (faster)
 	$(PYTEST) tests/ -v --no-cov
 
 test-coverage: ## Run tests with detailed coverage report

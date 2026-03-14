@@ -257,8 +257,8 @@ class TestBatchCLI:
     def test_mask_file_created(self, batch_csv, output_dir, fake_mask, fake_aeon_df, fake_paladin_df, fake_slide):
         """A PNG mask is created for the slide in the batch."""
         self._run_batch(batch_csv, output_dir, fake_mask, fake_aeon_df, fake_paladin_df)
-        # Batch code uses Path(slide_name).stem for the file stem
-        slide_stem = fake_slide.stem
+        # Batch code prefixes idx (000) to avoid collisions between same-basename slides
+        slide_stem = f"000_{fake_slide.stem}"
         mask_path = output_dir / f"{slide_stem}_mask.png"
         assert mask_path.exists(), f"Expected mask at {mask_path}; found: {list(output_dir.iterdir())}"
 
@@ -271,7 +271,7 @@ class TestBatchCLI:
     def test_paladin_csv_created(self, batch_csv, output_dir, fake_mask, fake_aeon_df, fake_paladin_df, fake_slide):
         """A Paladin CSV is written per-slide."""
         self._run_batch(batch_csv, output_dir, fake_mask, fake_aeon_df, fake_paladin_df)
-        slide_stem = fake_slide.stem
+        slide_stem = f"000_{fake_slide.stem}"
         paladin_path = output_dir / f"{slide_stem}_paladin_results.csv"
         assert paladin_path.exists(), f"Expected Paladin CSV; found: {list(output_dir.iterdir())}"
 

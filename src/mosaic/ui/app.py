@@ -1439,7 +1439,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
     def cleanup_on_exit():
         """Signal background thread to stop and log telemetry shutdown."""
-        _pipeline._shutdown_requested = True
+        _pipeline.request_shutdown()
         logger.info("Shutdown signal sent to background model download thread")
 
         # Log app shutdown for telemetry

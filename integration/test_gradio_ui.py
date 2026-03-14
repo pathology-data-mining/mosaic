@@ -159,7 +159,9 @@ class TestAnalysisPipeline:
     @pytest.fixture(scope="class")
     def mock_results(self):
         mask = Image.new("RGB", (100, 100), color="red")
-        aeon = pd.DataFrame({"Cancer Subtype": ["LUAD"], "Confidence": [0.95]})
+        aeon = pd.DataFrame({"Cancer Subtype": ["LUAD"], "Confidence": [0.95]}).set_index(
+            "Cancer Subtype"
+        )
         paladin = pd.DataFrame(
             {
                 "Cancer Subtype": ["LUAD"],
@@ -266,7 +268,7 @@ class TestE2EAnalysis:
                 "Cancer Subtype": [self.CANCER_SUBTYPE],
                 "Confidence": [0.9412],
             }
-        )
+        ).set_index("Cancer Subtype")
         paladin_df = pd.DataFrame(
             {
                 "Cancer Subtype": [self.CANCER_SUBTYPE] * len(self.BIOMARKERS),

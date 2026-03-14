@@ -404,7 +404,8 @@ def main():
                     model_cache=model_cache,
                 )
 
-                slide_stem = Path(slide_name).stem
+                # Use idx-prefixed stem to ensure uniqueness when slides share a basename
+                slide_stem = f"{idx:03d}_{Path(slide_name).stem}"
                 if slide_mask is not None:
                     all_slide_masks.append((slide_mask, slide_stem))
                 if aeon_results is not None:
