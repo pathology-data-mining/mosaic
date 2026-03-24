@@ -14,6 +14,7 @@ dependencies = [
   "loguru>=0.7.3",
   "memory-profiler>=0.61.0",
   "mussel[torch-gpu]",
+  "numpy>=1.24.0,<2.0",
   "paladin",
   "seaborn>=0.13.2",
   "setuptools>=65.0.0,<70.0.0",  # pkg_resources removed in 70+
