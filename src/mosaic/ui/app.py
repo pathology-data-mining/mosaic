@@ -14,6 +14,7 @@ compatibility.
 """
 
 import os
+import tempfile
 import threading
 import time
 from typing import Optional
