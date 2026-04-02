@@ -682,14 +682,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
         ):
             """Save uploaded slides to user storage and track slide IDs."""
             if not files:
-                return files, slide_ids or {}
+                return gr.skip(), slide_ids or {}
 
             # Determine username via OAuthProfile (primary) or request (fallback)
             from mosaic.ui.user_tabs import _get_username
 
             username, _ = _get_username(request, profile, session_id)
             if not username:
-                return files, slide_ids or {}
+                return gr.skip(), slide_ids or {}
 
             try:
                 from mosaic.user_storage import save_uploaded_slide
@@ -716,12 +716,12 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                             f"Failed to save slide {file} to user storage: {e}"
                         )
 
-                return files, new_slide_ids
+                return gr.skip(), new_slide_ids
 
             except Exception as e:
                 logger.error(f"Error in slide upload handler: {e}")
                 # Don't fail the upload, just log the error
-                return files, slide_ids or {}
+                return gr.skip(), slide_ids or {}
 
         # Handle TCGA slide fetch
         def fetch_tcga_slide(tcga_id, seg_config, progress=gr.Progress()):
@@ -912,7 +912,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 gr.File update with selected slide(s)
             """
             if not slide_ids:
-                return None
+                return gr.skip()
 
             # Handle both single selection and multiselect
             if isinstance(slide_ids, str):
@@ -922,7 +922,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
 
             username, _ = _get_username(request, profile, session_id)
             if not username:
-                return None
+                return gr.skip()
 
             try:
                 from mosaic.user_storage import get_slide_path, _load_slide_metadata
@@ -953,13 +953,13 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         slide_paths.append(str(slide_path))
 
                 if not slide_paths:
-                    return None
+                    return gr.skip()
 
                 return gr.File(value=slide_paths)
 
             except Exception as e:
                 logger.error(f"Failed to load existing slides {slide_ids}: {e}")
-                return None
+                return gr.skip()
 
         existing_slides_dropdown.change(
             select_existing_slide,

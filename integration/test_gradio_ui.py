@@ -386,3 +386,79 @@ class TestE2EAnalysis:
         _, _, _, aeon_dl, _, paladin_dl = e2e_result
         assert aeon_dl is not None, "Aeon download button should be populated"
         assert paladin_dl is not None, "Paladin download button should be populated"
+
+
+# ---------------------------------------------------------------------------
+# Regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestUploadRegression:
+    """Regression tests for slide upload bugs.
+
+    These tests exercise the upload event chain at the HTTP level so that
+    regressions (e.g. NameError, wrong return type) are caught by CI before
+    they reach users.
+    """
+
+    @pytest.fixture(scope="class")
+    def client(self, gradio_server):
+        return Client(gradio_server["url"], verbose=False)
+
+    @pytest.fixture(scope="class")
+    def fake_slide(self, tmp_path_factory):
+        d = tmp_path_factory.mktemp("regression_slides")
+        path = d / "regression_slide.svs"
+        from PIL import Image
+
+        Image.new("RGB", (128, 128), color=(200, 180, 160)).save(str(path), format="TIFF")
+        return path
+
+    def test_upload_handler_does_not_clear_input_slides(self, client, fake_slide):
+        """/handle_slide_upload must not return a value that wipes input_slides.
+
+        Regression: handle_slide_upload was returning `files` directly, which in
+        some Gradio versions caused the File component to reset.  It should now
+        return gr.skip() so the displayed files are left untouched.
+        """
+        from gradio_client import handle_file
+
+        with patch("mosaic.user_storage.save_uploaded_slide", side_effect=Exception("no storage")):
+            result = client.predict(
+                files=[handle_file(str(fake_slide))],
+                session_id="",
+                api_name="/handle_slide_upload",
+            )
+
+        # result is the input_slides_update (slide_ids_state is gr.State, not in API).
+        # gr.skip() serialises as {"__type__": "update"} over the Gradio API wire,
+        # which tells the frontend not to change the component — i.e. uploaded files
+        # remain visible.  Any other truthy value (list, dict with "value" key, etc.)
+        # would replace the component and clear the upload.
+        slides_update = result
+        assert isinstance(slides_update, dict) and slides_update.get("__type__") == "update", (
+            f"handle_slide_upload should return gr.skip() (got {slides_update!r}). "
+            "Returning anything else clears the upload component."
+        )
+
+    def test_select_existing_slide_empty_selection_does_not_clear_upload(self, client):
+        """/select_existing_slide with no selection must not clear input_slides.
+
+        Regression: select_existing_slide was returning None when slide_ids was
+        empty/None, which cleared the File component.  After the upload chain
+        calls load_existing_slides (resetting the dropdown value to None),
+        the change handler fires with slide_ids=None — and must not wipe any
+        already-uploaded files.
+        """
+        result = client.predict(
+            slide_ids=None,
+            session_id="",
+            api_name="/select_existing_slide",
+        )
+        # gr.skip() serialises as {"__type__": "update"} — the frontend leaves
+        # the current value unchanged.  A plain None or a file list would clear
+        # or replace whatever the user had already uploaded.
+        assert isinstance(result, dict) and result.get("__type__") == "update", (
+            f"select_existing_slide(None) should return gr.skip() (got {result!r}). "
+            "Returning None or a file list would clear the user's uploaded files."
+        )
