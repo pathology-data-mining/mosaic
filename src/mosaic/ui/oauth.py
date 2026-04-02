@@ -125,8 +125,7 @@ def get_user_from_server_session(request) -> Optional[dict]:
 
     if not cookie_val:
         logger.debug(
-            f"No {_SESSION_COOKIE} cookie found. "
-            f"Active sessions: {len(_sessions)}"
+            f"No {_SESSION_COOKIE} cookie found. " f"Active sessions: {len(_sessions)}"
         )
         return None
 
@@ -359,6 +358,7 @@ _oauth_routes = [
     Route("/api/auth/callback", _callback, methods=["GET"]),
     Route("/api/auth/logout", _logout, methods=["GET"]),
 ]
+
 
 def mount_oauth_routes(app) -> None:
     """Mount custom OAuth routes on the Gradio ASGI app.
