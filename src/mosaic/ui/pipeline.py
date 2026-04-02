@@ -110,6 +110,11 @@ def request_shutdown():
     _shutdown_requested = True
 
 
+def is_shutdown_requested() -> bool:
+    """Return True if a shutdown has been requested."""
+    return _shutdown_requested
+
+
 def start_background_model_download():
     """Start downloading all models in a background thread.
 

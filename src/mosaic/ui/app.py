@@ -1454,7 +1454,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
     # Start heartbeat thread for telemetry (every 5 minutes)
     # Also uploads telemetry on each heartbeat to ensure data is saved before HF Spaces sleep
     def heartbeat_worker():
-        while not _pipeline._shutdown_requested:
+        while not _pipeline.is_shutdown_requested():
             time.sleep(tracker.config.heartbeat_interval_sec)
             tracker.log_heartbeat()
             # Upload telemetry on each heartbeat to avoid data loss when HF Spaces goes to sleep
