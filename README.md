@@ -56,8 +56,6 @@ Supported systems:
 
 ## Installation
 
-Ensure that you have ssh credentials setup to access the paladin private repository. (Create key with `ssh-keygen` and put in your github profile, Settings -> SSH and GPG keys.)
-
 ```bash
 git clone https://github.com/pathology-data-mining/mosaic.git
 cd mosaic
@@ -75,7 +73,7 @@ Alternatively, create a virtual environment mosaic-venv (in a subdirectory), act
 ```bash
 uv venv mosaic-venv --python 3.11
 source mosaic-venv/bin/activate
-uv pip install git+ssh://git@github.com/pathology-data-mining/paladin_webapp.git@dev
+uv pip install git+https://github.com/kmboehm/paladin.git@main
 ```
 
 ## Deploying to Hugging Face Spaces
@@ -571,7 +569,7 @@ Here are the main Makefile targets:
 - `make run-batch` - Run batch analysis from CSV (usage: `make run-batch CSV=settings.csv OUTPUT=output_dir [ARGS="--extra-args"]`)
 
 ### Docker
-- `make docker-build` - Build Docker image with SSH forwarding
+- `make docker-build` - Build Docker image
 - `make docker-build-no-cache` - Build Docker image without cache
 - `make docker-run` - Run Docker container (web UI mode)
 - `make docker-run-cli` - Run Docker container with mosaic CLI (usage: `make docker-run-cli ARGS="--help"`)

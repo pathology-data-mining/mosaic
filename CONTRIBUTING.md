@@ -262,17 +262,11 @@ When adding new features:
 
 For the Docker build workflow to work properly in GitHub Actions, the following secrets must be configured in your repository settings (Settings → Secrets and variables → Actions):
 
-1. **`SSH_PRIVATE_KEY`** (Required)
-   - Your SSH private key that has access to the private repositories (paladin and Mussel)
-   - Generate with: `ssh-keygen -t ed25519 -C "github-actions@mosaic"`
-   - Add the public key to your GitHub account with repo access
-   - Add the private key to GitHub secrets
-
-2. **`DOCKER_HUB_USERNAME`** (Optional - only needed for Docker Hub pushes)
+1. **`DOCKER_HUB_USERNAME`** (Optional - only needed for Docker Hub pushes)
    - Your Docker Hub username
    - Required only if you want to push images to Docker Hub (on main branch)
 
-3. **`DOCKER_HUB_TOKEN`** (Optional - only needed for Docker Hub pushes)
+2. **`DOCKER_HUB_TOKEN`** (Optional - only needed for Docker Hub pushes)
    - Your Docker Hub access token
    - Generate at: https://hub.docker.com/settings/security
    - Required only if you want to push images to Docker Hub (on main branch)
@@ -290,7 +284,7 @@ The project includes several GitHub Actions workflows:
 
 ### Docker Build Process
 
-The Docker build uses SSH forwarding to access private dependencies:
+All dependencies are public, so Docker builds require no authentication tokens or SSH keys:
 
 ```bash
 # Local build (using build.sh)
@@ -299,12 +293,6 @@ The Docker build uses SSH forwarding to access private dependencies:
 # Or using Make
 make docker-build
 ```
-
-The GitHub Actions workflow automatically:
-1. Sets up SSH agent with the private key
-2. Configures Docker Buildx with SSH forwarding
-3. Builds the image with access to private repositories
-4. Pushes to GHCR and optionally Docker Hub
 
 ## Questions?
 
