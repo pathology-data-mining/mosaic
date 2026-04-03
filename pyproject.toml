@@ -49,8 +49,10 @@ disable = [
 # we relax to allow newer versions that mosaic actually needs.
 # The overrides apply on ALL platforms (not just macOS) so Docker builds
 # still get the correct versions installed.
+# torch<2.11 avoids the cu130 (CUDA 13.0) build which requires a newer NVIDIA
+# driver than is available on our servers (driver supports CUDA 12.3).
 override-dependencies = [
-  "torch>=2.0.0",
+  "torch>=2.0.0,<2.11",
   "torchvision>=0.15.0",
   "lightning>=2.3.0",
 ]
