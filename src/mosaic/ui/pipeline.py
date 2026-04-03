@@ -680,10 +680,14 @@ def analyze_slides(
 
             sample_idx += 1
 
-            # Yield incremental UI update after each sample
+            # Yield incremental UI update after each sample.
+            # Skip the Gallery update here — sending the accumulating mask list
+            # on every sample would cause the browser to decode N*(N+1)/2 images
+            # for an N-sample batch instead of N, causing memory growth.
+            # Masks appear all at once in the final yield below.
             yield (
                 gr.Dataframe(),
-                all_slide_masks.copy(),
+                gr.skip(),
                 None,
                 gr.DownloadButton(visible=False),
                 None,
