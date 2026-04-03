@@ -65,7 +65,7 @@ override-dependencies = [
 # For Docker builds with token: GH_TOKEN=<token> uv pip install -e .
 # uv will fall back to git credential helper if ${GH_TOKEN} is empty
 paladin = { git = "https://github.com/kmboehm/paladin.git", rev = "main" }
-mussel = { git = "https://github.com/pathology-data-mining/Mussel.git", rev = "v1.3.1" }
+mussel = { git = "https://github.com/pathology-data-mining/Mussel.git", rev = "v1.3.2" }
 
 [tool.black]
 target-version = ["py310", "py311"]

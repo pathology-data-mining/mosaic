@@ -97,3 +97,35 @@ class TestDrawSlideMaskAPI:
             result, Image.Image
         ), f"draw_slide_mask should return a PIL Image, got {type(result)}"
         assert result.width > 0 and result.height > 0
+
+
+class TestGetFeaturesAPI:
+    """get_features API compatibility — model= and slide_model= parameters."""
+
+    def test_accepts_model_keyword(self):
+        from mussel.utils.feature_extract import get_features
+        import inspect
+
+        sig = inspect.signature(get_features)
+        assert (
+            "model" in sig.parameters
+        ), "get_features lost the model= parameter; update analysis.py calls"
+
+    def test_model_is_keyword_only_position(self):
+        from mussel.utils.feature_extract import get_features
+        import inspect
+
+        params = list(inspect.signature(get_features).parameters.keys())
+        # model= must come after aggregation_method (positional compat)
+        assert params.index("model") > params.index(
+            "aggregation_method"
+        ), "model= must be after aggregation_method to preserve positional call compat"
+
+    def test_accepts_slide_model_keyword(self):
+        from mussel.utils.feature_extract import get_features
+        import inspect
+
+        sig = inspect.signature(get_features)
+        assert (
+            "slide_model" in sig.parameters
+        ), "get_features is missing slide_model= parameter (added in mussel v1.3.1)"

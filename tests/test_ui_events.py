@@ -158,11 +158,12 @@ class TestGeneratorBehavior:
             temp_output_dir,
         )
 
-        # Generator should produce exactly two yields:
+        # Generator should produce at least two yields:
         # 1. Initial yield to disable buttons
-        # 2. Final yield with complete results
+        # N. Intermediate yields (one per sample)
+        # Final yield with complete results
         results = list(gen)
-        assert len(results) == 2
+        assert len(results) >= 2
 
         # First yield disables buttons
         initial_yield = results[0]
@@ -174,8 +175,8 @@ class TestGeneratorBehavior:
         assert initial_analyze_button.interactive is False
         assert initial_clear_button.interactive is False
 
-        # Second yield is the final result
-        final_yield = results[1]
+        # Last yield is the final result
+        final_yield = results[-1]
 
         # Should be tuple with 9 elements
         assert len(final_yield) == 9

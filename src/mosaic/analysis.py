@@ -756,6 +756,193 @@ def _run_inference_pipeline_with_models(
 # Removed: analyze_slide_with_models merged into analyze_slide below
 
 
+def extract_slide_features(
+    slide_path,
+    seg_config,
+    num_workers,
+    progress,
+    model_cache,
+    timings=None,
+):
+    """Segment tissue and extract Optimus features for a single slide.
+
+    This is Phase 1 of the multi-slide-per-sample pipeline:
+    segment tissue → CTransPath → marker-filter → Optimus.
+
+    Use :func:`aggregate_sample_features` on the returned arrays to merge
+    slides that belong to the same patient sample before running inference.
+
+    Args:
+        slide_path: Path to the whole slide image file.
+        seg_config: Segmentation configuration string ("Biopsy", "Resection", "TCGA").
+        num_workers: Number of worker processes for feature extraction.
+        progress: Gradio progress tracker for UI updates.
+        model_cache: ModelCache with pre-loaded models (required).
+        timings: Optional dict to populate with per-stage timing data.
+
+    Returns:
+        tuple: ``(slide_mask, features, coords)`` where
+
+        - *slide_mask*: PIL Image of tissue segmentation visualization,
+          or ``None`` if no tissue was detected.
+        - *features*: ``np.ndarray`` of shape ``(N, D)`` — Optimus features,
+          or ``None`` if no tissue was detected.
+        - *coords*: ``np.ndarray`` of shape ``(N, 2)`` — filtered tile
+          coordinates corresponding to *features*, or ``None``.
+
+    Raises:
+        ValueError: If an unknown segmentation configuration is provided.
+    """
+    if seg_config == "Biopsy":
+        seg_config_obj = BiopsySegConfig()
+    elif seg_config == "Resection":
+        seg_config_obj = ResectionSegConfig()
+    elif seg_config == "TCGA":
+        seg_config_obj = TcgaSegConfig()
+    else:
+        raise ValueError(f"Unknown segmentation configuration: {seg_config}")
+
+    # Step 1: Segment tissue
+    seg_start = time_module.time()
+    progress(0.0, desc="Segmenting tissue")
+    logger.info(f"Segmenting tissue for slide: {slide_path}")
+    if values := segment_tissue(
+        slide_path=slide_path,
+        patch_size=224,
+        mpp=0.5,
+        seg_level=-1,
+        segment_threshold=seg_config_obj.segment_threshold,
+        median_blur_ksize=seg_config_obj.median_blur_ksize,
+        morphology_ex_kernel=seg_config_obj.morphology_ex_kernel,
+        tissue_area_threshold=seg_config_obj.tissue_area_threshold,
+        hole_area_threshold=seg_config_obj.hole_area_threshold,
+        max_num_holes=seg_config_obj.max_num_holes,
+    ):
+        polygon, _, coords, attrs = values
+    else:
+        logger.warning(f"No tissue detected in slide: {slide_path}")
+        return None, None, None
+    if timings is not None:
+        timings["segmentation"] = time_module.time() - seg_start
+    logger.info(
+        f"Tissue segmentation took {time_module.time() - seg_start:.2f}s, {len(coords)} tiles"
+    )
+    progress(0.2, desc="Tissue segmented")
+
+    # Draw slide mask
+    progress(0.25, desc="Drawing slide mask")
+    slide_mask = draw_slide_mask(
+        slide_path,
+        polygon,
+        outline="cyan",
+        fill=(255, 0, 0, 80),
+        vis_level=-1,
+        max_size=2048,
+        outline_width=12,
+    )
+
+    # Step 2: CTransPath features
+    progress(0.3, desc=f"Extracting CTransPath features ({len(coords)} tiles)")
+    ctranspath_features, coords = _extract_ctranspath_features(
+        coords,
+        slide_path,
+        attrs,
+        num_workers,
+        model=model_cache.ctranspath_model,
+        timings=timings,
+    )
+
+    # Step 3: Marker-filter
+    progress(0.35, desc="Filtering features with marker classifier")
+    _, filtered_coords = filter_features(
+        ctranspath_features,
+        coords,
+        model_cache.marker_classifier,
+        threshold=0.25,
+    )
+    logger.info(f"Filtered from {len(coords)} to {len(filtered_coords)} tiles")
+    if timings is not None:
+        timings["filtered_tile_count"] = len(filtered_coords)
+
+    # Step 4: Optimus features
+    progress(0.4, desc=f"Extracting Optimus features ({len(filtered_coords)} tiles)")
+    features = _extract_optimus_features(
+        filtered_coords,
+        slide_path,
+        attrs,
+        num_workers,
+        model=model_cache.optimus_model,
+        timings=timings,
+    )
+
+    return slide_mask, features, filtered_coords
+
+
+def run_inference_from_features(
+    features,
+    site_type,
+    sex_idx,
+    tissue_site_idx,
+    cancer_subtype,
+    cancer_subtype_name_map,
+    model_cache,
+    num_workers,
+    progress,
+    timings=None,
+):
+    """Run Aeon + Paladin inference on pre-extracted Optimus features.
+
+    This is Phase 2 of the multi-slide-per-sample pipeline.  Call this after
+    :func:`aggregate_sample_features` has merged per-slide features into one
+    array for the sample.
+
+    Args:
+        features: Optimus feature array of shape ``(N, D)``.
+        site_type: "Primary" or "Metastatic".
+        sex_idx: Encoded sex index (from :func:`encode_sex`), or ``None``.
+        tissue_site_idx: Encoded tissue site index (from :func:`encode_tissue_site`),
+            or ``None``.
+        cancer_subtype: Known OncoTree code, display name, or "Unknown".
+        cancer_subtype_name_map: Dict mapping display names to OncoTree codes.
+        model_cache: :class:`ModelCache` instance with pre-loaded models.
+        num_workers: Number of workers for data loading.
+        progress: Gradio progress tracker.
+        timings: Optional dict to populate with per-stage timing data.
+
+    Returns:
+        tuple: ``(aeon_results, paladin_results)``
+    """
+    progress(0.7, desc="Running Aeon for cancer subtype inference")
+    if cancer_subtype in ["Unknown", None, ""]:
+        aeon_results = _run_aeon_inference_with_model(
+            features,
+            model_cache.aeon_model,
+            model_cache.device,
+            site_type,
+            num_workers,
+            sex_idx,
+            tissue_site_idx,
+            timings=timings,
+        )
+    else:
+        oncotree_code = cancer_subtype_name_map.get(cancer_subtype, cancer_subtype)
+        aeon_results = pd.DataFrame(
+            [(oncotree_code, 1.0)], columns=["Cancer Subtype", "Confidence"]
+        )
+        logger.info(f"Using user-supplied cancer subtype: {cancer_subtype}")
+
+    if len(aeon_results) == 0:
+        logger.warning("No Aeon results, skipping Paladin inference")
+        return None, None
+
+    progress(0.95, desc="Running Paladin for biomarker inference")
+    paladin_results = _run_paladin_inference_with_models(
+        features, aeon_results, site_type, model_cache, num_workers, timings=timings
+    )
+    aeon_results.set_index("Cancer Subtype", inplace=True)
+    return aeon_results, paladin_results
+
+
 def analyze_slide(
     slide_path,
     seg_config,

@@ -29,6 +29,7 @@ SETTINGS_COLUMNS = [
     "Cancer Subtype",
     # "IHC Subtype",  # Not yet in use
     "Segmentation Config",
+    "Sample ID",  # Optional: slides sharing a Sample ID are aggregated before inference
 ]
 
 oncotree_code_map = {}
@@ -144,7 +145,8 @@ def load_settings(slide_csv_path):
         slide_csv_path: Path to the CSV file containing slide settings
 
     Returns:
-        DataFrame with columns: Slide, Site Type, Cancer Subtype, IHC Subtype, Segmentation Config
+        DataFrame with columns: Slide, Site Type, Sex, Tissue Site, Cancer Subtype,
+        Segmentation Config, Sample ID
 
     Raises:
         ValueError: If required columns are missing from the CSV
@@ -158,9 +160,18 @@ def load_settings(slide_csv_path):
     #     settings_df["IHC Subtype"] = ""
     if "Tissue Site" not in settings_df.columns:
         settings_df["Tissue Site"] = "Unknown"
-    if not set(SETTINGS_COLUMNS).issubset(settings_df.columns):
+    # Sample ID is optional: default to slide filename stem when absent or blank
+    if "Sample ID" not in settings_df.columns:
+        settings_df["Sample ID"] = ""
+    required = [c for c in SETTINGS_COLUMNS if c != "Sample ID"]
+    if not set(required).issubset(settings_df.columns):
         raise ValueError("Missing required column in CSV file")
     settings_df = settings_df[SETTINGS_COLUMNS]
+    # Backfill blank Sample IDs with the slide filename stem
+    mask = settings_df["Sample ID"].astype(str).str.strip() == ""
+    settings_df.loc[mask, "Sample ID"] = settings_df.loc[mask, "Slide"].apply(
+        lambda p: Path(p).stem
+    )
     return settings_df
 
 
@@ -188,7 +199,14 @@ def validate_settings(
         Invalid entries are replaced with defaults and warnings are displayed
         to the user via Gradio warnings.
     """
-    settings_df.columns = SETTINGS_COLUMNS
+    # The UI path builds a 6-column DataFrame (no Sample ID); backfill it here
+    # so the rest of this function and downstream code can use SETTINGS_COLUMNS uniformly.
+    if "Sample ID" not in settings_df.columns:
+        if len(settings_df.columns) == len(SETTINGS_COLUMNS) - 1:
+            # Rename the positional columns then add Sample ID
+            settings_df.columns = [c for c in SETTINGS_COLUMNS if c != "Sample ID"]
+        settings_df["Sample ID"] = settings_df["Slide"].apply(lambda p: Path(p).stem)
+    settings_df = settings_df[SETTINGS_COLUMNS]
     warnings = []
     tissue_sites = get_tissue_sites()
 

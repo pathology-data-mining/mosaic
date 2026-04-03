@@ -24,7 +24,11 @@ from mosaic.ui.utils import (
     SETTINGS_COLUMNS,
     SEX_OPTIONS,
 )
-from mosaic.analysis import analyze_slide
+from mosaic.analysis import (
+    analyze_slide,
+    extract_slide_features,
+    run_inference_from_features,
+)
 from mosaic.model_manager import load_all_models
 
 
@@ -314,6 +318,7 @@ def main():
                     args.cancer_subtype,
                     # args.ihc_subtype,  # Not yet in use
                     args.segmentation_config,
+                    Path(args.slide_path).stem,
                 ]
             ],
             columns=SETTINGS_COLUMNS,
@@ -367,79 +372,164 @@ def main():
             reversed_cancer_subtype_name_map,
         )
 
-        # Extract slide paths
         slides = settings_df["Slide"].tolist()
 
+        # Build sample groups: sample_id → list of (idx, slide_path, row)
+        sample_groups: dict = {}
+        for idx in range(len(slides)):
+            row = settings_df.iloc[idx]
+            sid = str(row.get("Sample ID", "")) or Path(str(row["Slide"])).stem
+            sample_groups.setdefault(sid, []).append((idx, slides[idx], row))
+
+        is_multi_slide = any(len(v) > 1 for v in sample_groups.values())
         logger.info(
-            f"Processing {len(slides)} slides in batch mode with models loaded once"
+            f"Processing {len(slides)} slides → {len(sample_groups)} samples"
+            f"{' (multi-slide mode)' if is_multi_slide else ''}"
         )
 
-        # Load models once for batch processing
+        # Load models once for the entire batch
         model_cache = load_all_models(use_gpu=True, aggressive_memory_mgmt=None)
 
         all_slide_masks = []
-        all_aeon_results = []
+        all_aeon_results = []  # list of (sample_id, aeon_df)
         all_paladin_results = []
 
         try:
-            # Process each slide with pre-loaded models
-            for idx, slide_path in enumerate(slides):
-                row = settings_df.iloc[idx]
-                slide_name = row["Slide"]
+            for sample_id, slide_list in sample_groups.items():
+                if len(slide_list) == 1:
+                    # Single-slide sample: use existing analyze_slide path
+                    idx, slide_path, row = slide_list[0]
+                    slide_name = row["Slide"]
+                    slide_stem = f"{idx:03d}_{Path(slide_name).stem}"
+                    logger.info(f"[{sample_id}] 1 slide: {slide_name}")
 
-                logger.info(f"[{idx + 1}/{len(slides)}] Processing: {slide_name}")
-
-                slide_mask, aeon_results, paladin_results = analyze_slide(
-                    slide_path=slide_path,
-                    seg_config=row["Segmentation Config"],
-                    site_type=row["Site Type"],
-                    sex=row["Sex"],
-                    tissue_site=row.get("Tissue Site", "Unknown"),
-                    cancer_subtype=row["Cancer Subtype"],
-                    cancer_subtype_name_map=cancer_subtype_name_map,
-                    ihc_subtype=row.get("IHC Subtype", ""),
-                    num_workers=args.num_workers,
-                    progress=lambda frac, desc: None,  # No-op progress for CLI
-                    request=None,
-                    model_cache=model_cache,
-                )
-
-                # Use idx-prefixed stem to ensure uniqueness when slides share a basename
-                slide_stem = f"{idx:03d}_{Path(slide_name).stem}"
-                if slide_mask is not None:
-                    all_slide_masks.append((slide_mask, slide_stem))
-                if aeon_results is not None:
-                    all_aeon_results.append((slide_stem, aeon_results))
-                if paladin_results is not None:
-                    paladin_results.insert(
-                        0, "Slide", pd.Series([slide_stem] * len(paladin_results))
+                    slide_mask, aeon_results, paladin_results = analyze_slide(
+                        slide_path=slide_path,
+                        seg_config=row["Segmentation Config"],
+                        site_type=row["Site Type"],
+                        sex=row["Sex"],
+                        tissue_site=row.get("Tissue Site", "Unknown"),
+                        cancer_subtype=row["Cancer Subtype"],
+                        cancer_subtype_name_map=cancer_subtype_name_map,
+                        ihc_subtype=row.get("IHC Subtype", ""),
+                        num_workers=args.num_workers,
+                        progress=lambda frac=None, desc=None: None,
+                        request=None,
+                        model_cache=model_cache,
                     )
-                    all_paladin_results.append(paladin_results)
+
+                    if slide_mask is not None:
+                        all_slide_masks.append((slide_mask, slide_stem))
+                    if aeon_results is not None:
+                        all_aeon_results.append((sample_id, aeon_results))
+                    if paladin_results is not None:
+                        paladin_results.insert(
+                            0, "Sample", pd.Series([sample_id] * len(paladin_results))
+                        )
+                        all_paladin_results.append(paladin_results)
+
+                else:
+                    # Multi-slide sample: 2-phase extraction + aggregation
+                    from mussel.utils.feature_extract import aggregate_sample_features
+                    from mosaic.inference.data import encode_sex, encode_tissue_site
+
+                    logger.info(f"[{sample_id}] {len(slide_list)} slides — aggregating")
+
+                    per_slide_features = []
+                    per_slide_coords = []
+                    per_sample_ids = []
+
+                    for sub_idx, (idx, slide_path, row) in enumerate(slide_list):
+                        slide_name = row["Slide"]
+                        slide_stem = f"{idx:03d}_{Path(slide_name).stem}"
+                        logger.info(
+                            f"  [{sub_idx + 1}/{len(slide_list)}] Extracting: {slide_name}"
+                        )
+
+                        slide_mask, features, coords = extract_slide_features(
+                            slide_path=slide_path,
+                            seg_config=row["Segmentation Config"],
+                            num_workers=args.num_workers,
+                            progress=lambda frac=None, desc=None: None,
+                            model_cache=model_cache,
+                        )
+
+                        if features is None:
+                            logger.warning(f"No tissue in {slide_name}, skipping")
+                            continue
+
+                        per_slide_features.append(features)
+                        per_slide_coords.append(coords)
+                        per_sample_ids.append(sample_id)
+                        if slide_mask is not None:
+                            all_slide_masks.append((slide_mask, slide_stem))
+
+                    if not per_slide_features:
+                        logger.warning(f"No usable slides for {sample_id}, skipping")
+                        continue
+
+                    # Aggregate features
+                    agg_dict = aggregate_sample_features(
+                        per_slide_features, per_slide_coords, per_sample_ids
+                    )
+                    agg_features, _ = agg_dict[sample_id]
+                    logger.info(f"  Aggregated: {agg_features.shape[0]} tiles")
+
+                    # Run inference
+                    first_row = slide_list[0][2]
+                    sex_idx_val = (
+                        encode_sex(first_row["Sex"]) if first_row.get("Sex") else None
+                    )
+                    ts_idx_val = encode_tissue_site(
+                        first_row.get("Tissue Site", "Unknown")
+                    )
+
+                    aeon_results, paladin_results = run_inference_from_features(
+                        features=agg_features,
+                        site_type=first_row["Site Type"],
+                        sex_idx=sex_idx_val,
+                        tissue_site_idx=ts_idx_val,
+                        cancer_subtype=first_row["Cancer Subtype"],
+                        cancer_subtype_name_map=cancer_subtype_name_map,
+                        model_cache=model_cache,
+                        num_workers=args.num_workers,
+                        progress=lambda frac=None, desc=None: None,
+                    )
+
+                    if aeon_results is not None:
+                        all_aeon_results.append((sample_id, aeon_results))
+                    if paladin_results is not None:
+                        paladin_results.insert(
+                            0, "Sample", pd.Series([sample_id] * len(paladin_results))
+                        )
+                        all_paladin_results.append(paladin_results)
+
         finally:
             logger.info("Cleaning up model cache")
             model_cache.cleanup()
 
-        # Save individual slide results
+        # Save slide masks
         for slide_mask, slide_stem in all_slide_masks:
             mask_path = output_dir / f"{slide_stem}_mask.png"
             slide_mask.save(mask_path)
             logger.info(f"Saved slide mask to {mask_path}")
 
-        for slide_stem, aeon_results in all_aeon_results:
-            aeon_output_path = output_dir / f"{slide_stem}_aeon_results.csv"
+        # Save per-sample Aeon results
+        for sample_id, aeon_results in all_aeon_results:
+            aeon_output_path = output_dir / f"{sample_id}_aeon_results.csv"
             aeon_results.reset_index().to_csv(aeon_output_path, index=False)
             logger.info(f"Saved Aeon results to {aeon_output_path}")
 
-        # Group Paladin results by slide
+        # Save per-sample Paladin results
         if all_paladin_results:
             combined_paladin = pd.concat(all_paladin_results, ignore_index=True)
-            for slide_stem in combined_paladin["Slide"].unique():
-                slide_paladin = combined_paladin[
-                    combined_paladin["Slide"] == slide_stem
-                ]
-                paladin_output_path = output_dir / f"{slide_stem}_paladin_results.csv"
-                slide_paladin.to_csv(paladin_output_path, index=False)
+            for sid in combined_paladin["Sample"].unique():
+                sample_paladin = combined_paladin[combined_paladin["Sample"] == sid]
+                paladin_output_path = output_dir / f"{sid}_paladin_results.csv"
+                sample_paladin.to_csv(paladin_output_path, index=False)
                 logger.info(f"Saved Paladin results to {paladin_output_path}")
+
+        # Save combined results
         if all_aeon_results:
             combined_aeon_results = pd.concat(
                 [df for _, df in all_aeon_results], axis=1
@@ -465,6 +555,7 @@ def main():
             logger.info(
                 f"Saved combined Paladin results to {combined_paladin_output_path}"
             )
+
     else:
         launch_gradio(
             server_name=args.server_name,

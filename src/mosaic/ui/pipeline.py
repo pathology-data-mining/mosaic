@@ -20,8 +20,10 @@ from pathlib import Path
 from typing import Optional
 
 import gradio as gr
+import numpy as np
 import pandas as pd
 from loguru import logger
+from mussel.utils.feature_extract import aggregate_sample_features
 from PIL import Image
 
 from mosaic.ui.utils import (
@@ -30,7 +32,11 @@ from mosaic.ui.utils import (
     validate_settings,
     SETTINGS_COLUMNS,
 )
-from mosaic.analysis import analyze_slide
+from mosaic.analysis import (
+    analyze_slide,
+    extract_slide_features,
+    run_inference_from_features,
+)
 from mosaic.data_directory import get_tcga_cache_directory
 from mosaic.model_manager import load_all_models
 from mosaic.hardware import IS_HF_SPACES, IS_T4_GPU, GPU_TYPE, DEFAULT_NUM_WORKERS
@@ -261,6 +267,7 @@ def analyze_slides(
                     cancer_subtype,
                     ihc_subtype,
                     seg_config,
+                    Path(slide_name).stem,  # Sample ID defaults to slide stem
                 ]
             )
         settings_input = pd.DataFrame(settings, columns=SETTINGS_COLUMNS)
@@ -281,6 +288,20 @@ def analyze_slides(
         or (settings_input["Sex"] == None).any()
     ):
         raise gr.Error("Sex is required for all slides. Please select Male or Female.")
+
+    # Build sample groups: sample_id → list of (idx, slide_path, row)
+    # When all sample IDs are unique, this is identical to the original per-slide loop.
+    sample_groups: dict = {}
+    for idx in range(len(slides)):
+        row = settings_input.iloc[idx]
+        sid = str(row.get("Sample ID", "")) or Path(str(row["Slide"])).stem
+        sample_groups.setdefault(sid, []).append((idx, slides[idx], row))
+
+    is_multi_slide = any(len(v) > 1 for v in sample_groups.values())
+    if is_multi_slide:
+        logger.info(
+            f"Multi-slide sample mode: {len(slides)} slides → {len(sample_groups)} samples"
+        )
 
     all_slide_masks = []
     all_aeon_results = []
@@ -325,149 +346,70 @@ def analyze_slides(
         model_cache = _global_model_cache
 
     try:
-        # Process all slides with unified analyze_slide function
-        for idx, slide_path in enumerate(slides):
-            row = settings_input.iloc[idx]
-            slide_name = row["Slide"]
+        # ---------------------------------------------------------------
+        # Process samples. For single-slide samples (the common case) the
+        # path is identical to the original per-slide loop.  For multi-slide
+        # samples we run a 2-phase pipeline:
+        #   Phase 1 – extract features from every slide in the sample.
+        #   Phase 2 – aggregate with aggregate_sample_features() then infer.
+        # ---------------------------------------------------------------
 
-            slides_remaining = len(slides) - idx
-            logger.info(
-                f"[{idx + 1}/{len(slides)}] Processing: {slide_name} ({slides_remaining} slides remaining)"
-            )
+        total_samples = len(sample_groups)
+        sample_idx = 0
 
-            # Create a progress wrapper that prefixes all updates with slide info
+        for sample_id, slide_list in sample_groups.items():
+            # ---- progress label helper ----
             class SlideProgressWrapper:
-                def __init__(self, base_progress, slide_idx, total_slides, slide_name):
+                def __init__(self, base_progress, s_idx, total, label):
                     self.base_progress = base_progress
-                    self.slide_idx = slide_idx
-                    self.total_slides = total_slides
-                    # Truncate long slide names for better progress display
-                    self.slide_name = _truncate_name(slide_name)
-                    self.slides_remaining = total_slides - slide_idx
+                    self.s_idx = s_idx
+                    self.total = total
+                    self.label = _truncate_name(label)
 
                 def __call__(self, current_progress=None, desc=None):
-                    prefix = f"Slide {self.slide_idx + 1}/{self.total_slides}: {self.slide_name}"
-                    if desc:
-                        full_desc = f"{prefix} - {desc}"
-                    else:
-                        full_desc = f"{prefix} ({self.slides_remaining} remaining)"
-
+                    prefix = f"Sample {self.s_idx + 1}/{self.total}: {self.label}"
+                    full_desc = f"{prefix} - {desc}" if desc else prefix
                     if current_progress is not None:
-                        # Scale progress within this slide's range
-                        slide_start = self.slide_idx / self.total_slides
-                        slide_end = (self.slide_idx + 1) / self.total_slides
-                        scaled_progress = slide_start + (
-                            current_progress * (slide_end - slide_start)
-                        )
-                        self.base_progress(scaled_progress, desc=full_desc)
-                    else:
+                        start = self.s_idx / self.total
+                        end = (self.s_idx + 1) / self.total
                         self.base_progress(
-                            self.slide_idx / self.total_slides, desc=full_desc
+                            start + current_progress * (end - start), desc=full_desc
                         )
+                    else:
+                        self.base_progress(self.s_idx / self.total, desc=full_desc)
 
-                # Support for tqdm integration
                 @property
                 def track_tqdm(self):
                     return True
 
-                # Delegate attribute access to base progress
                 def __getattr__(self, name):
                     return getattr(self.base_progress, name)
 
-            # Create wrapped progress object
-            slide_progress_wrapper = SlideProgressWrapper(
-                progress, idx, len(slides), slide_name
+            sample_progress = SlideProgressWrapper(
+                progress, sample_idx, total_samples, sample_id
             )
+            sample_progress()
 
-            # Initial progress for this slide
-            slide_progress_wrapper()
+            first_row = slide_list[0][2]
 
-            # Check if this is a TCGA slide and try to load cached results
-            slide_mask, aeon_results, paladin_results = None, None, None
-            is_tcga_slide = False
-            file_uuid = None
-
-            try:
-                tcga_cache_dir = get_tcga_cache_directory()
-                slide_path_obj = Path(slide_path)
-
-                # Check if slide is under TCGA cache directory
-                if tcga_cache_dir in slide_path_obj.parents:
-                    # Extract UUID from parent directory name
-                    file_uuid = slide_path_obj.parent.name
-                    is_tcga_slide = True
-
-                    # Compute settings hash for this slide
-                    settings_hash = compute_settings_hash(
-                        seg_config=row["Segmentation Config"],
-                        site_type=row["Site Type"],
-                        sex=row["Sex"],
-                        tissue_site=row.get("Tissue Site", "Unknown"),
-                        cancer_subtype=row["Cancer Subtype"],
-                        ihc_subtype=row.get("IHC Subtype", ""),
-                    )
-
-                    # Try to load cached results
-                    cached = load_analysis_results(file_uuid, settings_hash)
-                    if cached is not None:
-                        slide_mask, aeon_results, paladin_results = cached
-                        cached_slides += 1
-                        logger.info(
-                            f"Using cached results for {file_uuid}/{settings_hash}"
-                        )
-                        # Skip analysis, use cached results
-            except Exception as e:
-                logger.warning(
-                    f"Failed to check/load cached results for slide: {e}. "
-                    f"Proceeding with fresh analysis."
-                )
-                # Continue with normal analysis on any error
-
-            # If no cached results, run analysis
-            if slide_mask is None or aeon_results is None or paladin_results is None:
-                # Lazy model loading: load on first cache miss
-                if model_cache is None:
-                    if IS_T4_GPU:
-                        logger.info(
-                            "T4: Loading models once (will persist across all requests)"
-                        )
-                        progress(0.0, desc="Loading models (one-time initialization)")
-                        _global_model_cache = load_all_models(
-                            use_gpu=True, aggressive_memory_mgmt=None
-                        )
-                        model_cache = _global_model_cache
-                    elif len(slides) > 1:
-                        logger.info(
-                            f"Batch mode: Loading models once for {len(slides)} slides"
-                        )
-                        progress(0.0, desc="Loading models for batch processing")
-                        model_cache = load_all_models(
-                            use_gpu=True, aggressive_memory_mgmt=None
-                        )
-                    # else: single-slide mode - analyze_slide handles its own model loading
-
-                slide_mask, aeon_results, paladin_results = analyze_slide(
-                    slide_path=slide_path,
-                    seg_config=row["Segmentation Config"],
-                    site_type=row["Site Type"],
-                    sex=row["Sex"],
-                    tissue_site=row.get("Tissue Site", "Unknown"),
-                    cancer_subtype=row["Cancer Subtype"],
-                    cancer_subtype_name_map=cancer_subtype_name_map,
-                    ihc_subtype=row.get("IHC Subtype", ""),
-                    num_workers=DEFAULT_NUM_WORKERS,
-                    progress=slide_progress_wrapper,  # Pass wrapped progress
-                    request=request,
-                    model_cache=model_cache,  # Pre-loaded for batch, None for single
-                    analysis_id=analysis_id,  # For telemetry tracking
-                    session_hash=session_hash,  # For telemetry tracking
-                    profile=profile,  # For OAuth user info
-                    session_id=session_id,  # For OAuth session lookup
+            if len(slide_list) == 1:
+                # ---- Single-slide sample: original path (with TCGA cache) ----
+                idx, slide_path, row = slide_list[0]
+                slide_name = row["Slide"]
+                logger.info(
+                    f"[sample {sample_idx + 1}/{total_samples}] {sample_id} — 1 slide"
                 )
 
-                # Save results to cache if this is a TCGA slide
-                if is_tcga_slide and file_uuid is not None:
-                    try:
+                slide_mask, aeon_results, paladin_results = None, None, None
+                is_tcga_slide = False
+                file_uuid = None
+
+                try:
+                    tcga_cache_dir = get_tcga_cache_directory()
+                    slide_path_obj = Path(slide_path)
+                    if tcga_cache_dir in slide_path_obj.parents:
+                        file_uuid = slide_path_obj.parent.name
+                        is_tcga_slide = True
                         settings_hash = compute_settings_hash(
                             seg_config=row["Segmentation Config"],
                             site_type=row["Site Type"],
@@ -476,102 +418,280 @@ def analyze_slides(
                             cancer_subtype=row["Cancer Subtype"],
                             ihc_subtype=row.get("IHC Subtype", ""),
                         )
-                        save_analysis_results(
-                            file_uuid=file_uuid,
-                            settings_hash=settings_hash,
+                        cached = load_analysis_results(file_uuid, settings_hash)
+                        if cached is not None:
+                            slide_mask, aeon_results, paladin_results = cached
+                            cached_slides += 1
+                            logger.info(
+                                f"Using cached results for {file_uuid}/{settings_hash}"
+                            )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to check/load cached results for slide: {e}. "
+                        "Proceeding with fresh analysis."
+                    )
+
+                if (
+                    slide_mask is None
+                    or aeon_results is None
+                    or paladin_results is None
+                ):
+                    if model_cache is None:
+                        if IS_T4_GPU:
+                            progress(
+                                0.0, desc="Loading models (one-time initialization)"
+                            )
+                            _global_model_cache = load_all_models(
+                                use_gpu=True, aggressive_memory_mgmt=None
+                            )
+                            model_cache = _global_model_cache
+                        elif len(slides) > 1:
+                            progress(0.0, desc="Loading models for batch processing")
+                            model_cache = load_all_models(
+                                use_gpu=True, aggressive_memory_mgmt=None
+                            )
+
+                    slide_mask, aeon_results, paladin_results = analyze_slide(
+                        slide_path=slide_path,
+                        seg_config=row["Segmentation Config"],
+                        site_type=row["Site Type"],
+                        sex=row["Sex"],
+                        tissue_site=row.get("Tissue Site", "Unknown"),
+                        cancer_subtype=row["Cancer Subtype"],
+                        cancer_subtype_name_map=cancer_subtype_name_map,
+                        ihc_subtype=row.get("IHC Subtype", ""),
+                        num_workers=DEFAULT_NUM_WORKERS,
+                        progress=sample_progress,
+                        request=request,
+                        model_cache=model_cache,
+                        analysis_id=analysis_id,
+                        session_hash=session_hash,
+                        profile=profile,
+                        session_id=session_id,
+                    )
+
+                    if is_tcga_slide and file_uuid is not None:
+                        try:
+                            settings_hash = compute_settings_hash(
+                                seg_config=row["Segmentation Config"],
+                                site_type=row["Site Type"],
+                                sex=row["Sex"],
+                                tissue_site=row.get("Tissue Site", "Unknown"),
+                                cancer_subtype=row["Cancer Subtype"],
+                                ihc_subtype=row.get("IHC Subtype", ""),
+                            )
+                            save_analysis_results(
+                                file_uuid=file_uuid,
+                                settings_hash=settings_hash,
+                                aeon_results=aeon_results,
+                                paladin_results=paladin_results,
+                                slide_mask=slide_mask,
+                            )
+                            try:
+                                upload_results_to_hf(file_uuid)
+                            except Exception as upload_error:
+                                logger.warning(
+                                    f"Failed to upload to HF for {file_uuid}: {upload_error}"
+                                )
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to save cached results for {file_uuid}: {e}"
+                            )
+
+                # Save per-user results
+                should_save_results = False
+                save_username = None
+                if IS_HF_SPACES:
+                    if user_info.is_logged_in and user_info.username:
+                        should_save_results = True
+                        save_username = user_info.username
+                else:
+                    from mosaic.ui.user_tabs import LOCAL_DEBUG_USERNAME
+
+                    should_save_results = True
+                    save_username = LOCAL_DEBUG_USERNAME
+
+                if should_save_results and save_username:
+                    try:
+                        from mosaic.user_results import (
+                            save_analysis_results as save_user_results,
+                        )
+
+                        settings_dict = {
+                            "seg_config": row["Segmentation Config"],
+                            "site_type": row["Site Type"],
+                            "sex": row["Sex"],
+                            "tissue_site": row.get("Tissue Site", "Unknown"),
+                            "cancer_subtype": row["Cancer Subtype"],
+                        }
+                        slide_analysis_id = f"{analysis_id}_{idx}"
+                        file_slide_id = (
+                            slide_ids.get(slide_name, "") if slide_ids else ""
+                        )
+                        save_user_results(
+                            username=save_username,
+                            analysis_id=slide_analysis_id,
+                            slide_id=file_slide_id,
+                            slide_name=slide_name,
+                            settings=settings_dict,
                             aeon_results=aeon_results,
                             paladin_results=paladin_results,
                             slide_mask=slide_mask,
                         )
-
-                        # Upload results to HF Dataset for persistence
-                        try:
-                            upload_results_to_hf(file_uuid)
-                        except Exception as upload_error:
-                            logger.warning(
-                                f"Failed to upload results to HF Dataset for {file_uuid}: {upload_error}. "
-                                f"Results are cached locally but not synced to HF."
-                            )
-
                     except Exception as e:
+                        logger.warning(f"Failed to save user results (non-fatal): {e}")
+
+                # Collect results
+                if slide_mask is not None:
+                    mask_filename = f"{Path(slide_name).stem}_mask.png"
+                    saved = _save_mask_as_png(slide_mask, mask_filename)
+                    all_slide_masks.append(
+                        (saved if saved is not None else slide_mask, slide_name)
+                    )
+                if aeon_results is not None:
+                    aeon_results = aeon_results.rename(
+                        columns={"Confidence": sample_id}
+                    )
+                    all_aeon_results.append(aeon_results)
+                if paladin_results is not None:
+                    paladin_results.insert(
+                        0, "Sample", pd.Series([sample_id] * len(paladin_results))
+                    )
+                    all_paladin_results.append(paladin_results)
+
+            else:
+                # ---- Multi-slide sample: 2-phase extraction + aggregation ----
+                logger.info(
+                    f"[sample {sample_idx + 1}/{total_samples}] {sample_id} — "
+                    f"{len(slide_list)} slides"
+                )
+
+                # Ensure models are loaded
+                if model_cache is None:
+                    progress(0.0, desc="Loading models for multi-slide sample")
+                    model_cache = load_all_models(
+                        use_gpu=True, aggressive_memory_mgmt=None
+                    )
+                    if IS_T4_GPU:
+                        _global_model_cache = model_cache
+
+                # Phase 1: extract features from each slide
+                per_slide_features = []
+                per_slide_coords = []
+                per_slide_masks = []
+                per_sample_ids = []
+
+                for slide_sub_idx, (idx, slide_path, row) in enumerate(slide_list):
+                    slide_name = row["Slide"]
+                    logger.info(
+                        f"  [{slide_sub_idx + 1}/{len(slide_list)}] Extracting features: {slide_name}"
+                    )
+
+                    def _sub_progress(
+                        frac=None,
+                        desc=None,
+                        *,
+                        _base=sample_progress,
+                        _sub=slide_sub_idx,
+                        _total=len(slide_list),
+                    ):
+                        # Scale within the extraction half of this sample's slot
+                        sub_frac = (_sub + (frac or 0)) / _total * 0.5
+                        _base(sub_frac, desc=desc)
+
+                    slide_mask, features, coords = extract_slide_features(
+                        slide_path=slide_path,
+                        seg_config=row["Segmentation Config"],
+                        num_workers=DEFAULT_NUM_WORKERS,
+                        progress=_sub_progress,
+                        model_cache=model_cache,
+                    )
+
+                    if features is None:
                         logger.warning(
-                            f"Failed to save analysis results to cache for {file_uuid}: {e}. "
-                            f"Results are still valid but won't be cached for future use."
+                            f"No tissue in {slide_name}, skipping for sample {sample_id}"
+                        )
+                        continue
+
+                    per_slide_features.append(features)
+                    per_slide_coords.append(coords)
+                    per_sample_ids.append(sample_id)
+                    if slide_mask is not None:
+                        mask_filename = f"{Path(slide_name).stem}_mask.png"
+                        saved = _save_mask_as_png(slide_mask, mask_filename)
+                        per_slide_masks.append(
+                            (saved if saved is not None else slide_mask, slide_name)
                         )
 
-            # Save results for logged-in users (best-effort, non-blocking)
-            # On HF Spaces: only for logged-in users
-            # Locally: always save for 'local_user' for debugging
-            should_save_results = False
-            save_username = None
-
-            if IS_HF_SPACES:
-                if user_info.is_logged_in and user_info.username:
-                    should_save_results = True
-                    save_username = user_info.username
-            else:
-                # Local mode - always save for debugging
-                from mosaic.ui.user_tabs import LOCAL_DEBUG_USERNAME
-
-                should_save_results = True
-                save_username = LOCAL_DEBUG_USERNAME
-
-            if should_save_results and save_username:
-                try:
-                    from mosaic.user_results import (
-                        save_analysis_results as save_user_results,
+                if not per_slide_features:
+                    logger.warning(
+                        f"No usable slides for sample {sample_id}, skipping inference"
                     )
+                    sample_idx += 1
+                    continue
 
-                    # Prepare settings dict for metadata
-                    settings_dict = {
-                        "seg_config": row["Segmentation Config"],
-                        "site_type": row["Site Type"],
-                        "sex": row["Sex"],
-                        "tissue_site": row.get("Tissue Site", "Unknown"),
-                        "cancer_subtype": row["Cancer Subtype"],
-                        # "ihc_subtype": row.get("IHC Subtype", ""),  # Not yet in use
-                    }
-
-                    # Use analysis_id + slide index for unique ID per slide
-                    slide_analysis_id = f"{analysis_id}_{idx}"
-
-                    # Get slide_id from tracking (if available)
-                    file_slide_id = ""
-                    if slide_ids and slide_name in slide_ids:
-                        file_slide_id = slide_ids[slide_name]
-
-                    save_user_results(
-                        username=save_username,
-                        analysis_id=slide_analysis_id,
-                        slide_id=file_slide_id,
-                        slide_name=slide_name,
-                        settings=settings_dict,
-                        aeon_results=aeon_results,
-                        paladin_results=paladin_results,
-                        slide_mask=slide_mask,
-                    )
-                    logger.debug(
-                        f"Saved results for user {save_username}, slide {slide_name}"
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to save user results (non-fatal): {e}")
-
-            if slide_mask is not None:
-                mask_filename = f"{Path(slide_name).stem}_mask.png"
-                saved = _save_mask_as_png(slide_mask, mask_filename)
-                if saved is not None:
-                    all_slide_masks.append((saved, slide_name))
-                else:
-                    all_slide_masks.append((slide_mask, slide_name))
-            if aeon_results is not None:
-                # Rename "Confidence" column to slide name for proper concatenation
-                aeon_results = aeon_results.rename(columns={"Confidence": slide_name})
-                all_aeon_results.append(aeon_results)
-            if paladin_results is not None:
-                paladin_results.insert(
-                    0, "Slide", pd.Series([slide_name] * len(paladin_results))
+                # Aggregate per-slide features into one array per sample
+                sample_progress(
+                    0.5, desc=f"Aggregating {len(per_slide_features)} slides"
                 )
-                all_paladin_results.append(paladin_results)
+                agg_dict = aggregate_sample_features(
+                    per_slide_features, per_slide_coords, per_sample_ids
+                )
+                agg_features, _ = agg_dict[sample_id]
+                logger.info(
+                    f"Aggregated {sample_id}: {agg_features.shape[0]} tiles from "
+                    f"{len(per_slide_features)} slides"
+                )
+
+                # Phase 2: run Aeon + Paladin on aggregated features
+                from mosaic.inference.data import encode_sex, encode_tissue_site
+
+                sex_idx_val = (
+                    encode_sex(first_row["Sex"]) if first_row.get("Sex") else None
+                )
+                ts_idx_val = encode_tissue_site(first_row.get("Tissue Site", "Unknown"))
+
+                aeon_results, paladin_results = run_inference_from_features(
+                    features=agg_features,
+                    site_type=first_row["Site Type"],
+                    sex_idx=sex_idx_val,
+                    tissue_site_idx=ts_idx_val,
+                    cancer_subtype=first_row["Cancer Subtype"],
+                    cancer_subtype_name_map=cancer_subtype_name_map,
+                    model_cache=model_cache,
+                    num_workers=DEFAULT_NUM_WORKERS,
+                    progress=lambda frac=None, desc=None: sample_progress(
+                        0.5 + (frac or 0) * 0.5, desc=desc
+                    ),
+                )
+
+                # Collect results for this sample
+                all_slide_masks.extend(per_slide_masks)
+                if aeon_results is not None:
+                    aeon_results = aeon_results.rename(
+                        columns={"Confidence": sample_id}
+                    )
+                    all_aeon_results.append(aeon_results)
+                if paladin_results is not None:
+                    paladin_results.insert(
+                        0, "Sample", pd.Series([sample_id] * len(paladin_results))
+                    )
+                    all_paladin_results.append(paladin_results)
+
+            sample_idx += 1
+
+            # Yield incremental UI update after each sample
+            yield (
+                gr.Dataframe(),
+                all_slide_masks.copy(),
+                None,
+                gr.DownloadButton(visible=False),
+                None,
+                gr.DownloadButton(visible=False),
+                user_dir,
+                gr.Button(interactive=False),
+                gr.Button(interactive=False),
+            )
 
         # Log analysis complete event (successful completion)
         duration_sec = time.time() - start_time
@@ -588,14 +708,10 @@ def analyze_slides(
             hf_username=user_info.username,
         )
 
-        # Upload telemetry immediately after analysis to ensure data is saved
-        # before HF Spaces potentially goes to sleep
         tracker.upload_to_hf()
-
         progress(0.99, desc="Analysis complete, wrapping up results")
 
     except Exception as e:
-        # Log failure event
         tracker.log_failure_event(
             error_type=type(e).__name__,
             error_message=str(e),
@@ -610,9 +726,6 @@ def analyze_slides(
         raise
 
     finally:
-        # Clean up model cache if it was loaded for batch processing
-        # On T4: Keep global cache loaded, only cleanup Paladin models
-        # On high-memory GPUs: Cleanup everything after batch
         if model_cache is not None and not IS_T4_GPU:
             logger.info("Cleaning up model cache after batch")
             model_cache.cleanup()
