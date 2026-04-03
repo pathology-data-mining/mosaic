@@ -866,6 +866,7 @@ def analyze_slide(
         fill=(255, 0, 0, 80),
         vis_level=-1,
         max_size=2048,
+        outline_width=12,
     )
     logger.info("Slide mask drawn")
 

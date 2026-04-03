@@ -70,9 +70,9 @@ def test_cuda_available():
 @_requires_gpu
 def test_cuda_device_count():
     """At least one CUDA device must be accessible."""
-    assert torch.cuda.device_count() > 0, (
-        "torch.cuda.device_count() returned 0 even though nvidia-smi reports GPUs."
-    )
+    assert (
+        torch.cuda.device_count() > 0
+    ), "torch.cuda.device_count() returned 0 even though nvidia-smi reports GPUs."
 
 
 @_requires_gpu

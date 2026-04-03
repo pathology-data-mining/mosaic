@@ -37,18 +37,18 @@ class TestDrawSlideMaskAPI:
     Our analysis.py call must match the current signature exactly.
     """
 
-    def test_draw_slide_mask_does_not_accept_outline_width(self):
-        """draw_slide_mask must not have an outline_width parameter.
+    def test_draw_slide_mask_accepts_outline_width(self):
+        """draw_slide_mask must have an outline_width parameter.
 
-        If this test fails after a mussel upgrade, check whether outline_width
-        (or an equivalent) has been re-added and update analysis.py accordingly.
+        If this test fails after a mussel downgrade/change, remove
+        outline_width=12 from the call in analysis.py.
         """
         from mussel.utils.segment import draw_slide_mask
 
         sig = inspect.signature(draw_slide_mask)
-        assert "outline_width" not in sig.parameters, (
-            "mussel.draw_slide_mask has gained an outline_width parameter again. "
-            "Re-add outline_width=12 to the call in analysis.py."
+        assert "outline_width" in sig.parameters, (
+            "mussel.draw_slide_mask no longer has an outline_width parameter. "
+            "Remove outline_width=12 from the call in analysis.py."
         )
 
     def test_draw_slide_mask_accepts_our_keyword_arguments(self):
@@ -60,7 +60,7 @@ class TestDrawSlideMaskAPI:
         from mussel.utils.segment import draw_slide_mask
 
         sig = inspect.signature(draw_slide_mask)
-        our_kwargs = {"outline", "fill", "vis_level", "max_size"}
+        our_kwargs = {"outline", "fill", "vis_level", "max_size", "outline_width"}
         missing = our_kwargs - set(sig.parameters)
         assert not missing, (
             f"draw_slide_mask is missing parameters our code relies on: {missing}. "
@@ -77,7 +77,9 @@ class TestDrawSlideMaskAPI:
         from mussel.utils.segment import draw_slide_mask
 
         slide_path = tmp_path / "test_slide.tiff"
-        Image.new("RGB", (512, 512), color=(220, 190, 170)).save(str(slide_path), format="TIFF")
+        Image.new("RGB", (512, 512), color=(220, 190, 170)).save(
+            str(slide_path), format="TIFF"
+        )
 
         polygon = box(50, 50, 450, 450)
 
@@ -88,9 +90,10 @@ class TestDrawSlideMaskAPI:
             fill=(255, 0, 0, 80),
             vis_level=-1,
             max_size=2048,
+            outline_width=12,
         )
 
-        assert isinstance(result, Image.Image), (
-            f"draw_slide_mask should return a PIL Image, got {type(result)}"
-        )
+        assert isinstance(
+            result, Image.Image
+        ), f"draw_slide_mask should return a PIL Image, got {type(result)}"
         assert result.width > 0 and result.height > 0
