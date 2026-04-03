@@ -265,7 +265,7 @@ def analyze_slides(
                     sex,
                     tissue_site,
                     cancer_subtype,
-                    ihc_subtype,
+                    # ihc_subtype,  # Not yet in use
                     seg_config,
                     Path(slide_name).stem,  # Sample ID defaults to slide stem
                 ]

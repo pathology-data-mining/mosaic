@@ -522,6 +522,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         tissue_site,
                         cancer_subtype,
                         seg_config,
+                        Path(slide_name).stem,
                     ]
                 )
             df = pd.DataFrame(settings, columns=SETTINGS_COLUMNS)
@@ -1129,6 +1130,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                             tissue_site,
                             cancer_subtype,
                             seg_config,
+                            Path(tcga_slide_path).stem,
                         ]
                     ],
                     columns=SETTINGS_COLUMNS,
