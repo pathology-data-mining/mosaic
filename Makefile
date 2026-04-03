@@ -27,14 +27,17 @@ install-dev: ## Install development dependencies using uv
 
 ##@ Testing
 
-test: ## Run all tests
-	$(PYTEST) tests/ -v
+test: ## Run all tests (unit + integration)
+	$(PYTEST) tests/ -v && $(PYTEST) integration/ -v --no-cov -s
 
-test-fast: ## Run tests without coverage (faster)
+test-fast: ## Run unit tests without coverage (faster)
 	$(PYTEST) tests/ -v --no-cov
 
 test-coverage: ## Run tests with detailed coverage report
 	$(PYTEST) tests/ -v --cov=src/mosaic --cov-report=term-missing --cov-report=html
+
+test-integration: ## Run Gradio UI integration tests (starts real server, no GPU needed)
+	$(PYTEST) integration/ -v --no-cov -s
 
 test-ui: ## Run only UI tests
 	$(PYTEST) tests/test_ui_components.py tests/test_ui_events.py -v
@@ -88,17 +91,13 @@ DOCKER_GPU_ARGS := --gpus=all --runtime=nvidia
 HF_CACHE_DIR := $(HOME)/.cache/huggingface
 DOCKER_COMMON_ARGS := --shm-size=3G --env HF_TOKEN="$(HF_TOKEN)" --env HF_HOME=/mnt/hf_cache --env TRANSFORMERS_CACHE=/mnt/hf_cache --user $(shell id -u):$(shell id -g) -v $(HF_CACHE_DIR):/mnt/hf_cache
 
-docker-build: ## Build Docker image with SSH forwarding
-	@echo "Building Docker image with SSH authentication..."
+docker-build: ## Build Docker image
+	@echo "Building Docker image..."
 	@./build.sh
 
 docker-build-no-cache: ## Build Docker image without cache
-	@echo "Building Docker image with SSH authentication (no cache)..."
-	@eval "$$(ssh-agent -s)" && \
-	ssh-add ~/.ssh/id_ed25519 && \
-	export DOCKER_BUILDKIT=1 && \
-	docker build --no-cache --ssh default=$$SSH_AUTH_SOCK -t $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) . && \
-	eval "$$(ssh-agent -k)"
+	@echo "Building Docker image (no cache)..."
+	@DOCKER_BUILDKIT=1 docker build --no-cache -t $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) .
 
 docker-run: ## Run Docker container (web UI mode)
 	@test -n "$(HF_TOKEN)" || (echo "Error: HF_TOKEN environment variable is not set" && exit 1)

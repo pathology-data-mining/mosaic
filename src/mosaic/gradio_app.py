@@ -15,7 +15,7 @@ from loguru import logger
 
 from mosaic.data_directory import set_data_directory
 from mosaic.ui import launch_gradio
-from mosaic.ui.app import set_cancer_subtype_maps
+from mosaic.ui.pipeline import set_cancer_subtype_maps
 from mosaic.ui.utils import (
     get_oncotree_code_name,
     load_settings,
@@ -404,13 +404,15 @@ def main():
                     model_cache=model_cache,
                 )
 
+                # Use idx-prefixed stem to ensure uniqueness when slides share a basename
+                slide_stem = f"{idx:03d}_{Path(slide_name).stem}"
                 if slide_mask is not None:
-                    all_slide_masks.append((slide_mask, slide_name))
+                    all_slide_masks.append((slide_mask, slide_stem))
                 if aeon_results is not None:
-                    all_aeon_results.append(aeon_results)
+                    all_aeon_results.append((slide_stem, aeon_results))
                 if paladin_results is not None:
                     paladin_results.insert(
-                        0, "Slide", pd.Series([slide_name] * len(paladin_results))
+                        0, "Slide", pd.Series([slide_stem] * len(paladin_results))
                     )
                     all_paladin_results.append(paladin_results)
         finally:
@@ -418,29 +420,30 @@ def main():
             model_cache.cleanup()
 
         # Save individual slide results
-        for idx, (slide_mask, slide_name) in enumerate(all_slide_masks):
-            mask_path = output_dir / f"{slide_name}_mask.png"
+        for slide_mask, slide_stem in all_slide_masks:
+            mask_path = output_dir / f"{slide_stem}_mask.png"
             slide_mask.save(mask_path)
             logger.info(f"Saved slide mask to {mask_path}")
 
-        for idx, aeon_results in enumerate(all_aeon_results):
-            slide_name = aeon_results.columns[0]  # Slide name is in column name
-            aeon_output_path = output_dir / f"{slide_name}_aeon_results.csv"
+        for slide_stem, aeon_results in all_aeon_results:
+            aeon_output_path = output_dir / f"{slide_stem}_aeon_results.csv"
             aeon_results.reset_index().to_csv(aeon_output_path, index=False)
             logger.info(f"Saved Aeon results to {aeon_output_path}")
 
         # Group Paladin results by slide
         if all_paladin_results:
             combined_paladin = pd.concat(all_paladin_results, ignore_index=True)
-            for slide_name in combined_paladin["Slide"].unique():
+            for slide_stem in combined_paladin["Slide"].unique():
                 slide_paladin = combined_paladin[
-                    combined_paladin["Slide"] == slide_name
+                    combined_paladin["Slide"] == slide_stem
                 ]
-                paladin_output_path = output_dir / f"{slide_name}_paladin_results.csv"
+                paladin_output_path = output_dir / f"{slide_stem}_paladin_results.csv"
                 slide_paladin.to_csv(paladin_output_path, index=False)
                 logger.info(f"Saved Paladin results to {paladin_output_path}")
         if all_aeon_results:
-            combined_aeon_results = pd.concat(all_aeon_results, axis=1)
+            combined_aeon_results = pd.concat(
+                [df for _, df in all_aeon_results], axis=1
+            )
             combined_aeon_results.reset_index(inplace=True)
             cancer_subtype_names = [
                 f"{get_oncotree_code_name(code)} ({code})"

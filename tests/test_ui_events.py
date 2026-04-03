@@ -45,7 +45,7 @@ class TestSettingsStateManagement:
 class TestGeneratorBehavior:
     """Test generator behavior for incremental updates."""
 
-    @patch("mosaic.ui.app.analyze_slide")
+    @patch("mosaic.ui.pipeline.analyze_slide")
     @patch("mosaic.ui.app.create_user_directory")
     def test_analyze_slides_is_generator(
         self,
@@ -92,8 +92,8 @@ class TestGeneratorBehavior:
         # Verify it's a generator
         assert inspect.isgenerator(result)
 
-    @patch("mosaic.ui.app.load_all_models")
-    @patch("mosaic.ui.app.analyze_slide")
+    @patch("mosaic.ui.pipeline.load_all_models")
+    @patch("mosaic.ui.pipeline.analyze_slide")
     @patch("mosaic.ui.app.create_user_directory")
     def test_single_final_yield_for_batch(
         self,
@@ -188,8 +188,8 @@ class TestGeneratorBehavior:
         clear_button = final_yield[8]
         assert hasattr(clear_button, "interactive") and clear_button.interactive
 
-    @patch("mosaic.ui.app.load_all_models")
-    @patch("mosaic.ui.app.analyze_slide")
+    @patch("mosaic.ui.pipeline.load_all_models")
+    @patch("mosaic.ui.pipeline.analyze_slide")
     @patch("mosaic.ui.app.create_user_directory")
     def test_final_yield_has_complete_results(
         self,
@@ -287,8 +287,8 @@ class TestGeneratorBehavior:
         clear_button = final_yield[8]
         assert hasattr(clear_button, "interactive") and clear_button.interactive
 
-    @patch("mosaic.ui.app.load_all_models")
-    @patch("mosaic.ui.app.analyze_slide")
+    @patch("mosaic.ui.pipeline.load_all_models")
+    @patch("mosaic.ui.pipeline.analyze_slide")
     @patch("mosaic.ui.app.create_user_directory")
     def test_aeon_hidden_when_cancer_subtype_selected(
         self,
