@@ -680,19 +680,6 @@ def analyze_slides(
 
             sample_idx += 1
 
-            # Yield incremental UI update after each sample
-            yield (
-                gr.Dataframe(),
-                all_slide_masks.copy(),
-                None,
-                gr.DownloadButton(visible=False),
-                None,
-                gr.DownloadButton(visible=False),
-                user_dir,
-                gr.Button(interactive=False),
-                gr.Button(interactive=False),
-            )
-
         # Log analysis complete event (successful completion)
         duration_sec = time.time() - start_time
         tracker.log_usage_event(

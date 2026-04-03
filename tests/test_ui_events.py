@@ -158,12 +158,11 @@ class TestGeneratorBehavior:
             temp_output_dir,
         )
 
-        # Generator should produce at least two yields:
+        # Generator should produce exactly two yields:
         # 1. Initial yield to disable buttons
-        # N. Intermediate yields (one per sample)
-        # Final yield with complete results
+        # 2. Final yield with complete results
         results = list(gen)
-        assert len(results) >= 2
+        assert len(results) == 2
 
         # First yield disables buttons
         initial_yield = results[0]
