@@ -51,9 +51,10 @@ disable = [
 # still get the correct versions installed.
 # torch<2.11 avoids the cu130 (CUDA 13.0) build which requires a newer NVIDIA
 # driver than is available on our servers (driver supports CUDA 12.3).
+# torchvision must track torch: 2.10.x → 0.25.x, 2.11.x → 0.26.x.
 override-dependencies = [
   "torch>=2.0.0,<2.11",
-  "torchvision>=0.15.0",
+  "torchvision>=0.15.0,<0.26",
   "lightning>=2.3.0",
 ]
 

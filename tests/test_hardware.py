@@ -1,9 +1,11 @@
 """Tests for hardware compatibility between torch and the NVIDIA driver.
 
-These tests skip silently on machines without a GPU (e.g. CI runners) but
+GPU tests skip silently on machines without a GPU (e.g. CI runners) but
 fail loudly on machines that *have* a GPU where torch cannot use it — which
 indicates a driver/torch-build version mismatch (e.g. torch compiled for
 CUDA 13.0 on a server that only supports CUDA 12.x).
+
+The torchvision compatibility test always runs (no GPU needed).
 """
 
 import subprocess
@@ -25,12 +27,30 @@ def _nvidia_smi_available() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(
+_requires_gpu = pytest.mark.skipif(
     not _nvidia_smi_available(),
-    reason="No GPU detected by nvidia-smi — skipping hardware tests",
+    reason="No GPU detected by nvidia-smi — skipping GPU hardware tests",
 )
 
 
+def test_torchvision_importable():
+    """torchvision must be importable with the installed torch version.
+
+    torchvision releases are tightly coupled to torch: torch 2.x.y requires
+    torchvision 0.(x+15).y.  A mismatch (e.g. torchvision 0.26 with torch
+    2.10) raises RuntimeError at import time with "operator does not exist".
+    Pin both torch and torchvision in pyproject.toml override-dependencies.
+    """
+    try:
+        import torchvision  # noqa: F401
+    except RuntimeError as exc:
+        pytest.fail(
+            f"torchvision import failed — likely a version mismatch with torch. "
+            f"torch={torch.__version__!r}. Error: {exc}"
+        )
+
+
+@_requires_gpu
 def test_cuda_available():
     """torch must be able to use the GPU when one is present.
 
@@ -47,6 +67,7 @@ def test_cuda_available():
     )
 
 
+@_requires_gpu
 def test_cuda_device_count():
     """At least one CUDA device must be accessible."""
     assert torch.cuda.device_count() > 0, (
@@ -54,6 +75,7 @@ def test_cuda_device_count():
     )
 
 
+@_requires_gpu
 def test_cuda_device_usable():
     """A small tensor operation on the GPU must succeed."""
     device = torch.device("cuda:0")
