@@ -751,10 +751,14 @@ def analyze_slides(
         aeon_output_path = user_dir / f"aeon_results-{timestamp}.csv"
         combined_aeon_results.to_csv(aeon_output_path)
 
+        # Limit rows shown in browser to top 20 to prevent browser freeze.
+        # Full results are always saved to CSV above.
+        _AEON_DISPLAY_ROWS = 20
+        display_aeon = combined_aeon_results.head(_AEON_DISPLAY_ROWS)
         combined_aeon_results = gr.DataFrame(
-            combined_aeon_results,
+            display_aeon,
             visible=True,
-            column_widths=["4px"] + ["2px"] * (combined_aeon_results.shape[1] - 1),
+            column_widths=["4px"] + ["2px"] * (display_aeon.shape[1] - 1),
         )
         aeon_output = gr.DownloadButton(value=aeon_output_path, visible=True)
 
