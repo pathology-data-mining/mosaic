@@ -755,10 +755,13 @@ def analyze_slides(
         # Full results are always saved to CSV above.
         _AEON_DISPLAY_ROWS = 20
         display_aeon = combined_aeon_results.head(_AEON_DISPLAY_ROWS)
+        # Explicit datatype breaks the circular Svelte reactive dependency between
+        # gr.DataFrame's `datatype` and `data` derived stores (TanStack Table hang).
+        aeon_datatype = ["number", "str"] + ["number"] * (display_aeon.shape[1] - 2)
         combined_aeon_results = gr.DataFrame(
             display_aeon,
             visible=True,
-            column_widths=["4px"] + ["2px"] * (display_aeon.shape[1] - 1),
+            datatype=aeon_datatype,
         )
         aeon_output = gr.DownloadButton(value=aeon_output_path, visible=True)
 
@@ -806,12 +809,24 @@ def analyze_slides(
 
     yield (
         gr.Dataframe(
-            value=settings_input, visible=settings_visible
+            value=settings_input,
+            visible=settings_visible,
+            # Explicit datatype breaks the circular Svelte reactive dependency
+            # between gr.Dataframe's `datatype` and `data` derived stores.
+            datatype=["str"] * len(settings_input.columns),
         ),  # Hide if single slide
         final_slide_masks,
         combined_aeon_results,
         aeon_output,
-        final_combined_paladin,
+        gr.DataFrame(
+            value=final_combined_paladin,
+            visible=final_combined_paladin is not None,
+            datatype=(
+                ["str"] * (len(final_combined_paladin.columns) - 1) + ["number"]
+                if final_combined_paladin is not None
+                else None
+            ),
+        ),
         paladin_output,
         user_dir,
         gr.Button(interactive=True),  # Re-enable analyze button

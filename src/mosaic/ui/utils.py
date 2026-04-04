@@ -193,12 +193,15 @@ def validate_settings(
         reversed_cancer_subtype_name_map: Dict mapping codes to display names
 
     Returns:
-        Validated DataFrame with normalized values
+        Validated DataFrame with normalized values, or gr.skip() if unchanged
+        (to prevent the settings_input.change feedback loop from re-firing).
 
     Note:
         Invalid entries are replaced with defaults and warnings are displayed
         to the user via Gradio warnings.
     """
+    # Capture original values before any in-place modifications for no-op detection.
+    original_values = settings_df.copy(deep=True)
     # The UI path builds a 6-column DataFrame (no Sample ID); backfill it here
     # so the rest of this function and downstream code can use SETTINGS_COLUMNS uniformly.
     if "Sample ID" not in settings_df.columns:
@@ -265,6 +268,15 @@ def validate_settings(
 
     if warnings:
         gr.Warning("\n".join(warnings))
+
+    # If validation made no changes, return gr.skip() to prevent the
+    # settings_input.change handler from re-firing (feedback loop → repeated
+    # gr.DataFrame re-renders → Svelte reactive cascade → browser hang).
+    try:
+        if settings_df.equals(original_values):
+            return gr.skip()
+    except Exception:
+        pass
 
     return settings_df
 
