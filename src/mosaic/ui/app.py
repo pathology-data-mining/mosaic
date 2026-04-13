@@ -491,9 +491,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     visible=False,
                 )
                 gr.Markdown(
-                    "> **Aeon confidence scores (0–1):** Each row is a candidate cancer "
-                    "subtype ranked by the model's confidence. A score of 1.0 means "
-                    "maximum confidence; the top-ranked subtype is the predicted diagnosis."
+                    "> **Confidence (0–1):** Top row is the predicted diagnosis."
                 )
                 aeon_download_button = gr.DownloadButton(
                     "Download Aeon Results as CSV",
@@ -501,11 +499,8 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     visible=False,
                 )
                 gr.Markdown(
-                    "> **Paladin — how to read the scores:** Each row is a genomic alteration "
-                    "(mutation, amplification, deletion, fusion, or pathway change) predicted "
-                    "for the top cancer subtype. **Prob. Present** is the model's estimated "
-                    "probability (0–1) that the alteration exists in this tumor — "
-                    "values near **1.0** = likely present, near **0.0** = likely absent."
+                    "> **Prob. Present (0–1):** Probability a genomic alteration is present. "
+                    "Near 1.0 = likely present, near 0.0 = likely absent."
                 )
                 paladin_output_table = gr.Dataframe(
                     headers=["Slide", "Cancer Subtype", "Biomarker", "Prob. Present"],
