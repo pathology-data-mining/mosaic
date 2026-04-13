@@ -491,7 +491,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     visible=False,
                 )
                 gr.Markdown(
-                    "> **Confidence (0–1):** Top row is the predicted diagnosis."
+                    "> **Confidence (0–1):** Higher = more likely the correct diagnosis."
                 )
                 aeon_download_button = gr.DownloadButton(
                     "Download Aeon Results as CSV",
