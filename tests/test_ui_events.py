@@ -291,6 +291,93 @@ class TestGeneratorBehavior:
     @patch("mosaic.ui.pipeline.load_all_models")
     @patch("mosaic.ui.pipeline.analyze_slide")
     @patch("mosaic.ui.app.create_user_directory")
+    def test_dataframes_have_explicit_datatype(
+        self,
+        mock_create_dir,
+        mock_analyze,
+        mock_load_models,
+        sample_files_multiple,
+        mock_analyze_slide_results,
+        mock_model_cache,
+        mock_cancer_subtype_maps,
+        temp_output_dir,
+    ):
+        """Regression test: all gr.DataFrame components in the final yield must have
+        an explicit datatype list, not the Gradio default string 'str'.
+
+        Without explicit datatype, Gradio 6 auto-detects column types reactively,
+        creating a circular dependency in Svelte 5's TanStack Table integration
+        (get(datatype) -> reads data -> rowModel -> orderedColumns -> datatype).
+        This caused a ~420-second browser freeze after every analysis result delivery.
+        """
+        from PIL import Image
+
+        cancer_subtype_name_map, reversed_map, cancer_subtypes = (
+            mock_cancer_subtype_maps
+        )
+        set_cancer_subtype_maps(cancer_subtype_name_map, reversed_map, cancer_subtypes)
+
+        mock_create_dir.return_value = temp_output_dir
+        mock_load_models.return_value = mock_model_cache
+
+        def mock_analyze_side_effect(*args, **kwargs):
+            mask = Image.new("RGB", (100, 100), color="red")
+            aeon_results = pd.DataFrame(
+                {"Cancer Subtype": ["LUAD"], "Confidence": [0.95]}
+            )
+            paladin_results = pd.DataFrame(
+                {
+                    "Cancer Subtype": ["LUAD"],
+                    "Biomarker": ["TP53"],
+                    "Score": [0.85],
+                }
+            )
+            return (mask, aeon_results, paladin_results)
+
+        mock_analyze.side_effect = mock_analyze_side_effect
+
+        settings_df = pd.DataFrame(
+            {
+                "Slide": ["test_slide_1.svs", "test_slide_2.svs", "test_slide_3.svs"],
+                "Site Type": ["Primary", "Primary", "Primary"],
+                "Sex": ["Male", "Female", "Male"],
+                "Tissue Site": ["Unknown", "Unknown", "Unknown"],
+                "Cancer Subtype": ["Unknown", "Unknown", "Unknown"],
+                "Segmentation Config": ["Biopsy", "Biopsy", "Biopsy"],
+            }
+        )
+
+        results = list(
+            analyze_slides(
+                sample_files_multiple,
+                settings_df,
+                "Primary",
+                "Unknown",
+                "Unknown",
+                "Unknown",
+                "",
+                "Biopsy",
+                temp_output_dir,
+            )
+        )
+        final_yield = results[-1]
+
+        # Indices in the final yield tuple:
+        #   0 = settings gr.Dataframe, 2 = aeon gr.DataFrame, 4 = paladin gr.DataFrame
+        for idx, label in [(0, "settings"), (2, "aeon"), (4, "paladin")]:
+            component = final_yield[idx]
+            assert hasattr(component, "datatype"), (
+                f"{label} DataFrame (index {idx}) has no datatype attribute"
+            )
+            assert isinstance(component.datatype, list), (
+                f"{label} DataFrame (index {idx}) datatype is {component.datatype!r} "
+                f"(Gradio default string) — must be an explicit list to prevent the "
+                f"Svelte reactive circular dependency that causes a ~420s browser freeze"
+            )
+
+    @patch("mosaic.ui.pipeline.load_all_models")
+    @patch("mosaic.ui.pipeline.analyze_slide")
+    @patch("mosaic.ui.app.create_user_directory")
     def test_aeon_hidden_when_cancer_subtype_selected(
         self,
         mock_create_dir,
