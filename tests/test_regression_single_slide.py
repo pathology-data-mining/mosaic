@@ -183,6 +183,7 @@ class TestSingleSlideRegression:
                     aeon_note,
                     aeon_btn,
                     paladin,
+                    paladin_note,
                     paladin_btn,
                     user_dir,
                     analyze_btn,

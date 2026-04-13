@@ -499,16 +499,17 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     label="Download Aeon Results",
                     visible=False,
                 )
-                gr.Markdown(
-                    "> **Prob. Present (0–1):** Probability a genomic alteration is present. "
-                    "Near 1.0 = likely present, near 0.0 = likely absent."
-                )
                 paladin_output_table = gr.Dataframe(
                     headers=["Slide", "Cancer Subtype", "Biomarker", "Prob. Present"],
                     label="Paladin — Biomarker Predictions",
                     datatype=["str", "str", "str", "number"],
                     column_widths=["20%", "25%", "45%", "10%"],
                     wrap=True,
+                )
+                paladin_note = gr.Markdown(
+                    "> **Prob. Present (0–1):** Probability a genomic alteration is present. "
+                    "Near 1.0 = likely present, near 0.0 = likely absent.",
+                    visible=False,
                 )
                 paladin_download_button = gr.DownloadButton(
                     "Download Paladin Results as CSV",
@@ -1192,10 +1193,11 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 aeon_note,
                 aeon_download_button,
                 paladin_output_table,
+                paladin_note,
                 paladin_download_button,
                 user_dir_state,
-                analyze_button,  # Add analyze_button as output to control its state
-                clear_button,  # Add clear_button as output to control its state
+                analyze_button,
+                clear_button,
             ],
             queue=True,
             show_progress_on=paladin_output_table,
@@ -1216,6 +1218,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 input_slides,
                 slide_masks,
                 paladin_output_table,
+                paladin_note,
                 paladin_download_button,
                 aeon_output_table,
                 aeon_note,
@@ -1234,6 +1237,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 None,  # input_slides
                 None,  # slide_masks
                 None,  # paladin_output_table
+                gr.Markdown(visible=False),  # paladin_note
                 gr.DownloadButton(visible=False),  # paladin_download_button
                 gr.Dataframe(visible=False),  # aeon_output_table
                 gr.Markdown(visible=False),  # aeon_note

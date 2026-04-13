@@ -167,10 +167,10 @@ class TestGeneratorBehavior:
 
         # First yield disables buttons
         initial_yield = results[0]
-        assert len(initial_yield) == 10
+        assert len(initial_yield) == 11
         # Buttons should be disabled (interactive=False)
-        initial_analyze_button = initial_yield[8]
-        initial_clear_button = initial_yield[9]
+        initial_analyze_button = initial_yield[9]
+        initial_clear_button = initial_yield[10]
         assert initial_analyze_button.get("interactive") is False
         assert initial_clear_button.get("interactive") is False
 
@@ -178,14 +178,14 @@ class TestGeneratorBehavior:
         final_yield = results[-1]
 
         # Should be tuple with 9 elements
-        assert len(final_yield) == 10
+        assert len(final_yield) == 11
 
         # Analyze button should be re-enabled
-        analyze_button = final_yield[8]
+        analyze_button = final_yield[9]
         assert analyze_button.get("interactive") is True
 
         # Clear button should be re-enabled
-        clear_button = final_yield[9]
+        clear_button = final_yield[10]
         assert clear_button.get("interactive") is True
 
     @patch("mosaic.ui.pipeline.load_all_models")
@@ -259,7 +259,7 @@ class TestGeneratorBehavior:
         final_yield = results[-1]
 
         # Final yield should have all results (9 elements with analyze and clear buttons)
-        assert len(final_yield) == 10
+        assert len(final_yield) == 11
 
         # First element is settings_input (should be visible for 3 slides)
         settings = final_yield[0]
@@ -274,15 +274,15 @@ class TestGeneratorBehavior:
         assert hasattr(aeon_download, "visible") and aeon_download.visible
 
         # PALADIN download button should be visible on final yield (7th element, index 6)
-        paladin_download = final_yield[6]
+        paladin_download = final_yield[7]
         assert hasattr(paladin_download, "visible") and paladin_download.visible
 
         # Ninth element should be analyze button (re-enabled after processing)
-        analyze_button = final_yield[8]
+        analyze_button = final_yield[9]
         assert analyze_button.get("interactive") is True
 
         # Tenth element should be clear button (re-enabled after processing)
-        clear_button = final_yield[9]
+        clear_button = final_yield[10]
         assert clear_button.get("interactive") is True
 
     @patch("mosaic.ui.pipeline.load_all_models")
@@ -528,7 +528,7 @@ class TestGeneratorBehavior:
         assert hasattr(aeon_download, "visible") and not aeon_download.visible
 
         # Paladin results should still be visible
-        paladin_download = final_yield[6]
+        paladin_download = final_yield[7]
         assert hasattr(paladin_download, "visible") and paladin_download.visible
 
 

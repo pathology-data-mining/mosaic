@@ -338,6 +338,7 @@ def analyze_slides(
         gr.skip(),  # aeon_note (unchanged)
         gr.DownloadButton(visible=False),  # aeon_download_button (hidden)
         gr.skip(),  # paladin_output_table (unchanged)
+        gr.skip(),  # paladin_note (unchanged)
         gr.DownloadButton(visible=False),  # paladin_download_button (hidden)
         user_dir,  # user_dir_state (unchanged)
         gr.update(interactive=False),  # Disable analyze button
@@ -699,6 +700,7 @@ def analyze_slides(
                 gr.skip(),  # aeon_note
                 gr.DownloadButton(visible=False),
                 gr.skip(),
+                gr.skip(),  # paladin_note
                 gr.DownloadButton(visible=False),
                 user_dir,
                 gr.update(interactive=False),
@@ -743,6 +745,7 @@ def analyze_slides(
             gr.skip(),  # aeon_note
             gr.skip(),
             gr.skip(),
+            gr.skip(),  # paladin_note
             gr.skip(),
             gr.skip(),
             gr.update(interactive=True),
@@ -801,6 +804,7 @@ def analyze_slides(
 
     # Convert Oncotree codes to names for display
     paladin_output = gr.DownloadButton(visible=False)
+    paladin_note_update = gr.update(visible=False)
     if len(combined_paladin_results) > 0:
         cancer_subtype_names = [
             f"{get_oncotree_code_name(code)} ({code})"
@@ -817,6 +821,7 @@ def analyze_slides(
         paladin_output_path = user_dir / f"paladin_results-{timestamp}.csv"
         combined_paladin_results.to_csv(paladin_output_path, index=False)
         paladin_output = gr.DownloadButton(value=paladin_output_path, visible=True)
+        paladin_note_update = gr.update(visible=True)
 
     progress(1.0, desc="All done!")
 
@@ -851,6 +856,7 @@ def analyze_slides(
             value=final_combined_paladin,
             visible=final_combined_paladin is not None,
         ),
+        paladin_note_update,
         paladin_output,
         user_dir,
         gr.update(interactive=True),  # Re-enable analyze button
