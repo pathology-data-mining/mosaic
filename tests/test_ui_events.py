@@ -291,6 +291,84 @@ class TestGeneratorBehavior:
     @patch("mosaic.ui.pipeline.load_all_models")
     @patch("mosaic.ui.pipeline.analyze_slide")
     @patch("mosaic.ui.app.create_user_directory")
+    def test_analysis_succeeds_when_settings_already_valid(
+        self,
+        mock_create_dir,
+        mock_analyze,
+        mock_load_models,
+        sample_files_multiple,
+        mock_analyze_slide_results,
+        mock_model_cache,
+        mock_cancer_subtype_maps,
+        temp_output_dir,
+    ):
+        """Regression: pipeline must not crash when validate_settings returns gr.skip().
+
+        validate_settings returns gr.skip() (not a DataFrame) when the settings
+        DataFrame is already fully valid and requires no normalization.  This
+        happens when the caller supplies a complete 7-column CSV that includes
+        the Sample ID column, so validate_settings makes no mutations and the
+        before/after DataFrames are equal.
+
+        Before the fix, pipeline.py assigned gr.skip() directly to settings_input,
+        causing KeyError: 'Sex' on the next line.
+        """
+        from PIL import Image
+
+        cancer_subtype_name_map, reversed_map, cancer_subtypes = (
+            mock_cancer_subtype_maps
+        )
+        set_cancer_subtype_maps(cancer_subtype_name_map, reversed_map, cancer_subtypes)
+
+        mock_create_dir.return_value = temp_output_dir
+        mock_load_models.return_value = mock_model_cache
+
+        def mock_analyze_side_effect(*args, **kwargs):
+            mask = Image.new("RGB", (100, 100), color="red")
+            aeon_results = pd.DataFrame(
+                {"Cancer Subtype": ["LUAD"], "Confidence": [0.95]}
+            )
+            paladin_results = pd.DataFrame(
+                {"Cancer Subtype": ["LUAD"], "Biomarker": ["TP53"], "Score": [0.85]}
+            )
+            return (mask, aeon_results, paladin_results)
+
+        mock_analyze.side_effect = mock_analyze_side_effect
+
+        # Crucially: include Sample ID (the 7th column).  Without it, validate_settings
+        # adds it, mutating the DataFrame, so equals() returns False and gr.skip() is
+        # NOT returned.  With it present, all values are already valid → gr.skip() IS
+        # returned → the pre-fix code crashed with KeyError: 'Sex'.
+        settings_df = pd.DataFrame(
+            {
+                "Slide": ["test_slide_1.svs", "test_slide_2.svs", "test_slide_3.svs"],
+                "Site Type": ["Primary", "Primary", "Primary"],
+                "Sex": ["Male", "Female", "Male"],
+                "Tissue Site": ["Unknown", "Unknown", "Unknown"],
+                "Cancer Subtype": ["Unknown", "Unknown", "Unknown"],
+                "Segmentation Config": ["Biopsy", "Biopsy", "Biopsy"],
+                "Sample ID": ["test_slide_1", "test_slide_2", "test_slide_3"],
+            }
+        )
+
+        results = list(
+            analyze_slides(
+                sample_files_multiple,
+                settings_df,
+                "Primary",
+                "Unknown",
+                "Unknown",
+                "Unknown",
+                "",
+                "Biopsy",
+                temp_output_dir,
+            )
+        )
+        assert len(results) >= 1, "Generator yielded no results"
+
+    @patch("mosaic.ui.pipeline.load_all_models")
+    @patch("mosaic.ui.pipeline.analyze_slide")
+    @patch("mosaic.ui.app.create_user_directory")
     def test_dataframes_have_explicit_datatype(
         self,
         mock_create_dir,
