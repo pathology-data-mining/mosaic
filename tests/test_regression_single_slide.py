@@ -180,6 +180,7 @@ class TestSingleSlideRegression:
                     settings,
                     masks,
                     aeon,
+                    aeon_note,
                     aeon_btn,
                     paladin,
                     paladin_btn,

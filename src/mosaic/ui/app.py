@@ -490,8 +490,9 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     wrap=True,
                     visible=False,
                 )
-                gr.Markdown(
-                    "> **Confidence (0–1):** Higher = more likely the correct diagnosis."
+                aeon_note = gr.Markdown(
+                    "> **Confidence (0–1):** Higher = more likely the correct diagnosis.",
+                    visible=False,
                 )
                 aeon_download_button = gr.DownloadButton(
                     "Download Aeon Results as CSV",
@@ -1188,6 +1189,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 settings_input,
                 slide_masks,
                 aeon_output_table,
+                aeon_note,
                 aeon_download_button,
                 paladin_output_table,
                 paladin_download_button,
@@ -1216,6 +1218,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 paladin_output_table,
                 paladin_download_button,
                 aeon_output_table,
+                aeon_note,
                 aeon_download_button,
                 settings_input,
                 settings_csv,
@@ -1233,6 +1236,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 None,  # paladin_output_table
                 gr.DownloadButton(visible=False),  # paladin_download_button
                 gr.Dataframe(visible=False),  # aeon_output_table
+                gr.Markdown(visible=False),  # aeon_note
                 gr.DownloadButton(visible=False),  # aeon_download_button
                 gr.Dataframe(visible=False),  # settings_input
                 gr.File(visible=False),  # settings_csv

@@ -335,6 +335,7 @@ def analyze_slides(
         gr.skip(),  # settings_input (unchanged)
         [],  # slide_masks (empty initially)
         gr.skip(),  # aeon_output_table (unchanged)
+        gr.skip(),  # aeon_note (unchanged)
         gr.DownloadButton(visible=False),  # aeon_download_button (hidden)
         gr.skip(),  # paladin_output_table (unchanged)
         gr.DownloadButton(visible=False),  # paladin_download_button (hidden)
@@ -695,6 +696,7 @@ def analyze_slides(
                 gr.skip(),
                 all_slide_masks.copy(),
                 gr.skip(),
+                gr.skip(),  # aeon_note
                 gr.DownloadButton(visible=False),
                 gr.skip(),
                 gr.DownloadButton(visible=False),
@@ -738,6 +740,7 @@ def analyze_slides(
             gr.skip(),
             gr.skip(),
             gr.skip(),
+            gr.skip(),  # aeon_note
             gr.skip(),
             gr.skip(),
             gr.skip(),
@@ -776,6 +779,7 @@ def analyze_slides(
     # that freezes the browser renderer.  The component's `datatype` is fixed at
     # initialisation time in app.py and must never be changed mid-session.
     combined_aeon_results = gr.update(visible=False)
+    aeon_note_update = gr.update(visible=False)
     aeon_output = gr.DownloadButton(visible=False)
     if all_aeon_results and not all_subtypes_known:
         combined_aeon_results = pd.concat(all_aeon_results, axis=1)
@@ -792,6 +796,7 @@ def analyze_slides(
         combined_aeon_results.to_csv(aeon_output_path)
 
         combined_aeon_results = gr.update(value=combined_aeon_results, visible=True)
+        aeon_note_update = gr.update(visible=True)
         aeon_output = gr.DownloadButton(value=aeon_output_path, visible=True)
 
     # Convert Oncotree codes to names for display
@@ -840,6 +845,7 @@ def analyze_slides(
         gr.update(value=settings_input, visible=settings_visible),  # Hide if single slide
         final_slide_masks,
         combined_aeon_results,
+        aeon_note_update,
         aeon_output,
         gr.update(
             value=final_combined_paladin,
