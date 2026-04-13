@@ -486,6 +486,8 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     headers=["Cancer Subtype", "Slide Name"],
                     label="Cancer Subtype Inference Confidence (Aeon model, scores 0-1)",
                     datatype=["str", "number"],
+                    column_widths=["60%", "40%"],
+                    wrap=True,
                     visible=False,
                 )
                 aeon_download_button = gr.DownloadButton(
@@ -497,6 +499,8 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     headers=["Slide", "Cancer Subtype", "Biomarker", "Score"],
                     label="Biomarker Inference (Paladin model)",
                     datatype=["str", "str", "str", "number"],
+                    column_widths=["20%", "25%", "45%", "10%"],
+                    wrap=True,
                 )
                 paladin_download_button = gr.DownloadButton(
                     "Download Paladin Results as CSV",
