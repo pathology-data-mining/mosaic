@@ -31,10 +31,12 @@ mosaic = "mosaic.gradio_app:main"
 [dependency-groups]
 dev = [
   "black==25.12.0",
+  "playwright>=1.40.0",
   "pylint>=3.3.6",
   "pytest>=8.3.0",
   "pytest-cov>=6.0.0",
   "pytest-mock>=3.14.0",
+  "pytest-playwright>=0.5.0",
 ]
 
 [tool.pylint."messages control"]
@@ -77,3 +79,6 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=src/mosaic --cov-report=term-missing"
+markers = [
+    "e2e: end-to-end browser tests (require GPU, models, and --e2e flag)",
+]
