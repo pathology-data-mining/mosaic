@@ -217,7 +217,7 @@ class TestRunInferenceFromFeatures:
 
         fake_aeon = pd.DataFrame({"Cancer Subtype": ["LUAD"], "Confidence": [0.9]})
         fake_paladin = pd.DataFrame(
-            {"Cancer Subtype": ["LUAD"], "Biomarker": ["TP53"], "Score": [0.7]}
+            {"Cancer Subtype": ["LUAD"], "Biomarker": ["TP53"], "Prob. Present": [0.7]}
         )
 
         with (
@@ -252,7 +252,7 @@ class TestRunInferenceFromFeatures:
         model_cache.device = "cpu"
 
         fake_paladin = pd.DataFrame(
-            {"Cancer Subtype": ["LUAD"], "Biomarker": ["TP53"], "Score": [0.7]}
+            {"Cancer Subtype": ["LUAD"], "Biomarker": ["TP53"], "Prob. Present": [0.7]}
         )
 
         with (

@@ -127,7 +127,7 @@ class TestGeneratorBehavior:
                 {
                     "Cancer Subtype": ["LUAD", "LUAD", "LUAD"],
                     "Biomarker": ["TP53", "KRAS", "EGFR"],
-                    "Score": [0.85, 0.72, 0.63],
+                    "Prob. Present": [0.85, 0.72, 0.63],
                 }
             )
             return (mask, aeon_results, paladin_results)
@@ -223,7 +223,7 @@ class TestGeneratorBehavior:
                 {
                     "Cancer Subtype": ["LUAD", "LUAD", "LUAD"],
                     "Biomarker": ["TP53", "KRAS", "EGFR"],
-                    "Score": [0.85, 0.72, 0.63],
+                    "Prob. Present": [0.85, 0.72, 0.63],
                 }
             )
             return (mask, aeon_results, paladin_results)
@@ -326,7 +326,7 @@ class TestGeneratorBehavior:
                 {"Cancer Subtype": ["LUAD"], "Confidence": [0.95]}
             )
             paladin_results = pd.DataFrame(
-                {"Cancer Subtype": ["LUAD"], "Biomarker": ["TP53"], "Score": [0.85]}
+                {"Cancer Subtype": ["LUAD"], "Biomarker": ["TP53"], "Prob. Present": [0.85]}
             )
             return (mask, aeon_results, paladin_results)
 
@@ -404,7 +404,7 @@ class TestGeneratorBehavior:
                 {
                     "Cancer Subtype": ["LUAD"],
                     "Biomarker": ["TP53"],
-                    "Score": [0.85],
+                    "Prob. Present": [0.85],
                 }
             )
             return (mask, aeon_results, paladin_results)
@@ -484,7 +484,7 @@ class TestGeneratorBehavior:
                 {
                     "Cancer Subtype": ["LUAD", "LUAD", "LUAD"],
                     "Biomarker": ["TP53", "KRAS", "EGFR"],
-                    "Score": [0.85, 0.72, 0.63],
+                    "Prob. Present": [0.85, 0.72, 0.63],
                 }
             )
             return (mask, aeon_results, paladin_results)

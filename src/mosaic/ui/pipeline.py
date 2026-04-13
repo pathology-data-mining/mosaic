@@ -804,10 +804,10 @@ def analyze_slides(
         combined_paladin_results["Cancer Subtype"] = cancer_subtype_names
 
         # Ensure Score is numeric before rounding
-        combined_paladin_results["Score"] = pd.to_numeric(
-            combined_paladin_results["Score"], errors="coerce"
+        combined_paladin_results["Prob. Present"] = pd.to_numeric(
+            combined_paladin_results["Prob. Present"], errors="coerce"
         )
-        combined_paladin_results["Score"] = combined_paladin_results["Score"].round(3)
+        combined_paladin_results["Prob. Present"] = combined_paladin_results["Prob. Present"].round(3)
 
         paladin_output_path = user_dir / f"paladin_results-{timestamp}.csv"
         combined_paladin_results.to_csv(paladin_output_path, index=False)

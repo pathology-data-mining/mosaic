@@ -198,7 +198,7 @@ class TestBatchCsvMode:
                 {
                     "Cancer Subtype": ["LUAD", "LUAD", "LUAD"],
                     "Biomarker": ["TP53", "KRAS", "EGFR"],
-                    "Score": [0.85, 0.72, 0.63],
+                    "Prob. Present": [0.85, 0.72, 0.63],
                 }
             )
             return (mask, aeon_results, paladin_results)
@@ -270,7 +270,7 @@ class TestBatchCsvMode:
                 {
                     "Cancer Subtype": ["LUAD", "LUAD", "LUAD"],
                     "Biomarker": ["TP53", "KRAS", "EGFR"],
-                    "Score": [0.85, 0.72, 0.63],
+                    "Prob. Present": [0.85, 0.72, 0.63],
                 }
             )
             return (mask, aeon_results, paladin_results)

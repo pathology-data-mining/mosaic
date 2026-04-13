@@ -500,21 +500,19 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     label="Download Aeon Results",
                     visible=False,
                 )
+                gr.Markdown(
+                    "> **Paladin — how to read the scores:** Each row is a genomic alteration "
+                    "(mutation, amplification, deletion, fusion, or pathway change) predicted "
+                    "for the top cancer subtype. **Prob. Present** is the model's estimated "
+                    "probability (0–1) that the alteration exists in this tumor — "
+                    "values near **1.0** = likely present, near **0.0** = likely absent."
+                )
                 paladin_output_table = gr.Dataframe(
-                    headers=["Slide", "Cancer Subtype", "Biomarker", "Score"],
+                    headers=["Slide", "Cancer Subtype", "Biomarker", "Prob. Present"],
                     label="Paladin — Biomarker Predictions",
                     datatype=["str", "str", "str", "number"],
                     column_widths=["20%", "25%", "45%", "10%"],
                     wrap=True,
-                )
-                gr.Markdown(
-                    "> **Paladin scores (0–1):** Estimated probability that a genomic "
-                    "alteration is **present** in the tumor. "
-                    "Score near **1.0** → alteration likely present. "
-                    "Score near **0.0** → alteration likely absent. "
-                    "Alterations include oncogenic mutations, hotspot mutations, "
-                    "truncating mutations, chromosomal amplifications/deletions, "
-                    "homozygous deletions, gene fusions, and pathway alterations."
                 )
                 paladin_download_button = gr.DownloadButton(
                     "Download Paladin Results as CSV",
