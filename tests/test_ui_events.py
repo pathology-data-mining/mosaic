@@ -171,9 +171,8 @@ class TestGeneratorBehavior:
         # Buttons should be disabled (interactive=False)
         initial_analyze_button = initial_yield[7]
         initial_clear_button = initial_yield[8]
-        assert hasattr(initial_analyze_button, "interactive")
-        assert initial_analyze_button.interactive is False
-        assert initial_clear_button.interactive is False
+        assert initial_analyze_button.get("interactive") is False
+        assert initial_clear_button.get("interactive") is False
 
         # Last yield is the final result
         final_yield = results[-1]
@@ -183,11 +182,11 @@ class TestGeneratorBehavior:
 
         # Analyze button should be re-enabled
         analyze_button = final_yield[7]
-        assert hasattr(analyze_button, "interactive") and analyze_button.interactive
+        assert analyze_button.get("interactive") is True
 
         # Clear button should be re-enabled
         clear_button = final_yield[8]
-        assert hasattr(clear_button, "interactive") and clear_button.interactive
+        assert clear_button.get("interactive") is True
 
     @patch("mosaic.ui.pipeline.load_all_models")
     @patch("mosaic.ui.pipeline.analyze_slide")
@@ -264,9 +263,7 @@ class TestGeneratorBehavior:
 
         # First element is settings_input (should be visible for 3 slides)
         settings = final_yield[0]
-        assert (
-            hasattr(settings, "visible") and settings.visible
-        )  # Visible for multiple slides
+        assert settings.get("visible")  # Visible for multiple slides
 
         # Second element is slide_masks
         slide_masks = final_yield[1]
@@ -282,11 +279,11 @@ class TestGeneratorBehavior:
 
         # Eighth element should be analyze button (re-enabled after processing)
         analyze_button = final_yield[7]
-        assert hasattr(analyze_button, "interactive") and analyze_button.interactive
+        assert analyze_button.get("interactive") is True
 
         # Ninth element should be clear button (re-enabled after processing)
         clear_button = final_yield[8]
-        assert hasattr(clear_button, "interactive") and clear_button.interactive
+        assert clear_button.get("interactive") is True
 
     @patch("mosaic.ui.pipeline.load_all_models")
     @patch("mosaic.ui.pipeline.analyze_slide")
@@ -441,17 +438,16 @@ class TestGeneratorBehavior:
         final_yield = results[-1]
 
         # Indices in the final yield tuple:
-        #   0 = settings gr.Dataframe, 2 = aeon gr.DataFrame, 4 = paladin gr.DataFrame
-        for idx, label in [(0, "settings"), (2, "aeon"), (4, "paladin")]:
-            component = final_yield[idx]
-            assert hasattr(component, "datatype"), (
-                f"{label} DataFrame (index {idx}) has no datatype attribute"
-            )
-            assert isinstance(component.datatype, list), (
-                f"{label} DataFrame (index {idx}) datatype is {component.datatype!r} "
-                f"(Gradio default string) — must be an explicit list to prevent the "
-                f"Svelte reactive circular dependency that causes a ~420s browser freeze"
-            )
+        #   0 = settings gr.update, 2 = aeon gr.update/gr.update(visible=False), 4 = paladin gr.update
+        # Since we pinned gradio <6.11.0 (Svelte 5 DataFrame freeze fix), we no
+        # longer need datatype in every yield — the 6.10.0 component uses it from
+        # initialization.  Just verify the final yield has the right structure.
+        settings_update = final_yield[0]
+        assert isinstance(settings_update, dict), "settings final yield should be gr.update() dict"
+        assert "value" in settings_update, "settings final yield should contain value"
+
+        paladin_update = final_yield[4]
+        assert isinstance(paladin_update, dict), "paladin final yield should be gr.update() dict"
 
     @patch("mosaic.ui.pipeline.load_all_models")
     @patch("mosaic.ui.pipeline.analyze_slide")
@@ -525,7 +521,7 @@ class TestGeneratorBehavior:
 
         # Aeon table (index 2) should be hidden
         aeon_table = final_yield[2]
-        assert hasattr(aeon_table, "visible") and not aeon_table.visible
+        assert not aeon_table.get("visible", True)
 
         # Aeon download button (index 3) should be hidden
         aeon_download = final_yield[3]

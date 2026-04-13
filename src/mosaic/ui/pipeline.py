@@ -339,8 +339,8 @@ def analyze_slides(
         gr.skip(),  # paladin_output_table (unchanged)
         gr.DownloadButton(visible=False),  # paladin_download_button (hidden)
         user_dir,  # user_dir_state (unchanged)
-        gr.Button(interactive=False),  # Disable analyze button
-        gr.Button(interactive=False),  # Disable clear button
+        gr.update(interactive=False),  # Disable analyze button
+        gr.update(interactive=False),  # Disable clear button
     )
 
     # Defer model loading until needed - skip GPU loading if all slides have cached results
@@ -699,8 +699,8 @@ def analyze_slides(
                 gr.skip(),
                 gr.DownloadButton(visible=False),
                 user_dir,
-                gr.Button(interactive=False),
-                gr.Button(interactive=False),
+                gr.update(interactive=False),
+                gr.update(interactive=False),
             )
 
         # Log analysis complete event (successful completion)
@@ -732,6 +732,18 @@ def analyze_slides(
             gpu_type=GPU_TYPE,
             is_logged_in=user_info.is_logged_in,
             hf_username=user_info.username,
+        )
+        # Re-enable buttons before re-raising so the UI doesn't stay locked
+        yield (
+            gr.skip(),
+            gr.skip(),
+            gr.skip(),
+            gr.skip(),
+            gr.skip(),
+            gr.skip(),
+            gr.skip(),
+            gr.update(interactive=True),
+            gr.update(interactive=True),
         )
         raise
 
@@ -835,6 +847,6 @@ def analyze_slides(
         ),
         paladin_output,
         user_dir,
-        gr.Button(interactive=True),  # Re-enable analyze button
-        gr.Button(interactive=True),  # Re-enable clear button
+        gr.update(interactive=True),  # Re-enable analyze button
+        gr.update(interactive=True),  # Re-enable clear button
     )
