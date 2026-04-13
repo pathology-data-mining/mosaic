@@ -484,11 +484,16 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 )
                 aeon_output_table = gr.Dataframe(
                     headers=["Cancer Subtype", "Slide Name"],
-                    label="Cancer Subtype Inference Confidence (Aeon model, scores 0-1)",
+                    label="Aeon — Cancer Subtype Predictions",
                     datatype=["str", "number"],
                     column_widths=["60%", "40%"],
                     wrap=True,
                     visible=False,
+                )
+                gr.Markdown(
+                    "> **Aeon confidence scores (0–1):** Each row is a candidate cancer "
+                    "subtype ranked by the model's confidence. A score of 1.0 means "
+                    "maximum confidence; the top-ranked subtype is the predicted diagnosis."
                 )
                 aeon_download_button = gr.DownloadButton(
                     "Download Aeon Results as CSV",
@@ -497,10 +502,16 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 )
                 paladin_output_table = gr.Dataframe(
                     headers=["Slide", "Cancer Subtype", "Biomarker", "Score"],
-                    label="Biomarker Inference (Paladin model)",
+                    label="Paladin — Biomarker Predictions",
                     datatype=["str", "str", "str", "number"],
                     column_widths=["20%", "25%", "45%", "10%"],
                     wrap=True,
+                )
+                gr.Markdown(
+                    "> **Paladin biomarker scores (0–1):** Beta-binomial point estimates "
+                    "of biomarker prevalence in the slide. For binary biomarkers "
+                    "(e.g. HR+, HER2+, BRCA1/2 mutation), scores above 0.5 suggest "
+                    "a positive finding; scores below 0.5 suggest negative."
                 )
                 paladin_download_button = gr.DownloadButton(
                     "Download Paladin Results as CSV",
