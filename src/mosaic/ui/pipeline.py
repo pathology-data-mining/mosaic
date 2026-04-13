@@ -751,15 +751,11 @@ def analyze_slides(
         aeon_output_path = user_dir / f"aeon_results-{timestamp}.csv"
         combined_aeon_results.to_csv(aeon_output_path)
 
-        # Limit rows shown in browser to top 20 to prevent browser freeze.
-        # Full results are always saved to CSV above.
-        _AEON_DISPLAY_ROWS = 20
-        display_aeon = combined_aeon_results.head(_AEON_DISPLAY_ROWS)
         # Explicit datatype breaks the circular Svelte reactive dependency between
         # gr.DataFrame's `datatype` and `data` derived stores (TanStack Table hang).
-        aeon_datatype = ["number", "str"] + ["number"] * (display_aeon.shape[1] - 2)
+        aeon_datatype = ["number", "str"] + ["number"] * (combined_aeon_results.shape[1] - 2)
         combined_aeon_results = gr.DataFrame(
-            display_aeon,
+            combined_aeon_results,
             visible=True,
             datatype=aeon_datatype,
         )
