@@ -85,6 +85,7 @@ class TelemetryStorage:
             line = json.dumps(event_data, default=str) + "\n"
 
             with self._lock:
+                file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, "a", encoding="utf-8") as f:
                     f.write(line)
             return True
