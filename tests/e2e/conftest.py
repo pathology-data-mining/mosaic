@@ -6,6 +6,7 @@ This prevents them from running in CI.
 Usage:
     pytest tests/e2e/ --e2e -v
     pytest tests/e2e/ --e2e -v --headed   # show browser window
+    pytest tests/e2e/ --e2e --server-url http://tllihpcgpu4:7860  # reuse live server
 """
 
 import pytest
@@ -17,6 +18,12 @@ def pytest_addoption(parser):
         action="store_true",
         default=False,
         help="Run end-to-end browser tests (requires GPU, models, and test slide)",
+    )
+    parser.addoption(
+        "--server-url",
+        default=None,
+        help="Reuse an already-running Mosaic server instead of starting one "
+             "(e.g. http://tllihpcgpu4:7860). Skips model loading wait.",
     )
 
 

@@ -12,9 +12,10 @@ Prerequisites:
 
 Usage:
     pytest tests/e2e/ --e2e -v
-    pytest tests/e2e/ --e2e -v --headed       # show browser window
-    pytest tests/e2e/ --e2e -v -s             # with stdout
-    pytest tests/e2e/ --e2e --browser firefox # use Firefox instead
+    pytest tests/e2e/ --e2e -v --headed            # show browser window
+    pytest tests/e2e/ --e2e -v -s                  # with stdout
+    pytest tests/e2e/ --e2e --browser firefox      # use Firefox instead
+    pytest tests/e2e/ --e2e --server-url http://tllihpcgpu4:7860  # reuse live server
 
 The key regression this catches:
     gr.DataFrame without an explicit ``datatype`` list causes a circular
@@ -96,12 +97,24 @@ def _wait_for_server(url: str, timeout: int) -> None:
 
 
 @pytest.fixture(scope="module")
-def gradio_server():
-    """Start a Mosaic Gradio server on a free port for the test session.
+def gradio_server(request):
+    """Provide the Mosaic Gradio server URL for the test module.
+
+    If ``--server-url`` is given on the command line, that URL is used directly
+    (no server is started — ideal for reusing a live instance that already has
+    models loaded).  Otherwise a fresh server subprocess is started on a free
+    port and torn down after the module finishes.
 
     Yields the base URL (e.g. ``http://127.0.0.1:51234``).
-    The server subprocess is terminated when the module finishes.
     """
+    server_url = request.config.getoption("--server-url", default=None)
+
+    if server_url:
+        # Reuse an already-running server — just verify it responds.
+        _wait_for_server(server_url.rstrip("/"), timeout=10)
+        yield server_url.rstrip("/")
+        return  # nothing to tear down
+
     if not TEST_SLIDE.exists():
         pytest.skip(f"Test slide not found: {TEST_SLIDE}")
 
@@ -171,7 +184,10 @@ class TestFullAnalysisBrowser:
         #    from the page has a chance to run.                                #
         # ------------------------------------------------------------------ #
         page.goto(gradio_server)
-        page.wait_for_load_state("networkidle")
+        page.wait_for_load_state("load")
+        # Gradio keeps a persistent SSE connection so "networkidle" never fires.
+        # Wait for the Analyze button instead — it appears once the UI is ready.
+        page.get_by_role("button", name="Analyze").wait_for(state="visible", timeout=30_000)
         page.evaluate(_LONG_TASK_MONITOR_JS)
 
         # ------------------------------------------------------------------ #
@@ -191,6 +207,16 @@ class TestFullAnalysisBrowser:
         )
 
         # ------------------------------------------------------------------ #
+        # 2b. Fill required fields.                                           #
+        #                                                                     #
+        #     Sex is required; use the global dropdown which feeds into the   #
+        #     settings table for the uploaded slide.                          #
+        # ------------------------------------------------------------------ #
+        sex_input = page.get_by_label("Sex")
+        sex_input.click()
+        page.get_by_role("option", name="Female").click()
+
+        # ------------------------------------------------------------------ #
         # 3. Click Analyze.                                                   #
         # ------------------------------------------------------------------ #
         page.get_by_role("button", name="Analyze").click()
@@ -198,31 +224,25 @@ class TestFullAnalysisBrowser:
         # ------------------------------------------------------------------ #
         # 4. Wait for analysis to complete.                                   #
         #                                                                     #
-        #    We poll for the Paladin results table to become visible.         #
-        #    The Aeon table appears first; Paladin appears after Paladin      #
-        #    inference finishes, which is the last step.                      #
+        #    The Paladin download button starts hidden and becomes visible    #
+        #    only after the final yield — making it the most reliable signal  #
+        #    that the full pipeline has finished.                             #
         # ------------------------------------------------------------------ #
-        # The Paladin table label text is stable across versions.
-        paladin_label = page.get_by_text("Biomarker Inference (Paladin model)")
-        paladin_label.wait_for(state="visible", timeout=ANALYSIS_TIMEOUT * 1_000)
+        paladin_download = page.get_by_role("button", name="Download Paladin Results")
+        paladin_download.wait_for(state="visible", timeout=ANALYSIS_TIMEOUT * 1_000)
 
-        # Give the browser a moment for any reactive updates to settle.
+        # Give Svelte a moment to finish all reactive updates after the last yield.
         page.wait_for_timeout(3_000)
 
         # ------------------------------------------------------------------ #
         # 5. Assert results are present.                                      #
         # ------------------------------------------------------------------ #
-        # Aeon table should be visible and contain at least one data row.
-        aeon_label = page.get_by_text(
-            "Cancer Subtype Inference Confidence (Aeon model, scores 0-1)"
-        )
-        assert aeon_label.is_visible(), "Aeon output table label not visible"
+        # Aeon download button should also be visible.
+        aeon_download = page.get_by_role("button", name="Download Aeon Results")
+        assert aeon_download.is_visible(), "Aeon download button not visible after analysis"
 
-        # Locate rows inside the Aeon dataframe section.
-        aeon_section = page.locator(
-            '[data-testid="dataframe"], .gradio-dataframe, table'
-        ).first
-        aeon_rows = aeon_section.locator("tbody tr")
+        # Aeon table should contain at least one data row.
+        aeon_rows = page.locator("table tbody tr")
         assert aeon_rows.count() > 0, "Aeon table has no data rows"
 
         # ------------------------------------------------------------------ #
@@ -250,14 +270,20 @@ class TestFullAnalysisBrowser:
         memory regressions (e.g., large image arrays held in JS).
         """
         page.goto(gradio_server)
-        page.wait_for_load_state("networkidle")
+        page.wait_for_load_state("load")
+        page.get_by_role("button", name="Analyze").wait_for(state="visible", timeout=30_000)
 
         file_input = page.locator('input[type="file"]').first
         file_input.set_input_files(str(TEST_SLIDE.resolve()))
         page.wait_for_selector('table', state="visible", timeout=30_000)
+
+        sex_input = page.get_by_label("Sex")
+        sex_input.click()
+        page.get_by_role("option", name="Female").click()
+
         page.get_by_role("button", name="Analyze").click()
 
-        page.get_by_text("Biomarker Inference (Paladin model)").wait_for(
+        page.get_by_role("button", name="Download Paladin Results").wait_for(
             state="visible", timeout=ANALYSIS_TIMEOUT * 1_000
         )
         page.wait_for_timeout(5_000)

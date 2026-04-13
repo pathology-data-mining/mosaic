@@ -490,7 +490,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 )
                 aeon_download_button = gr.DownloadButton(
                     "Download Aeon Results as CSV",
-                    label="Download Results",
+                    label="Download Aeon Results",
                     visible=False,
                 )
                 paladin_output_table = gr.Dataframe(
@@ -500,7 +500,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 )
                 paladin_download_button = gr.DownloadButton(
                     "Download Paladin Results as CSV",
-                    label="Download Results",
+                    label="Download Paladin Results",
                     visible=False,
                 )
 

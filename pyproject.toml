@@ -9,7 +9,10 @@ description = "Mussel-Aeon-Paladin workflow for digital pathology"
 readme = "README.md"
 requires-python = ">=3.10,<3.12"
 dependencies = [
-  "gradio[oauth]>=6.0.0",
+  # Pinned <6.11.0: Gradio 6.11 DataFrame Svelte 5 migration causes
+  # effect_update_depth_exceeded infinite loop (renderer freeze after analysis).
+  # See: https://github.com/gradio-app/gradio/issues/13198
+  "gradio[oauth]>=6.0.0,<6.11.0",
   "lightning>=2.6.0",
   "loguru>=0.7.3",
   "memory-profiler>=0.61.0",

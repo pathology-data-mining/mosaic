@@ -327,13 +327,16 @@ def analyze_slides(
         hf_username=user_info.username,
     )
 
-    # Disable analyze and clear buttons during analysis
+    # Disable analyze and clear buttons during analysis.
+    # Use gr.skip() for Dataframe outputs to avoid sending empty DataframeData
+    # to the browser — even an empty DataframeData update can trigger TanStack
+    # Table type-inference reactivity before the component is visible.
     yield (
-        gr.Dataframe(),  # settings_input (unchanged)
+        gr.skip(),  # settings_input (unchanged)
         [],  # slide_masks (empty initially)
-        None,  # aeon_output_table (empty initially)
+        gr.skip(),  # aeon_output_table (unchanged)
         gr.DownloadButton(visible=False),  # aeon_download_button (hidden)
-        None,  # paladin_output_table (empty initially)
+        gr.skip(),  # paladin_output_table (unchanged)
         gr.DownloadButton(visible=False),  # paladin_download_button (hidden)
         user_dir,  # user_dir_state (unchanged)
         gr.Button(interactive=False),  # Disable analyze button
@@ -685,13 +688,15 @@ def analyze_slides(
 
             sample_idx += 1
 
-            # Yield incremental UI update after each sample
+            # Yield incremental UI update after each sample.
+            # Use gr.skip() for Dataframe outputs to avoid triggering TanStack
+            # type-inference on empty/stale data while analysis is still running.
             yield (
-                gr.Dataframe(),
+                gr.skip(),
                 all_slide_masks.copy(),
-                None,
+                gr.skip(),
                 gr.DownloadButton(visible=False),
-                None,
+                gr.skip(),
                 gr.DownloadButton(visible=False),
                 user_dir,
                 gr.Button(interactive=False),
@@ -753,7 +758,12 @@ def analyze_slides(
         for _, row in settings_input.iterrows()
     )
 
-    combined_aeon_results = gr.DataFrame(visible=False)
+    # Use gr.update() (not gr.DataFrame()) so only `value` and `visible` are sent
+    # to the browser in the final yield.  Sending `datatype` simultaneously with
+    # `data` triggers a circular Svelte 5 reactive dependency in TanStack Table
+    # that freezes the browser renderer.  The component's `datatype` is fixed at
+    # initialisation time in app.py and must never be changed mid-session.
+    combined_aeon_results = gr.update(visible=False)
     aeon_output = gr.DownloadButton(visible=False)
     if all_aeon_results and not all_subtypes_known:
         combined_aeon_results = pd.concat(all_aeon_results, axis=1)
@@ -769,14 +779,7 @@ def analyze_slides(
         aeon_output_path = user_dir / f"aeon_results-{timestamp}.csv"
         combined_aeon_results.to_csv(aeon_output_path)
 
-        # Explicit datatype breaks the circular Svelte reactive dependency between
-        # gr.DataFrame's `datatype` and `data` derived stores (TanStack Table hang).
-        aeon_datatype = ["number", "str"] + ["number"] * (combined_aeon_results.shape[1] - 2)
-        combined_aeon_results = gr.DataFrame(
-            combined_aeon_results,
-            visible=True,
-            datatype=aeon_datatype,
-        )
+        combined_aeon_results = gr.update(value=combined_aeon_results, visible=True)
         aeon_output = gr.DownloadButton(value=aeon_output_path, visible=True)
 
     # Convert Oncotree codes to names for display
@@ -822,24 +825,13 @@ def analyze_slides(
     gc.collect()
 
     yield (
-        gr.Dataframe(
-            value=settings_input,
-            visible=settings_visible,
-            # Explicit datatype breaks the circular Svelte reactive dependency
-            # between gr.Dataframe's `datatype` and `data` derived stores.
-            datatype=["str"] * len(settings_input.columns),
-        ),  # Hide if single slide
+        gr.update(value=settings_input, visible=settings_visible),  # Hide if single slide
         final_slide_masks,
         combined_aeon_results,
         aeon_output,
-        gr.DataFrame(
+        gr.update(
             value=final_combined_paladin,
             visible=final_combined_paladin is not None,
-            datatype=(
-                ["str"] * (len(final_combined_paladin.columns) - 1) + ["number"]
-                if final_combined_paladin is not None
-                else None
-            ),
         ),
         paladin_output,
         user_dir,
