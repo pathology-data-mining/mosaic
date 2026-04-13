@@ -272,12 +272,17 @@ def analyze_slides(
             )
         settings_input = pd.DataFrame(settings, columns=SETTINGS_COLUMNS)
 
-    settings_input = validate_settings(
+    validated = validate_settings(
         settings_input,
         cancer_subtype_name_map,
         cancer_subtypes,
         reversed_cancer_subtype_name_map,
     )
+    # validate_settings returns gr.skip() when the DataFrame is unchanged
+    # (to prevent the .change feedback loop in the UI).  In the pipeline we
+    # want the original DataFrame in that case, not the sentinel object.
+    if isinstance(validated, pd.DataFrame):
+        settings_input = validated
     if len(slides) != len(settings_input):
         raise gr.Error("Missing settings for uploaded slides")
 
