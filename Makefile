@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-coverage test-verbose lint format clean docker-build docker-run docker-run-cli docker-push docker-clean run-ui run-cli
+.PHONY: help install install-dev test test-coverage test-verbose lint format clean docker-build docker-run docker-run-cli docker-push docker-clean run-ui run-cli test-e2e test-e2e-headed
 
 # Default target
 .DEFAULT_GOAL := help
@@ -50,6 +50,12 @@ test-verbose: ## Run tests with verbose output and show print statements
 
 test-specific: ## Run specific test (usage: make test-specific TEST=tests/test_cli.py::TestClass::test_method)
 	$(PYTEST) $(TEST) -v
+
+test-e2e: ## Run end-to-end browser tests (requires GPU, models, and test slide)
+	$(PYTEST) tests/e2e/ --e2e -v --no-cov
+
+test-e2e-headed: ## Run end-to-end browser tests with visible browser window
+	$(PYTEST) tests/e2e/ --e2e -v --no-cov --headed
 
 test-watch: ## Run tests in watch mode (requires pytest-watch)
 	$(PYTEST) tests/ --watch
