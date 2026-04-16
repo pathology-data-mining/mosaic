@@ -1,5 +1,14 @@
 [
   {
+    "sample_id": "P-0041035-T01-IM6",
+    "image_id": "948176",
+    "sex": "Female",
+    "tissue_site": "Omentum",
+    "site_type": "Metastatic",
+    "cancer_type": "HGSOC",
+    "note": "e2e test slide in tests/testdata/; Aeon confidence not yet recorded"
+  },
+  {
     "sample_id": "P-0000034-T01-IM3",
     "image_id": "881837",
     "sex": "MALE",
