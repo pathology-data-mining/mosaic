@@ -798,20 +798,8 @@ def analyze_slides(
         aeon_output_path = user_dir / f"aeon_results-{timestamp}.csv"
         combined_aeon_results.to_csv(aeon_output_path)
 
-        # Truncate to top rows for browser display to avoid freezing Firefox/slow browsers.
-        # Full results remain in the downloaded CSV.
-        _AEON_DISPLAY_ROWS = 20
-        total_aeon_rows = len(combined_aeon_results)
-        aeon_display = combined_aeon_results.head(_AEON_DISPLAY_ROWS)
-        combined_aeon_results = gr.update(value=aeon_display, visible=True)
-        aeon_note_update = gr.update(
-            value=(
-                f"> **Confidence (0–1):** Higher = more likely the correct diagnosis. "
-                f"Top row is the predicted diagnosis. "
-                f"Showing top {_AEON_DISPLAY_ROWS} of {total_aeon_rows} — download CSV for all."
-            ),
-            visible=True,
-        )
+        combined_aeon_results = gr.update(value=combined_aeon_results, visible=True)
+        aeon_note_update = gr.update(visible=True)
         aeon_output = gr.DownloadButton(value=aeon_output_path, visible=True)
 
     # Convert Oncotree codes to names for display
