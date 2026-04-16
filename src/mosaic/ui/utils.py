@@ -200,8 +200,6 @@ def validate_settings(
         Invalid entries are replaced with defaults and warnings are displayed
         to the user via Gradio warnings.
     """
-    # Capture original values before any in-place modifications for no-op detection.
-    original_values = settings_df.copy(deep=True)
     # The UI path builds a 6-column DataFrame (no Sample ID); backfill it here
     # so the rest of this function and downstream code can use SETTINGS_COLUMNS uniformly.
     if "Sample ID" not in settings_df.columns:
@@ -210,6 +208,9 @@ def validate_settings(
             settings_df.columns = [c for c in SETTINGS_COLUMNS if c != "Sample ID"]
         settings_df["Sample ID"] = settings_df["Slide"].apply(lambda p: Path(p).stem)
     settings_df = settings_df[SETTINGS_COLUMNS]
+    # Capture original values AFTER column normalization so the schema matches
+    # settings_df and the no-op comparison is valid.
+    original_values = settings_df.copy(deep=True)
     warnings = []
     tissue_sites = get_tissue_sites()
 

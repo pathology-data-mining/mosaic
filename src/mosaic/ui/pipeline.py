@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Optional
 
 import gradio as gr
-import numpy as np
 import pandas as pd
 from loguru import logger
 from mussel.utils.feature_extract import aggregate_sample_features
@@ -565,7 +564,7 @@ def analyze_slides(
                     all_aeon_results.append(aeon_results)
                 if paladin_results is not None:
                     paladin_results.insert(
-                        0, "Sample", pd.Series([sample_id] * len(paladin_results))
+                        0, "Slide", pd.Series([sample_id] * len(paladin_results))
                     )
                     all_paladin_results.append(paladin_results)
 
@@ -684,7 +683,7 @@ def analyze_slides(
                     all_aeon_results.append(aeon_results)
                 if paladin_results is not None:
                     paladin_results.insert(
-                        0, "Sample", pd.Series([sample_id] * len(paladin_results))
+                        0, "Slide", pd.Series([sample_id] * len(paladin_results))
                     )
                     all_paladin_results.append(paladin_results)
 
