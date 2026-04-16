@@ -379,11 +379,13 @@ class TestFullAnalysisBrowser:
         #                                                                     #
         #    Aeon table: one column per sample → 2 columns total             #
         #      (cancer-subtype label column + 1 confidence column).          #
-        #    Paladin table: "Slide" column should contain the shared ID only. #
+        #    The confidence column header should equal the shared sample ID. #
         # ------------------------------------------------------------------ #
-        # Aeon results table: header row should have exactly 2 cells
-        # (Cancer Subtype | <shared_sample_id>).
-        aeon_table = page.locator("table").first
+        # Locate the Aeon results table by its label (Gradio renders the
+        # label as a <span> above the component; grab the next table in DOM).
+        aeon_label = page.get_by_text("Aeon — Cancer Subtype Predictions").first
+        aeon_table = aeon_label.locator("xpath=following::table[1]")
+
         header_cells = aeon_table.locator("thead tr th")
         n_cols = header_cells.count()
         assert n_cols == 2, (
