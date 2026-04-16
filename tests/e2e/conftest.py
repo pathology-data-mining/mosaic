@@ -25,6 +25,12 @@ def pytest_addoption(parser):
         help="Reuse an already-running Mosaic server instead of starting one "
         "(e.g. http://tllihpcgpu4:7860). Skips model loading wait.",
     )
+    parser.addoption(
+        "--expected-cancer-type",
+        default=None,
+        help="Override expected top Aeon cancer type for the test slide "
+        "(default: inferred from TEST_SLIDE_EXPECTED_CANCER_TYPE in the test file).",
+    )
 
 
 def pytest_collection_modifyitems(config, items):

@@ -41,6 +41,10 @@ import pytest
 
 TEST_SLIDE = Path(__file__).parent.parent / "testdata" / "948176.svs"
 
+# Expected Aeon top-1 cancer type for TEST_SLIDE (948176.svs).
+# Determined from a validated run; override via --expected-cancer-type.
+TEST_SLIDE_EXPECTED_CANCER_TYPE = "LGSOC"
+
 # Seconds to wait for the Gradio dev server to become responsive.
 SERVER_STARTUP_TIMEOUT = 180
 
@@ -91,9 +95,88 @@ def _wait_for_server(url: str, timeout: int) -> None:
     )
 
 
+def _assert_aeon_results_sensible(aeon_table, expected_cancer_type: str | None = None):
+    """Assert that an Aeon results table contains sensible predictions.
+
+    Checks:
+    - At least 5 rows (model outputs 100+ cancer types)
+    - Every visible confidence value is a float in (0, 1]
+    - Top confidence is meaningfully non-zero (> 0.05)
+    - If *expected_cancer_type* is given, the top-1 prediction matches it
+    """
+    rows = aeon_table.locator("tbody tr")
+    assert rows.count() >= 5, f"Aeon table has only {rows.count()} rows; expected ≥ 5"
+
+    top_cancer_type = None
+    confidences = []
+    for i in range(rows.count()):
+        cells = rows.nth(i).locator("td")
+        subtype = cells.nth(0).inner_text().strip()
+        conf_text = cells.nth(1).inner_text().strip()
+        assert subtype, f"Aeon row {i} has empty cancer subtype"
+        try:
+            conf = float(conf_text)
+        except ValueError:
+            pytest.fail(f"Aeon row {i} confidence '{conf_text}' is not a number")
+        assert 0 < conf <= 1.0, f"Aeon confidence {conf} at row {i} out of range (0, 1]"
+        confidences.append(conf)
+        if top_cancer_type is None:
+            top_cancer_type = subtype
+
+    assert max(confidences) > 0.05, (
+        f"Top Aeon confidence {max(confidences):.4f} is suspiciously low; "
+        "the model may not have run correctly"
+    )
+
+    if expected_cancer_type:
+        assert top_cancer_type == expected_cancer_type, (
+            f"Top Aeon prediction is '{top_cancer_type}'; expected '{expected_cancer_type}'. "
+            "Model output has changed or the wrong slide was analysed."
+        )
+
+
+def _assert_paladin_results_sensible(page):
+    """Assert that the Paladin results table contains sensible biomarker probabilities.
+
+    Checks:
+    - At least 1 biomarker row
+    - All 'Prob. Present' values (column 3) are floats in [0, 1]
+    - At least one biomarker name is non-empty
+    """
+    paladin_label = page.get_by_text("Paladin — Biomarker Predictions").first
+    paladin_table = paladin_label.locator("xpath=following::table[1]")
+    rows = paladin_table.locator("tbody tr")
+    assert rows.count() > 0, "Paladin table has no biomarker rows"
+
+    for i in range(rows.count()):
+        cells = rows.nth(i).locator("td")
+        biomarker = cells.nth(2).inner_text().strip()
+        prob_text = cells.nth(3).inner_text().strip()
+        assert biomarker, f"Paladin row {i} has empty biomarker name"
+        try:
+            prob = float(prob_text)
+        except ValueError:
+            pytest.fail(f"Paladin row {i} prob '{prob_text}' is not a number")
+        assert (
+            0.0 <= prob <= 1.0
+        ), f"Paladin 'Prob. Present' {prob} at row {i} is out of range [0, 1]"
+
+
 # ---------------------------------------------------------------------------
 # Session-scoped fixture: one server for the whole test module
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def expected_cancer_type(request):
+    """Return the expected top-1 Aeon cancer type for the current test slide.
+
+    Defaults to TEST_SLIDE_EXPECTED_CANCER_TYPE (validated for 948176.svs).
+    Override with --expected-cancer-type on the command line when running
+    against a different slide.
+    """
+    override = request.config.getoption("--expected-cancer-type", default=None)
+    return override if override else TEST_SLIDE_EXPECTED_CANCER_TYPE
 
 
 @pytest.fixture(scope="module")
@@ -170,7 +253,9 @@ def gradio_server(request):
 class TestFullAnalysisBrowser:
     """Full-pipeline browser tests against a live Gradio server."""
 
-    def test_analysis_completes_without_browser_freeze(self, page, gradio_server):
+    def test_analysis_completes_without_browser_freeze(
+        self, page, gradio_server, expected_cancer_type
+    ):
         """Upload a real slide, run analysis, assert results and no Long Tasks.
 
         Regression guard:
@@ -237,17 +322,17 @@ class TestFullAnalysisBrowser:
         page.wait_for_timeout(3_000)
 
         # ------------------------------------------------------------------ #
-        # 5. Assert results are present.                                      #
+        # 5. Assert results are present and sensible.                         #
         # ------------------------------------------------------------------ #
-        # Aeon download button should also be visible.
         aeon_download = page.get_by_role("button", name="Download Aeon Results")
         assert (
             aeon_download.is_visible()
         ), "Aeon download button not visible after analysis"
 
-        # Aeon table should contain at least one data row.
-        aeon_rows = page.locator("table tbody tr")
-        assert aeon_rows.count() > 0, "Aeon table has no data rows"
+        aeon_label = page.get_by_text("Aeon — Cancer Subtype Predictions").first
+        aeon_table = aeon_label.locator("xpath=following::table[1]")
+        _assert_aeon_results_sensible(aeon_table, expected_cancer_type)
+        _assert_paladin_results_sensible(page)
 
         # ------------------------------------------------------------------ #
         # 6. Assert no catastrophic Long Tasks (the browser-freeze check).   #
@@ -309,7 +394,7 @@ class TestFullAnalysisBrowser:
             "Check whether large image blobs or tensors are being held in JS."
         )
 
-    def test_multi_slide_sample(self, page, gradio_server):
+    def test_multi_slide_sample(self, page, gradio_server, expected_cancer_type):
         """Upload the same slide twice with a shared Sample ID, verify results
         are aggregated into a single sample output.
 
@@ -399,6 +484,11 @@ class TestFullAnalysisBrowser:
         assert (
             sample_col_header == shared_sample_id
         ), f"Aeon column header is '{sample_col_header}'; expected '{shared_sample_id}'."
+
+        # Results should also be sensible: aggregated features should still
+        # produce a meaningful Aeon prediction and valid Paladin probabilities.
+        _assert_aeon_results_sensible(aeon_table, expected_cancer_type)
+        _assert_paladin_results_sensible(page)
 
         # No browser freeze.
         long_tasks: list[float] = page.evaluate("window.__mosaic_longTasks")
