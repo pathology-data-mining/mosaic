@@ -458,6 +458,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         visible=False,
                         interactive=True,
                         static_columns="Slide",
+                        elem_id="settings-table",
                     )
 
                 with gr.Row():
@@ -489,6 +490,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     column_widths=["60%", "40%"],
                     wrap=True,
                     visible=False,
+                    elem_id="aeon-results-table",
                 )
                 aeon_note = gr.Markdown(
                     "> **Confidence (0–1):** Higher = more likely the correct diagnosis.",
@@ -505,6 +507,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                     datatype=["str", "str", "str", "number"],
                     column_widths=["20%", "25%", "45%", "10%"],
                     wrap=True,
+                    elem_id="paladin-results-table",
                 )
                 paladin_note = gr.Markdown(
                     "> **Prob. Present (0–1):** Probability a genomic alteration is present. "
