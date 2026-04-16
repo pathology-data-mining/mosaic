@@ -9,9 +9,12 @@ description = "Mussel-Aeon-Paladin workflow for digital pathology"
 readme = "README.md"
 requires-python = ">=3.10,<3.12"
 dependencies = [
-  # Pinned to Gradio 5.x: HuggingFace Spaces production uses 5.50.0 (requirements.txt),
-  # which has no browser slowdown. Gradio 6.x causes Firefox "slowing down" warnings
-  # and 6.11+ has a Svelte 5 DataFrame infinite loop (github.com/gradio-app/gradio/issues/13198).
+  # Pinned to Gradio 5.x to avoid two upstream bugs in Gradio 6.x:
+  #   1. Firefox "This page is slowing down Firefox" warning with gr.Dataframe
+  #      (known open issue: https://github.com/gradio-app/gradio/issues/13270)
+  #   2. Svelte 5 effect_update_depth_exceeded infinite loop in gr.Dataframe
+  #      after 6.11.0 (https://github.com/gradio-app/gradio/issues/13198)
+  # HuggingFace Spaces production uses 5.50.0 (requirements.txt) with no issues.
   "gradio[oauth]>=5.49.0,<6.0.0",
   "lightning>=2.6.0",
   "loguru>=0.7.3",
