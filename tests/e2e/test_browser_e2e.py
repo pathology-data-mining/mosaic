@@ -8,7 +8,7 @@ Prerequisites:
     1. CUDA GPU available
     2. Model weights downloaded (or HF_TOKEN set for automatic download)
     3. playwright install chromium
-    4. tests/testdata/948176.svs present
+    4. tests/testdata/948176.svs present (multi-slide test uses it twice)
 
 Usage:
     pytest tests/e2e/ --e2e -v
@@ -308,3 +308,99 @@ class TestFullAnalysisBrowser:
             f"JS heap after analysis: {heap_mb:.0f} MB — exceeds 2 GB cap.\n"
             "Check whether large image blobs or tensors are being held in JS."
         )
+
+    def test_multi_slide_sample(self, page, gradio_server):
+        """Upload the same slide twice with a shared Sample ID, verify results
+        are aggregated into a single sample output.
+
+        This exercises the multi-slide-per-sample code path introduced in this
+        PR: features from both slides are aggregated before Aeon/Paladin
+        inference, so the result tables should contain exactly ONE sample column
+        (Aeon) / ONE sample block (Paladin) rather than two.
+        """
+        # ------------------------------------------------------------------ #
+        # 1. Navigate and arm Long Task monitor.                              #
+        # ------------------------------------------------------------------ #
+        page.goto(gradio_server)
+        page.wait_for_load_state("load")
+        page.get_by_role("button", name="Analyze").wait_for(
+            state="visible", timeout=30_000
+        )
+        page.evaluate(_LONG_TASK_MONITOR_JS)
+
+        # ------------------------------------------------------------------ #
+        # 2. Upload the same slide file twice (simulates a 2-slide sample).  #
+        # ------------------------------------------------------------------ #
+        slide_path = str(TEST_SLIDE.resolve())
+        file_input = page.locator('input[type="file"]').first
+        file_input.set_input_files([slide_path, slide_path])
+
+        # Wait for TWO rows in the settings table.
+        page.wait_for_selector("table", state="visible", timeout=30_000)
+        page.wait_for_function(
+            "document.querySelectorAll('table tbody tr').length >= 2",
+            timeout=30_000,
+        )
+
+        # ------------------------------------------------------------------ #
+        # 3. Set the same Sample ID for both rows via the editable table.    #
+        #                                                                     #
+        #    "Sample ID" is the last column. Click the cell in each row,      #
+        #    clear it, and type a shared ID.                                  #
+        # ------------------------------------------------------------------ #
+        shared_sample_id = "multi_slide_test"
+        rows = page.locator("table tbody tr")
+        for i in range(rows.count()):
+            # Last td in the row = Sample ID column.
+            cell = rows.nth(i).locator("td").last
+            cell.click()
+            page.keyboard.press("Control+a")
+            page.keyboard.type(shared_sample_id)
+            page.keyboard.press("Tab")  # commit the edit
+
+        # ------------------------------------------------------------------ #
+        # 4. Set Sex (required for inference).                               #
+        # ------------------------------------------------------------------ #
+        sex_input = page.get_by_label("Sex")
+        sex_input.click()
+        page.get_by_role("option", name="Female").click()
+
+        # ------------------------------------------------------------------ #
+        # 5. Run analysis.                                                    #
+        # ------------------------------------------------------------------ #
+        page.get_by_role("button", name="Analyze").click()
+
+        paladin_download = page.get_by_role("button", name="Download Paladin Results")
+        paladin_download.wait_for(state="visible", timeout=ANALYSIS_TIMEOUT * 1_000)
+        page.wait_for_timeout(3_000)
+
+        # ------------------------------------------------------------------ #
+        # 6. Assert results are for ONE sample, not two.                     #
+        #                                                                     #
+        #    Aeon table: one column per sample → 2 columns total             #
+        #      (cancer-subtype label column + 1 confidence column).          #
+        #    Paladin table: "Slide" column should contain the shared ID only. #
+        # ------------------------------------------------------------------ #
+        # Aeon results table: header row should have exactly 2 cells
+        # (Cancer Subtype | <shared_sample_id>).
+        aeon_table = page.locator("table").first
+        header_cells = aeon_table.locator("thead tr th")
+        n_cols = header_cells.count()
+        assert n_cols == 2, (
+            f"Aeon table has {n_cols} columns; expected 2 (label + 1 sample). "
+            "Multi-slide aggregation may not have fired — two separate samples "
+            "would produce 3 columns."
+        )
+
+        # The single confidence column header should equal the shared Sample ID.
+        sample_col_header = header_cells.nth(1).inner_text().strip()
+        assert (
+            sample_col_header == shared_sample_id
+        ), f"Aeon column header is '{sample_col_header}'; expected '{shared_sample_id}'."
+
+        # No browser freeze.
+        long_tasks: list[float] = page.evaluate("window.__mosaic_longTasks")
+        offenders = [d for d in long_tasks if d > LONG_TASK_THRESHOLD_MS]
+        assert (
+            not offenders
+        ), f"Browser freeze during multi-slide analysis: {offenders} ms"
