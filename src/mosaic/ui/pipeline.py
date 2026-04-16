@@ -815,7 +815,9 @@ def analyze_slides(
         combined_paladin_results["Prob. Present"] = pd.to_numeric(
             combined_paladin_results["Prob. Present"], errors="coerce"
         )
-        combined_paladin_results["Prob. Present"] = combined_paladin_results["Prob. Present"].round(3)
+        combined_paladin_results["Prob. Present"] = combined_paladin_results[
+            "Prob. Present"
+        ].round(3)
 
         paladin_output_path = user_dir / f"paladin_results-{timestamp}.csv"
         combined_paladin_results.to_csv(paladin_output_path, index=False)
@@ -846,7 +848,9 @@ def analyze_slides(
     gc.collect()
 
     yield (
-        gr.update(value=settings_input, visible=settings_visible),  # Hide if single slide
+        gr.update(
+            value=settings_input, visible=settings_visible
+        ),  # Hide if single slide
         final_slide_masks,
         combined_aeon_results,
         aeon_note_update,

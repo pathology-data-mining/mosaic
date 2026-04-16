@@ -187,7 +187,9 @@ class TestFullAnalysisBrowser:
         page.wait_for_load_state("load")
         # Gradio keeps a persistent SSE connection so "networkidle" never fires.
         # Wait for the Analyze button instead — it appears once the UI is ready.
-        page.get_by_role("button", name="Analyze").wait_for(state="visible", timeout=30_000)
+        page.get_by_role("button", name="Analyze").wait_for(
+            state="visible", timeout=30_000
+        )
         page.evaluate(_LONG_TASK_MONITOR_JS)
 
         # ------------------------------------------------------------------ #
@@ -201,7 +203,7 @@ class TestFullAnalysisBrowser:
 
         # Wait for the settings table to populate (Gradio yields it quickly).
         page.wait_for_selector(
-            'table',
+            "table",
             state="visible",
             timeout=30_000,
         )
@@ -239,7 +241,9 @@ class TestFullAnalysisBrowser:
         # ------------------------------------------------------------------ #
         # Aeon download button should also be visible.
         aeon_download = page.get_by_role("button", name="Download Aeon Results")
-        assert aeon_download.is_visible(), "Aeon download button not visible after analysis"
+        assert (
+            aeon_download.is_visible()
+        ), "Aeon download button not visible after analysis"
 
         # Aeon table should contain at least one data row.
         aeon_rows = page.locator("table tbody tr")
@@ -249,9 +253,9 @@ class TestFullAnalysisBrowser:
         # 6. Assert no catastrophic Long Tasks (the browser-freeze check).   #
         # ------------------------------------------------------------------ #
         long_tasks: list[float] = page.evaluate("window.__mosaic_longTasks")
-        assert isinstance(long_tasks, list), (
-            "Long Task monitor was not set up correctly"
-        )
+        assert isinstance(
+            long_tasks, list
+        ), "Long Task monitor was not set up correctly"
 
         offenders = [d for d in long_tasks if d > LONG_TASK_THRESHOLD_MS]
         assert not offenders, (
@@ -271,11 +275,13 @@ class TestFullAnalysisBrowser:
         """
         page.goto(gradio_server)
         page.wait_for_load_state("load")
-        page.get_by_role("button", name="Analyze").wait_for(state="visible", timeout=30_000)
+        page.get_by_role("button", name="Analyze").wait_for(
+            state="visible", timeout=30_000
+        )
 
         file_input = page.locator('input[type="file"]').first
         file_input.set_input_files(str(TEST_SLIDE.resolve()))
-        page.wait_for_selector('table', state="visible", timeout=30_000)
+        page.wait_for_selector("table", state="visible", timeout=30_000)
 
         sex_input = page.get_by_label("Sex")
         sex_input.click()

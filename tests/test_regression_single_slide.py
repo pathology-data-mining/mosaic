@@ -152,7 +152,11 @@ class TestSingleSlideRegression:
             mock_mask = Mock()
             mock_aeon = pd.DataFrame({"Cancer Subtype": ["LUAD"], "Confidence": [0.9]})
             mock_paladin = pd.DataFrame(
-                {"Cancer Subtype": ["LUAD"], "Biomarker": ["EGFR"], "Prob. Present": [0.8]}
+                {
+                    "Cancer Subtype": ["LUAD"],
+                    "Biomarker": ["EGFR"],
+                    "Prob. Present": [0.8],
+                }
             )
             mock_analyze_slide.return_value = (mock_mask, mock_aeon, mock_paladin)
 

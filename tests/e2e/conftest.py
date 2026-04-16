@@ -23,7 +23,7 @@ def pytest_addoption(parser):
         "--server-url",
         default=None,
         help="Reuse an already-running Mosaic server instead of starting one "
-             "(e.g. http://tllihpcgpu4:7860). Skips model loading wait.",
+        "(e.g. http://tllihpcgpu4:7860). Skips model loading wait.",
     )
 
 

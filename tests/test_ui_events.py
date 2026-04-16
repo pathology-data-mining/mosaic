@@ -326,7 +326,11 @@ class TestGeneratorBehavior:
                 {"Cancer Subtype": ["LUAD"], "Confidence": [0.95]}
             )
             paladin_results = pd.DataFrame(
-                {"Cancer Subtype": ["LUAD"], "Biomarker": ["TP53"], "Prob. Present": [0.85]}
+                {
+                    "Cancer Subtype": ["LUAD"],
+                    "Biomarker": ["TP53"],
+                    "Prob. Present": [0.85],
+                }
             )
             return (mask, aeon_results, paladin_results)
 
@@ -443,11 +447,15 @@ class TestGeneratorBehavior:
         # longer need datatype in every yield — the 6.10.0 component uses it from
         # initialization.  Just verify the final yield has the right structure.
         settings_update = final_yield[0]
-        assert isinstance(settings_update, dict), "settings final yield should be gr.update() dict"
+        assert isinstance(
+            settings_update, dict
+        ), "settings final yield should be gr.update() dict"
         assert "value" in settings_update, "settings final yield should contain value"
 
         paladin_update = final_yield[5]
-        assert isinstance(paladin_update, dict), "paladin final yield should be gr.update() dict"
+        assert isinstance(
+            paladin_update, dict
+        ), "paladin final yield should be gr.update() dict"
 
     @patch("mosaic.ui.pipeline.load_all_models")
     @patch("mosaic.ui.pipeline.analyze_slide")
