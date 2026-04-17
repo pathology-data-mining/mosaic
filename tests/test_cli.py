@@ -53,7 +53,7 @@ class TestArgumentParsing:
 
     @patch("mosaic.gradio_app.load_all_models")
     @patch("mosaic.gradio_app.load_settings")
-    @patch("mosaic.gradio_app.validate_settings")
+    @patch("mosaic.gradio_app.normalize_settings")
     @patch("mosaic.gradio_app.analyze_slide")
     @patch("mosaic.gradio_app.download_and_process_models")
     @patch("sys.argv", ["mosaic", "--slide-csv", "test.csv", "--output-dir", "out"])
@@ -61,13 +61,13 @@ class TestArgumentParsing:
         self,
         mock_download,
         mock_analyze,
-        mock_validate,
+        mock_normalize,
         mock_load_settings,
         mock_load_models,
     ):
         """Test --slide-csv routes to batch mode."""
         mock_download.return_value = ({"Unknown": "UNK"}, {"UNK": "Unknown"}, [])
-        mock_load_settings.return_value = pd.DataFrame(
+        settings_df = pd.DataFrame(
             {
                 "Slide": ["test.svs"],
                 "Site Type": ["Primary"],
@@ -78,7 +78,8 @@ class TestArgumentParsing:
                 "Segmentation Config": ["Biopsy"],
             }
         )
-        mock_validate.return_value = mock_load_settings.return_value
+        mock_load_settings.return_value = settings_df
+        mock_normalize.return_value = (settings_df, [])
         mock_analyze.return_value = (None, None, None)
 
         mock_cache = Mock()
@@ -166,14 +167,14 @@ class TestBatchCsvMode:
     @patch("mosaic.gradio_app.Path.mkdir")
     @patch("mosaic.gradio_app.load_all_models")
     @patch("mosaic.gradio_app.analyze_slide")
-    @patch("mosaic.gradio_app.validate_settings")
+    @patch("mosaic.gradio_app.normalize_settings")
     @patch("mosaic.gradio_app.load_settings")
     @patch("mosaic.gradio_app.download_and_process_models")
     def test_load_all_models_called_once(
         self,
         mock_download,
         mock_load_settings,
-        mock_validate,
+        mock_normalize,
         mock_analyze,
         mock_load_models,
         mock_mkdir,
@@ -186,7 +187,7 @@ class TestBatchCsvMode:
 
         mock_download.return_value = ({"Unknown": "UNK"}, {"UNK": "Unknown"}, [])
         mock_load_settings.return_value = sample_settings_df
-        mock_validate.return_value = sample_settings_df
+        mock_normalize.return_value = (sample_settings_df, [])
 
         # Return fresh DataFrames on each call to avoid mutation
         def mock_analyze_side_effect(*args, **kwargs):
@@ -234,14 +235,14 @@ class TestBatchCsvMode:
     @patch("mosaic.gradio_app.Path.mkdir")
     @patch("mosaic.gradio_app.load_all_models")
     @patch("mosaic.gradio_app.analyze_slide")
-    @patch("mosaic.gradio_app.validate_settings")
+    @patch("mosaic.gradio_app.normalize_settings")
     @patch("mosaic.gradio_app.load_settings")
     @patch("mosaic.gradio_app.download_and_process_models")
     def test_combined_outputs_generated(
         self,
         mock_download,
         mock_load_settings,
-        mock_validate,
+        mock_normalize,
         mock_analyze,
         mock_load_models,
         mock_mkdir,
@@ -258,7 +259,7 @@ class TestBatchCsvMode:
             ["LUAD"],
         )
         mock_load_settings.return_value = sample_settings_df
-        mock_validate.return_value = sample_settings_df
+        mock_normalize.return_value = (sample_settings_df, [])
 
         # Return fresh DataFrames on each call
         def mock_analyze_side_effect(*args, **kwargs):
@@ -303,34 +304,32 @@ class TestBatchCsvMode:
     @patch("mosaic.gradio_app.Path.mkdir")
     @patch("mosaic.gradio_app.load_all_models")
     @patch("mosaic.gradio_app.analyze_slide")
-    @patch("mosaic.gradio_app.validate_settings")
+    @patch("mosaic.gradio_app.normalize_settings")
     @patch("mosaic.gradio_app.load_settings")
     @patch("mosaic.gradio_app.download_and_process_models")
-    def test_batch_mode_handles_gr_skip_from_validate_settings(
+    def test_batch_mode_logs_normalize_settings_warnings(
         self,
         mock_download,
         mock_load_settings,
-        mock_validate,
+        mock_normalize,
         mock_analyze,
         mock_load_models,
         mock_mkdir,
         cli_args_batch,
         sample_settings_df,
     ):
-        """validate_settings returns gr.skip() (a plain dict) when the CSV is
-        already valid and unchanged.  The batch path must not crash with a
-        KeyError when that sentinel is returned instead of a DataFrame.
+        """normalize_settings warnings are logged (not silently dropped) in CLI mode.
 
-        Regression: previously ``settings_df = validate_settings(...)`` would
-        replace the DataFrame with the sentinel, causing
-        ``settings_df["Slide"].tolist()`` to raise ``KeyError: 'Slide'``.
+        The CLI path calls normalize_settings directly (no Gradio), so warnings
+        must be emitted via logger rather than gr.Warning.  This test verifies
+        the batch path processes all slides even when warnings are present.
         """
         from PIL import Image
 
         mock_download.return_value = ({"Unknown": "UNK"}, {"UNK": "Unknown"}, [])
         mock_load_settings.return_value = sample_settings_df
-        # Simulate gr.skip() — returned when settings are valid and unchanged.
-        mock_validate.return_value = {"__type__": "update"}
+        # normalize_settings always returns a (df, warnings) tuple — never a sentinel.
+        mock_normalize.return_value = (sample_settings_df, ["Some validation warning"])
 
         def mock_analyze_side_effect(*args, **kwargs):
             mask = Image.new("RGB", (100, 100), color="red")
@@ -359,8 +358,8 @@ class TestBatchCsvMode:
                 with patch("PIL.Image.Image.save"):
                     from mosaic.gradio_app import main
 
-                    # Must not raise KeyError: 'Slide'
+                    # Must not raise even when warnings are returned
                     main()
 
-        # Slides from the original load_settings DataFrame should still be processed.
+        # All slides from the normalized DataFrame should still be processed.
         assert mock_analyze.call_count == len(sample_settings_df)

@@ -14,16 +14,16 @@ from huggingface_hub import snapshot_download
 from loguru import logger
 
 from mosaic.data_directory import set_data_directory
-from mosaic.ui import launch_gradio
-from mosaic.ui.pipeline import set_cancer_subtype_maps
-from mosaic.ui.utils import (
-    get_oncotree_code_name,
-    load_settings,
-    validate_settings,
+from mosaic.settings import (
     IHC_SUBTYPES,
     SETTINGS_COLUMNS,
     SEX_OPTIONS,
+    load_settings,
+    normalize_settings,
 )
+from mosaic.ui import launch_gradio
+from mosaic.ui.pipeline import set_cancer_subtype_maps
+from mosaic.ui.utils import get_oncotree_code_name
 from mosaic.analysis import (
     analyze_slide,
     extract_slide_features,
@@ -323,14 +323,15 @@ def main():
             ],
             columns=SETTINGS_COLUMNS,
         )
-        validated = validate_settings(
+        normalized, warnings = normalize_settings(
             settings_df,
             cancer_subtype_name_map,
             cancer_subtypes,
             reversed_cancer_subtype_name_map,
         )
-        if isinstance(validated, pd.DataFrame):
-            settings_df = validated
+        for warning in warnings:
+            logger.warning(warning)
+        settings_df = normalized
         slide_mask, aeon_results, paladin_results = analyze_slide(
             args.slide_path,
             args.segmentation_config,
@@ -367,18 +368,15 @@ def main():
 
         # Load and validate settings
         settings_df = load_settings(args.slide_csv)
-        validated = validate_settings(
+        normalized, warnings = normalize_settings(
             settings_df,
             cancer_subtype_name_map,
             cancer_subtypes,
             reversed_cancer_subtype_name_map,
         )
-        # validate_settings returns gr.skip() (a Gradio sentinel) when the
-        # settings are already valid and no changes were made, to prevent a
-        # UI feedback loop.  In CLI mode there is no event loop, so keep the
-        # original DataFrame when the sentinel is returned.
-        if isinstance(validated, pd.DataFrame):
-            settings_df = validated
+        for warning in warnings:
+            logger.warning(warning)
+        settings_df = normalized
 
         slides = settings_df["Slide"].tolist()
 
