@@ -162,11 +162,12 @@ def start_background_model_download():
                 logger.info(
                     "Interpreter shutting down, stopping model download gracefully"
                 )
-                _core_models_complete = True  # Mark as complete to avoid blocking
             else:
                 logger.exception(f"❌ Error during background model download: {e}")
+            _core_models_complete = True  # Unblock pipeline even on error
         except Exception as e:
             logger.exception(f"❌ Error during background model download: {e}")
+            _core_models_complete = True  # Unblock pipeline even on error
 
     import threading
 

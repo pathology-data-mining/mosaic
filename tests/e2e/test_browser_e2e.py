@@ -247,6 +247,9 @@ def gradio_server(request):
     # Silence Gradio's verbose startup banner in test output.
     env["GRADIO_ANALYTICS_ENABLED"] = "False"
 
+    import collections
+    import threading
+
     proc = subprocess.Popen(
         [
             sys.executable,
@@ -262,13 +265,29 @@ def gradio_server(request):
         stderr=subprocess.STDOUT,
     )
 
+    # Drain stdout in a background thread to prevent the 64 KB Linux pipe buffer
+    # from filling up and blocking the server process.  Without this, after two
+    # full analyses the pipe is full and any subsequent log write by the server
+    # blocks indefinitely — making test_multi_slide_sample appear to hang.
+    _server_log: "collections.deque[str]" = collections.deque(maxlen=500)
+
+    def _drain(pipe, log: "collections.deque[str]") -> None:
+        try:
+            for raw in pipe:
+                log.append(raw.decode(errors="replace").rstrip())
+        except Exception:
+            pass
+
+    _drain_thread = threading.Thread(target=_drain, args=(proc.stdout, _server_log), daemon=True)
+    _drain_thread.start()
+
     try:
         _wait_for_server(url, SERVER_STARTUP_TIMEOUT)
     except TimeoutError as exc:
-        # Capture server output for diagnosis before giving up.
         proc.kill()
-        out, _ = proc.communicate()
-        pytest.fail(f"{exc}\n\nServer output:\n{out.decode(errors='replace')[-3000:]}")
+        proc.wait()
+        log_tail = "\n".join(_server_log)
+        pytest.fail(f"{exc}\n\nServer output (last {len(_server_log)} lines):\n{log_tail}")
 
     yield url
 
@@ -422,7 +441,7 @@ class TestFullAnalysisBrowser:
         )
 
     def test_multi_slide_sample(
-        self, request, page, gradio_server, expected_cancer_type
+        self, page, gradio_server, expected_cancer_type
     ):
         """Upload the same slide twice and verify both are analyzed successfully.
 
@@ -433,18 +452,7 @@ class TestFullAnalysisBrowser:
         Note: testing Sample ID aggregation (two slides merged into one sample)
         requires reliable cell editing which is blocked by Gradio's layout overlay
         in headless Chromium.  That is covered by unit tests of the pipeline layer.
-
-        This test is skipped when running against a pytest-spawned local server
-        (i.e. when ``--server-url`` is not provided) because uploading two copies
-        of the slide on a server that has already run two prior analyses can
-        exhaust GPU memory and cause a silent hang.  Pass
-        ``--server-url http://<host>:7860`` to run against a dedicated GPU server.
         """
-        if not request.config.getoption("--server-url", default=None):
-            pytest.skip(
-                "Multi-slide test requires a dedicated GPU server; "
-                "re-run with --server-url http://<host>:7860"
-            )
 
         # ------------------------------------------------------------------ #
         # 1. Navigate and arm Long Task monitor.                              #
