@@ -278,7 +278,9 @@ def gradio_server(request):
         except Exception:
             pass
 
-    _drain_thread = threading.Thread(target=_drain, args=(proc.stdout, _server_log), daemon=True)
+    _drain_thread = threading.Thread(
+        target=_drain, args=(proc.stdout, _server_log), daemon=True
+    )
     _drain_thread.start()
 
     try:
@@ -287,7 +289,9 @@ def gradio_server(request):
         proc.kill()
         proc.wait()
         log_tail = "\n".join(_server_log)
-        pytest.fail(f"{exc}\n\nServer output (last {len(_server_log)} lines):\n{log_tail}")
+        pytest.fail(
+            f"{exc}\n\nServer output (last {len(_server_log)} lines):\n{log_tail}"
+        )
 
     yield url
 
@@ -440,9 +444,7 @@ class TestFullAnalysisBrowser:
             "Check whether large image blobs or tensors are being held in JS."
         )
 
-    def test_multi_slide_sample(
-        self, page, gradio_server, expected_cancer_type
-    ):
+    def test_multi_slide_sample(self, page, gradio_server, expected_cancer_type):
         """Upload the same slide twice and verify both are analyzed successfully.
 
         This exercises the multi-slide code path introduced in this PR: multiple

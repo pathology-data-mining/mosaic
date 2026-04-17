@@ -323,12 +323,14 @@ def main():
             ],
             columns=SETTINGS_COLUMNS,
         )
-        settings_df = validate_settings(
+        validated = validate_settings(
             settings_df,
             cancer_subtype_name_map,
             cancer_subtypes,
             reversed_cancer_subtype_name_map,
         )
+        if isinstance(validated, pd.DataFrame):
+            settings_df = validated
         slide_mask, aeon_results, paladin_results = analyze_slide(
             args.slide_path,
             args.segmentation_config,
@@ -365,12 +367,18 @@ def main():
 
         # Load and validate settings
         settings_df = load_settings(args.slide_csv)
-        settings_df = validate_settings(
+        validated = validate_settings(
             settings_df,
             cancer_subtype_name_map,
             cancer_subtypes,
             reversed_cancer_subtype_name_map,
         )
+        # validate_settings returns gr.skip() (a Gradio sentinel) when the
+        # settings are already valid and no changes were made, to prevent a
+        # UI feedback loop.  In CLI mode there is no event loop, so keep the
+        # original DataFrame when the sentinel is returned.
+        if isinstance(validated, pd.DataFrame):
+            settings_df = validated
 
         slides = settings_df["Slide"].tolist()
 

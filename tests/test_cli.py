@@ -299,3 +299,68 @@ class TestBatchCsvMode:
         # Should have combined files
         combined_files = [c for c in csv_calls if "combined" in c]
         assert len(combined_files) >= 2  # combined_aeon and combined_paladin
+
+    @patch("mosaic.gradio_app.Path.mkdir")
+    @patch("mosaic.gradio_app.load_all_models")
+    @patch("mosaic.gradio_app.analyze_slide")
+    @patch("mosaic.gradio_app.validate_settings")
+    @patch("mosaic.gradio_app.load_settings")
+    @patch("mosaic.gradio_app.download_and_process_models")
+    def test_batch_mode_handles_gr_skip_from_validate_settings(
+        self,
+        mock_download,
+        mock_load_settings,
+        mock_validate,
+        mock_analyze,
+        mock_load_models,
+        mock_mkdir,
+        cli_args_batch,
+        sample_settings_df,
+    ):
+        """validate_settings returns gr.skip() (a plain dict) when the CSV is
+        already valid and unchanged.  The batch path must not crash with a
+        KeyError when that sentinel is returned instead of a DataFrame.
+
+        Regression: previously ``settings_df = validate_settings(...)`` would
+        replace the DataFrame with the sentinel, causing
+        ``settings_df["Slide"].tolist()`` to raise ``KeyError: 'Slide'``.
+        """
+        from PIL import Image
+
+        mock_download.return_value = ({"Unknown": "UNK"}, {"UNK": "Unknown"}, [])
+        mock_load_settings.return_value = sample_settings_df
+        # Simulate gr.skip() — returned when settings are valid and unchanged.
+        mock_validate.return_value = {"__type__": "update"}
+
+        def mock_analyze_side_effect(*args, **kwargs):
+            mask = Image.new("RGB", (100, 100), color="red")
+            aeon_results = pd.DataFrame(
+                {"Cancer Subtype": ["LUAD"], "Confidence": [0.95]}
+            )
+            paladin_results = pd.DataFrame(
+                {
+                    "Cancer Subtype": ["LUAD", "LUAD"],
+                    "Biomarker": ["TP53", "KRAS"],
+                    "Prob. Present": [0.85, 0.72],
+                }
+            )
+            return (mask, aeon_results, paladin_results)
+
+        mock_analyze.side_effect = mock_analyze_side_effect
+
+        mock_cache = Mock()
+        mock_cache.cleanup = Mock()
+        mock_load_models.return_value = mock_cache
+
+        with patch(
+            "mosaic.gradio_app.ArgumentParser.parse_args", return_value=cli_args_batch
+        ):
+            with patch("pandas.DataFrame.to_csv"):
+                with patch("PIL.Image.Image.save"):
+                    from mosaic.gradio_app import main
+
+                    # Must not raise KeyError: 'Slide'
+                    main()
+
+        # Slides from the original load_settings DataFrame should still be processed.
+        assert mock_analyze.call_count == len(sample_settings_df)
