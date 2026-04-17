@@ -421,7 +421,9 @@ class TestFullAnalysisBrowser:
             "Check whether large image blobs or tensors are being held in JS."
         )
 
-    def test_multi_slide_sample(self, page, gradio_server, expected_cancer_type):
+    def test_multi_slide_sample(
+        self, request, page, gradio_server, expected_cancer_type
+    ):
         """Upload the same slide twice and verify both are analyzed successfully.
 
         This exercises the multi-slide code path introduced in this PR: multiple
@@ -431,7 +433,19 @@ class TestFullAnalysisBrowser:
         Note: testing Sample ID aggregation (two slides merged into one sample)
         requires reliable cell editing which is blocked by Gradio's layout overlay
         in headless Chromium.  That is covered by unit tests of the pipeline layer.
+
+        This test is skipped when running against a pytest-spawned local server
+        (i.e. when ``--server-url`` is not provided) because uploading two copies
+        of the slide on a server that has already run two prior analyses can
+        exhaust GPU memory and cause a silent hang.  Pass
+        ``--server-url http://<host>:7860`` to run against a dedicated GPU server.
         """
+        if not request.config.getoption("--server-url", default=None):
+            pytest.skip(
+                "Multi-slide test requires a dedicated GPU server; "
+                "re-run with --server-url http://<host>:7860"
+            )
+
         # ------------------------------------------------------------------ #
         # 1. Navigate and arm Long Task monitor.                              #
         # ------------------------------------------------------------------ #
