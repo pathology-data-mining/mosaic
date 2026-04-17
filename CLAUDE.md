@@ -992,17 +992,20 @@ Ensures backward compatibility with original analyze_slide() function.
    git checkout -b feature/your-feature
    ```
 
-2. **Make changes and commit**
+2. **Make changes, format, then commit**
+
+   Always run `make format` and `make quality` **before** committing. The CI
+   `code-quality` workflow blocks the PR if black formatting is not applied.
    ```bash
+   make format          # auto-format (must run before every commit)
+   make quality         # format-check + lint (mirrors CI)
    git add .
    git commit -m "feat: add your feature"
    ```
 
-3. **Run quality checks**
+3. **Run tests**
    ```bash
-   make format
    make test-coverage
-   make lint
    ```
 
 4. **Push to remote**

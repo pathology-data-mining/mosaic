@@ -302,7 +302,7 @@ def run(
                     logger.error(
                         f"Unable to run model for {cancer_subtype} target {target}\n{exc}"
                     )
-    df = pd.DataFrame(results, columns=["Cancer Subtype", "Biomarker", "Score"])
+    df = pd.DataFrame(results, columns=["Cancer Subtype", "Biomarker", "Prob. Present"])
 
     return df
 
@@ -434,7 +434,7 @@ def run_with_models(
                         f"Unable to run model for {cancer_subtype} target {target}\n{exc}"
                     )
 
-    df = pd.DataFrame(results, columns=["Cancer Subtype", "Biomarker", "Score"])
+    df = pd.DataFrame(results, columns=["Cancer Subtype", "Biomarker", "Prob. Present"])
 
     return df
 

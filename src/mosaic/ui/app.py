@@ -458,6 +458,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         visible=False,
                         interactive=True,
                         static_columns="Slide",
+                        elem_id="settings-table",
                     )
 
                 with gr.Row():
@@ -484,23 +485,38 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 )
                 aeon_output_table = gr.Dataframe(
                     headers=["Cancer Subtype", "Slide Name"],
-                    label="Cancer Subtype Inference Confidence (Aeon model, scores 0-1)",
+                    label="Aeon — Cancer Subtype Predictions",
                     datatype=["str", "number"],
+                    column_widths=["60%", "40%"],
+                    wrap=True,
+                    visible=False,
+                    elem_id="aeon-results-table",
+                )
+                aeon_note = gr.Markdown(
+                    "> **Confidence (0–1):** Higher = more likely the correct diagnosis.",
                     visible=False,
                 )
                 aeon_download_button = gr.DownloadButton(
                     "Download Aeon Results as CSV",
-                    label="Download Results",
+                    label="Download Aeon Results",
                     visible=False,
                 )
                 paladin_output_table = gr.Dataframe(
-                    headers=["Slide", "Cancer Subtype", "Biomarker", "Score"],
-                    label="Biomarker Inference (Paladin model)",
+                    headers=["Slide", "Cancer Subtype", "Biomarker", "Prob. Present"],
+                    label="Paladin — Biomarker Predictions",
                     datatype=["str", "str", "str", "number"],
+                    column_widths=["20%", "25%", "45%", "10%"],
+                    wrap=True,
+                    elem_id="paladin-results-table",
+                )
+                paladin_note = gr.Markdown(
+                    "> **Prob. Present (0–1):** Probability a genomic alteration is present. "
+                    "Near 1.0 = likely present, near 0.0 = likely absent.",
+                    visible=False,
                 )
                 paladin_download_button = gr.DownloadButton(
                     "Download Paladin Results as CSV",
-                    label="Download Results",
+                    label="Download Paladin Results",
                     visible=False,
                 )
 
@@ -522,6 +538,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                         tissue_site,
                         cancer_subtype,
                         seg_config,
+                        Path(slide_name).stem,
                     ]
                 )
             df = pd.DataFrame(settings, columns=SETTINGS_COLUMNS)
@@ -1129,6 +1146,7 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                             tissue_site,
                             cancer_subtype,
                             seg_config,
+                            Path(tcga_slide_path).stem,
                         ]
                     ],
                     columns=SETTINGS_COLUMNS,
@@ -1175,12 +1193,14 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 settings_input,
                 slide_masks,
                 aeon_output_table,
+                aeon_note,
                 aeon_download_button,
                 paladin_output_table,
+                paladin_note,
                 paladin_download_button,
                 user_dir_state,
-                analyze_button,  # Add analyze_button as output to control its state
-                clear_button,  # Add clear_button as output to control its state
+                analyze_button,
+                clear_button,
             ],
             queue=True,
             show_progress_on=paladin_output_table,
@@ -1201,8 +1221,10 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 input_slides,
                 slide_masks,
                 paladin_output_table,
+                paladin_note,
                 paladin_download_button,
                 aeon_output_table,
+                aeon_note,
                 aeon_download_button,
                 settings_input,
                 settings_csv,
@@ -1218,8 +1240,10 @@ This tool is for research purposes only and not approved for clinical diagnosis.
                 None,  # input_slides
                 None,  # slide_masks
                 None,  # paladin_output_table
+                gr.Markdown(visible=False),  # paladin_note
                 gr.DownloadButton(visible=False),  # paladin_download_button
                 gr.Dataframe(visible=False),  # aeon_output_table
+                gr.Markdown(visible=False),  # aeon_note
                 gr.DownloadButton(visible=False),  # aeon_download_button
                 gr.Dataframe(visible=False),  # settings_input
                 gr.File(visible=False),  # settings_csv

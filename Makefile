@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-coverage test-verbose lint format clean docker-build docker-run docker-run-cli docker-push docker-clean run-ui run-cli
+.PHONY: help install install-dev test test-coverage test-verbose lint format clean docker-build docker-run docker-run-cli docker-push docker-clean run-ui run-cli test-e2e test-e2e-headed test-e2e-slurm test-e2e-slurm-firefox
 
 # Default target
 .DEFAULT_GOAL := help
@@ -50,6 +50,20 @@ test-verbose: ## Run tests with verbose output and show print statements
 
 test-specific: ## Run specific test (usage: make test-specific TEST=tests/test_cli.py::TestClass::test_method)
 	$(PYTEST) $(TEST) -v
+
+test-e2e: ## Run end-to-end browser tests (requires GPU, models, and test slide)
+	$(PYTEST) tests/e2e/ --e2e -v --no-cov
+
+test-e2e-headed: ## Run end-to-end browser tests with visible browser window
+	$(PYTEST) tests/e2e/ --e2e -v --no-cov --headed
+
+test-e2e-slurm: ## Submit end-to-end browser test to SLURM (A100 GPU node)
+	mkdir -p logs
+	sbatch scripts/submit_e2e_test.sh
+
+test-e2e-slurm-firefox: ## Submit end-to-end browser test to SLURM using Firefox
+	mkdir -p logs
+	sbatch --export=ALL,BROWSER=firefox scripts/submit_e2e_test.sh
 
 test-watch: ## Run tests in watch mode (requires pytest-watch)
 	$(PYTEST) tests/ --watch

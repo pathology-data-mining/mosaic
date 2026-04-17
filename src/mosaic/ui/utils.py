@@ -5,59 +5,48 @@ This module provides helper functions for:
 - User session directory management
 - Settings CSV loading and validation
 - Data export functionality
+
+Pure settings logic (constants, loading, normalization) lives in
+:mod:`mosaic.settings` with no Gradio dependency.  The symbols are
+re-exported here so existing imports continue to work unchanged.
 """
 
 import tempfile
 from pathlib import Path
-import pandas as pd
+
 import gradio as gr
 import requests
 
-from mosaic.data_directory import get_data_directory
+from mosaic.settings import (
+    IHC_SUBTYPES,
+    SETTINGS_COLUMNS,
+    SEX_OPTIONS,
+    get_tissue_sites,
+    load_settings,
+    normalize_settings,
+)
+
+# Re-export so callers that do ``from mosaic.ui.utils import SETTINGS_COLUMNS``
+# (and similar) continue to work without modification.
+__all__ = [
+    "IHC_SUBTYPES",
+    "SETTINGS_COLUMNS",
+    "SEX_OPTIONS",
+    "get_tissue_sites",
+    "load_settings",
+    "normalize_settings",
+    "validate_settings",
+    "get_oncotree_code_name",
+    "create_user_directory",
+    "export_to_csv",
+    "TEMP_USER_DATA_DIR",
+]
 
 # This path should be outside your project directory if running locally
 TEMP_USER_DATA_DIR = Path(tempfile.gettempdir()) / "mosaic_user_data"
 
-IHC_SUBTYPES = ["", "HR+/HER2+", "HR+/HER2-", "HR-/HER2+", "HR-/HER2-"]
-SEX_OPTIONS = ["Male", "Female"]
-
-SETTINGS_COLUMNS = [
-    "Slide",
-    "Site Type",
-    "Sex",
-    "Tissue Site",
-    "Cancer Subtype",
-    # "IHC Subtype",  # Not yet in use
-    "Segmentation Config",
-]
-
 oncotree_code_map = {}
 _oncotree_prefetched = False
-tissue_site_list = None
-
-
-def get_tissue_sites():
-    """Get the list of tissue sites from the tissue site map file.
-
-    Returns:
-        List of tissue site names. Returns ["Unknown"] if the CSV file is not found.
-    """
-    global tissue_site_list
-    if tissue_site_list is None:
-        try:
-            data_dir = get_data_directory()
-            tissue_site_map_path = data_dir / "tissue_site_original_to_idx.csv"
-            df = pd.read_csv(tissue_site_map_path)
-            # Get unique tissue sites and sort them
-            tissue_site_list = ["Unknown"] + sorted(df["TISSUE_SITE"].unique().tolist())
-        except FileNotFoundError:
-            gr.Warning(
-                f"Tissue site mapping file not found at {tissue_site_map_path}. "
-                "Only 'Unknown' option will be available for tissue site selection. "
-                "Please ensure the data files are downloaded from the model repository."
-            )
-            tissue_site_list = ["Unknown"]
-    return tissue_site_list
 
 
 def _prefetch_oncotree_codes():
@@ -134,121 +123,66 @@ def create_user_directory(state, request: gr.Request):
     return user_dir
 
 
-def load_settings(slide_csv_path):
-    """Load slide analysis settings from CSV file.
-
-    Loads the CSV and ensures all required columns are present, adding defaults
-    for optional columns if they are missing.
-
-    Args:
-        slide_csv_path: Path to the CSV file containing slide settings
-
-    Returns:
-        DataFrame with columns: Slide, Site Type, Cancer Subtype, IHC Subtype, Segmentation Config
-
-    Raises:
-        ValueError: If required columns are missing from the CSV
-    """
-    settings_df = pd.read_csv(slide_csv_path, na_filter=False)
-    if "Segmentation Config" not in settings_df.columns:
-        settings_df["Segmentation Config"] = "Biopsy"
-    if "Cancer Subtype" not in settings_df.columns:
-        settings_df["Cancer Subtype"] = "Unknown"
-    # if "IHC Subtype" not in settings_df.columns:  # Not yet in use
-    #     settings_df["IHC Subtype"] = ""
-    if "Tissue Site" not in settings_df.columns:
-        settings_df["Tissue Site"] = "Unknown"
-    if not set(SETTINGS_COLUMNS).issubset(settings_df.columns):
-        raise ValueError("Missing required column in CSV file")
-    settings_df = settings_df[SETTINGS_COLUMNS]
-    return settings_df
-
-
 def validate_settings(
     settings_df,
     cancer_subtype_name_map,
     cancer_subtypes,
     reversed_cancer_subtype_name_map,
 ):
-    """Validate and normalize slide analysis settings.
+    """Gradio-aware wrapper around :func:`mosaic.settings.normalize_settings`.
 
-    Checks each row for valid values and normalizes cancer subtype names.
-    Generates warnings for invalid entries and replaces them with defaults.
+    Handles the UI-specific case where the Gradio DataFrame component emits a
+    6-column DataFrame (without "Sample ID"), normalizes the schema, then
+    delegates to :func:`~mosaic.settings.normalize_settings` for the pure
+    validation logic.
+
+    Validation warnings are surfaced via ``gr.Warning``; returns ``gr.skip()``
+    when no changes were made to prevent the ``settings_input.change`` handler
+    from re-firing (which would cause a Svelte reactive cascade and browser hang).
 
     Args:
-        settings_df: DataFrame with slide settings to validate
-        cancer_subtype_name_map: Dict mapping subtype display names to codes
-        cancer_subtypes: List of valid cancer subtype codes
-        reversed_cancer_subtype_name_map: Dict mapping codes to display names
+        settings_df: DataFrame with slide settings to validate.
+        cancer_subtype_name_map: Dict mapping subtype display names to codes.
+        cancer_subtypes: List of valid cancer subtype codes.
+        reversed_cancer_subtype_name_map: Dict mapping codes to display names.
 
     Returns:
-        Validated DataFrame with normalized values
-
-    Note:
-        Invalid entries are replaced with defaults and warnings are displayed
-        to the user via Gradio warnings.
+        Validated ``pd.DataFrame`` with normalized values, or ``gr.skip()`` if
+        the settings were already valid and no changes were made.
     """
-    settings_df.columns = SETTINGS_COLUMNS
-    warnings = []
-    tissue_sites = get_tissue_sites()
+    # The UI path builds a 6-column DataFrame (no Sample ID); backfill it here
+    # so the rest of this function and downstream code use SETTINGS_COLUMNS uniformly.
+    if "Sample ID" not in settings_df.columns:
+        if len(settings_df.columns) == len(SETTINGS_COLUMNS) - 1:
+            # Rename positional columns, then add Sample ID
+            settings_df.columns = [c for c in SETTINGS_COLUMNS if c != "Sample ID"]
+        settings_df["Sample ID"] = settings_df["Slide"].apply(lambda p: Path(p).stem)
+    settings_df = settings_df[SETTINGS_COLUMNS]
 
-    for idx, row in settings_df.iterrows():
-        slide_name = row["Slide"]
-        subtype = row["Cancer Subtype"]
-        if subtype in cancer_subtypes:
-            settings_df.at[idx, "Cancer Subtype"] = reversed_cancer_subtype_name_map[
-                subtype
-            ]
-        if settings_df.at[idx, "Cancer Subtype"] not in cancer_subtype_name_map.keys():
-            warnings.append(
-                f"Slide {slide_name}: Unknown cancer subtype. Valid subtypes are: {', '.join(cancer_subtype_name_map.keys())}. "
-            )
-            settings_df.at[idx, "Cancer Subtype"] = "Unknown"
-        if row["Site Type"] not in ["Metastatic", "Primary"]:
-            warnings.append(
-                f"Slide {slide_name}: Unknown site type. Valid types are: Metastatic, Primary. "
-            )
-            settings_df.at[idx, "Site Type"] = "Primary"
-        # Only warn about invalid sex values that are not empty/None
-        # Empty/None will be validated at analysis time
-        # Convert old "Unknown" values to empty string silently
-        sex_value = row["Sex"]
-        if sex_value == "Unknown":
-            settings_df.at[idx, "Sex"] = ""
-        elif sex_value and sex_value not in SEX_OPTIONS:
-            warnings.append(
-                f"Slide {slide_name}: Invalid sex value '{sex_value}'. Valid options are: {', '.join(SEX_OPTIONS)}. "
-            )
-            settings_df.at[idx, "Sex"] = ""
-        if row["Tissue Site"] not in tissue_sites:
-            warnings.append(
-                f"Slide {slide_name}: Unknown tissue site. Valid tissue sites are: {', '.join(tissue_sites)}. "
-            )
-            settings_df.at[idx, "Tissue Site"] = "Unknown"
-        # IHC Subtype validation - not yet in use
-        # if (
-        #     "Breast" not in settings_df.at[idx, "Cancer Subtype"]
-        #     and row["IHC Subtype"] != ""
-        # ):
-        #     warnings.append(
-        #         f"Slide {slide_name}: IHC subtype should be empty for non-breast cancer subtypes. "
-        #     )
-        #     settings_df.at[idx, "IHC Subtype"] = ""
-        # if row["IHC Subtype"] not in IHC_SUBTYPES:
-        #     warnings.append(
-        #         f"Slide {slide_name}: Unknown IHC subtype. Valid subtypes are: {', '.join(IHC_SUBTYPES)}. "
-        #     )
-        #     settings_df.at[idx, "IHC Subtype"] = ""
-        if row["Segmentation Config"] not in ["Biopsy", "Resection", "TCGA"]:
-            warnings.append(
-                f"Slide {slide_name}: Unknown segmentation config. Valid configs are: Biopsy, Resection, TCGA. "
-            )
-            settings_df.at[idx, "Segmentation Config"] = "Biopsy"
+    # Capture original values *after* schema normalisation so the equality
+    # check below operates on the same column layout.
+    original_values = settings_df.copy(deep=True)
+
+    normalized, warnings = normalize_settings(
+        settings_df,
+        cancer_subtype_name_map,
+        cancer_subtypes,
+        reversed_cancer_subtype_name_map,
+    )
 
     if warnings:
         gr.Warning("\n".join(warnings))
 
-    return settings_df
+    # Return gr.skip() to prevent the settings_input.change feedback loop from
+    # re-firing (repeated gr.DataFrame re-renders → Svelte reactive cascade →
+    # ~420-second browser hang).
+    try:
+        if normalized.equals(original_values):
+            return gr.skip()
+    except Exception:
+        pass
+
+    return normalized
 
 
 def export_to_csv(df):

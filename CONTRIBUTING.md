@@ -171,18 +171,24 @@ def test_function_edge_case():
    ```
 
 2. **Make your changes**:
-   - Write clear, focused commits
    - Add tests for new functionality
    - Update documentation as needed
 
-3. **Ensure code quality**:
+3. **Ensure code quality before committing**:
    ```bash
-   black src/mosaic tests/
-   pylint src/mosaic
-   pytest tests/
+   make format          # auto-format with black (required before every commit)
+   make quality         # format-check + pylint (mirrors CI)
+   make test-fast       # quick validation
+   ```
+   The CI `code-quality` workflow blocks merges if black formatting is not applied.
+
+4. **Commit your changes**:
+   ```bash
+   git add .
+   git commit -m "feat: describe your change"
    ```
 
-4. **Push to your fork**:
+5. **Push to your fork**:
    ```bash
    git push origin feature/your-feature-name
    ```

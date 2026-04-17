@@ -9,7 +9,13 @@ description = "Mussel-Aeon-Paladin workflow for digital pathology"
 readme = "README.md"
 requires-python = ">=3.10,<3.12"
 dependencies = [
-  "gradio[oauth]>=6.0.0",
+  # Pinned to Gradio 5.x to avoid two upstream bugs in Gradio 6.x:
+  #   1. Firefox "This page is slowing down Firefox" warning with gr.Dataframe
+  #      (known open issue: https://github.com/gradio-app/gradio/issues/13270)
+  #   2. Svelte 5 effect_update_depth_exceeded infinite loop in gr.Dataframe
+  #      after 6.11.0 (https://github.com/gradio-app/gradio/issues/13198)
+  # HuggingFace Spaces production uses 5.50.0 (requirements.txt) with no issues.
+  "gradio[oauth]>=5.49.0,<6.0.0",
   "lightning>=2.6.0",
   "loguru>=0.7.3",
   "memory-profiler>=0.61.0",
@@ -31,10 +37,12 @@ mosaic = "mosaic.gradio_app:main"
 [dependency-groups]
 dev = [
   "black==25.12.0",
+  "playwright>=1.40.0",
   "pylint>=3.3.6",
   "pytest>=8.3.0",
   "pytest-cov>=6.0.0",
   "pytest-mock>=3.14.0",
+  "pytest-playwright>=0.5.0",
 ]
 
 [tool.pylint."messages control"]
@@ -65,7 +73,7 @@ override-dependencies = [
 # For Docker builds with token: GH_TOKEN=<token> uv pip install -e .
 # uv will fall back to git credential helper if ${GH_TOKEN} is empty
 paladin = { git = "https://github.com/kmboehm/paladin.git", rev = "main" }
-mussel = { git = "https://github.com/pathology-data-mining/Mussel.git", rev = "v1.3.1" }
+mussel = { git = "https://github.com/pathology-data-mining/Mussel.git", rev = "v1.3.2" }
 
 [tool.black]
 target-version = ["py310", "py311"]
@@ -77,3 +85,6 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=src/mosaic --cov-report=term-missing"
+markers = [
+    "e2e: end-to-end browser tests (require GPU, models, and --e2e flag)",
+]

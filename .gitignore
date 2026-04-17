@@ -36,3 +36,5 @@ Firefox*.json.gz
 # Additional output/temp directories
 output/
 md/
+models--*/
+aggregated_auroc*.csv

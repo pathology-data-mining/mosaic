@@ -11,6 +11,10 @@ class MockComponent(MagicMock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.visible = kwargs.get("visible", True)
+        # Capture datatype explicitly so tests can assert it is a list (not the
+        # Gradio default string "str").  Without an explicit list Gradio 6 creates
+        # a circular Svelte reactive dependency that freezes the browser for ~420 s.
+        self.datatype = kwargs.get("datatype", "str")
 
 
 # Create mock for gradio with Error class
@@ -32,6 +36,11 @@ class GradioMock(MagicMock):
     @staticmethod
     def DataFrame(*args, **kwargs):
         """Mock DataFrame that tracks visible attribute."""
+        return MockComponent(*args, **kwargs)
+
+    @staticmethod
+    def Dataframe(*args, **kwargs):
+        """Mock Dataframe (lowercase-f alias) that tracks visible attribute."""
         return MockComponent(*args, **kwargs)
 
     @staticmethod
@@ -78,6 +87,7 @@ sys.modules["mussel"] = MagicMock()
 sys.modules["mussel.models"] = MagicMock()
 sys.modules["mussel.utils"] = MagicMock()
 sys.modules["mussel.utils.segment"] = MagicMock()
+sys.modules["mussel.utils.feature_extract"] = MagicMock()
 sys.modules["mussel.cli"] = MagicMock()
 sys.modules["mussel.cli.tessellate"] = MagicMock()
 sys.modules["gradio"] = GradioMock()

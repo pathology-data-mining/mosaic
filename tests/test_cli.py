@@ -32,7 +32,7 @@ class TestArgumentParsing:
         assert mock_launch.called
         assert mock_launch.call_count == 1
 
-    @patch("mosaic.gradio_app.analyze_slide")
+    @patch("mosaic.cli.runners.analyze_slide")
     @patch("mosaic.gradio_app.download_and_process_models")
     @patch(
         "sys.argv",
@@ -45,29 +45,29 @@ class TestArgumentParsing:
 
         from mosaic.gradio_app import main
 
-        with patch("mosaic.gradio_app.Path.mkdir"):
+        with patch("mosaic.cli.runners.Path.mkdir"):
             main()
 
         # Should call analyze_slide
         assert mock_analyze.called
 
-    @patch("mosaic.gradio_app.load_all_models")
-    @patch("mosaic.gradio_app.load_settings")
-    @patch("mosaic.gradio_app.validate_settings")
-    @patch("mosaic.gradio_app.analyze_slide")
+    @patch("mosaic.cli.runners.load_all_models")
+    @patch("mosaic.cli.runners.load_settings")
+    @patch("mosaic.cli.runners.normalize_settings")
+    @patch("mosaic.cli.runners.analyze_slide")
     @patch("mosaic.gradio_app.download_and_process_models")
     @patch("sys.argv", ["mosaic", "--slide-csv", "test.csv", "--output-dir", "out"])
     def test_slide_csv_routes_to_batch_mode(
         self,
         mock_download,
         mock_analyze,
-        mock_validate,
+        mock_normalize,
         mock_load_settings,
         mock_load_models,
     ):
         """Test --slide-csv routes to batch mode."""
         mock_download.return_value = ({"Unknown": "UNK"}, {"UNK": "Unknown"}, [])
-        mock_load_settings.return_value = pd.DataFrame(
+        settings_df = pd.DataFrame(
             {
                 "Slide": ["test.svs"],
                 "Site Type": ["Primary"],
@@ -78,7 +78,8 @@ class TestArgumentParsing:
                 "Segmentation Config": ["Biopsy"],
             }
         )
-        mock_validate.return_value = mock_load_settings.return_value
+        mock_load_settings.return_value = settings_df
+        mock_normalize.return_value = (settings_df, [])
         mock_analyze.return_value = (None, None, None)
 
         mock_cache = Mock()
@@ -87,7 +88,7 @@ class TestArgumentParsing:
 
         from mosaic.gradio_app import main
 
-        with patch("mosaic.gradio_app.Path.mkdir"):
+        with patch("mosaic.cli.runners.Path.mkdir"):
             main()
 
         # Should call load_all_models (batch mode)
@@ -97,8 +98,8 @@ class TestArgumentParsing:
 class TestSingleSlideMode:
     """Test single-slide processing mode."""
 
-    @patch("mosaic.gradio_app.Path.mkdir")
-    @patch("mosaic.gradio_app.analyze_slide")
+    @patch("mosaic.cli.runners.Path.mkdir")
+    @patch("mosaic.cli.runners.analyze_slide")
     @patch("mosaic.gradio_app.download_and_process_models")
     def test_analyze_slide_called_with_correct_params(
         self, mock_download, mock_analyze, mock_mkdir, cli_args_single
@@ -125,8 +126,8 @@ class TestSingleSlideMode:
         assert call_args[2] == cli_args_single.site_type  # site_type
 
     @patch("PIL.Image.Image.save")
-    @patch("mosaic.gradio_app.Path.mkdir")
-    @patch("mosaic.gradio_app.analyze_slide")
+    @patch("mosaic.cli.runners.Path.mkdir")
+    @patch("mosaic.cli.runners.analyze_slide")
     @patch("mosaic.gradio_app.download_and_process_models")
     def test_output_files_saved_correctly(
         self,
@@ -163,17 +164,17 @@ class TestSingleSlideMode:
 class TestBatchCsvMode:
     """Test batch CSV processing mode."""
 
-    @patch("mosaic.gradio_app.Path.mkdir")
-    @patch("mosaic.gradio_app.load_all_models")
-    @patch("mosaic.gradio_app.analyze_slide")
-    @patch("mosaic.gradio_app.validate_settings")
-    @patch("mosaic.gradio_app.load_settings")
+    @patch("mosaic.cli.runners.Path.mkdir")
+    @patch("mosaic.cli.runners.load_all_models")
+    @patch("mosaic.cli.runners.analyze_slide")
+    @patch("mosaic.cli.runners.normalize_settings")
+    @patch("mosaic.cli.runners.load_settings")
     @patch("mosaic.gradio_app.download_and_process_models")
     def test_load_all_models_called_once(
         self,
         mock_download,
         mock_load_settings,
-        mock_validate,
+        mock_normalize,
         mock_analyze,
         mock_load_models,
         mock_mkdir,
@@ -186,7 +187,7 @@ class TestBatchCsvMode:
 
         mock_download.return_value = ({"Unknown": "UNK"}, {"UNK": "Unknown"}, [])
         mock_load_settings.return_value = sample_settings_df
-        mock_validate.return_value = sample_settings_df
+        mock_normalize.return_value = (sample_settings_df, [])
 
         # Return fresh DataFrames on each call to avoid mutation
         def mock_analyze_side_effect(*args, **kwargs):
@@ -198,7 +199,7 @@ class TestBatchCsvMode:
                 {
                     "Cancer Subtype": ["LUAD", "LUAD", "LUAD"],
                     "Biomarker": ["TP53", "KRAS", "EGFR"],
-                    "Score": [0.85, 0.72, 0.63],
+                    "Prob. Present": [0.85, 0.72, 0.63],
                 }
             )
             return (mask, aeon_results, paladin_results)
@@ -231,17 +232,17 @@ class TestBatchCsvMode:
         # cleanup should be called
         assert mock_cache.cleanup.called
 
-    @patch("mosaic.gradio_app.Path.mkdir")
-    @patch("mosaic.gradio_app.load_all_models")
-    @patch("mosaic.gradio_app.analyze_slide")
-    @patch("mosaic.gradio_app.validate_settings")
-    @patch("mosaic.gradio_app.load_settings")
+    @patch("mosaic.cli.runners.Path.mkdir")
+    @patch("mosaic.cli.runners.load_all_models")
+    @patch("mosaic.cli.runners.analyze_slide")
+    @patch("mosaic.cli.runners.normalize_settings")
+    @patch("mosaic.cli.runners.load_settings")
     @patch("mosaic.gradio_app.download_and_process_models")
     def test_combined_outputs_generated(
         self,
         mock_download,
         mock_load_settings,
-        mock_validate,
+        mock_normalize,
         mock_analyze,
         mock_load_models,
         mock_mkdir,
@@ -258,7 +259,7 @@ class TestBatchCsvMode:
             ["LUAD"],
         )
         mock_load_settings.return_value = sample_settings_df
-        mock_validate.return_value = sample_settings_df
+        mock_normalize.return_value = (sample_settings_df, [])
 
         # Return fresh DataFrames on each call
         def mock_analyze_side_effect(*args, **kwargs):
@@ -270,7 +271,7 @@ class TestBatchCsvMode:
                 {
                     "Cancer Subtype": ["LUAD", "LUAD", "LUAD"],
                     "Biomarker": ["TP53", "KRAS", "EGFR"],
-                    "Score": [0.85, 0.72, 0.63],
+                    "Prob. Present": [0.85, 0.72, 0.63],
                 }
             )
             return (mask, aeon_results, paladin_results)
@@ -299,3 +300,66 @@ class TestBatchCsvMode:
         # Should have combined files
         combined_files = [c for c in csv_calls if "combined" in c]
         assert len(combined_files) >= 2  # combined_aeon and combined_paladin
+
+    @patch("mosaic.cli.runners.Path.mkdir")
+    @patch("mosaic.cli.runners.load_all_models")
+    @patch("mosaic.cli.runners.analyze_slide")
+    @patch("mosaic.cli.runners.normalize_settings")
+    @patch("mosaic.cli.runners.load_settings")
+    @patch("mosaic.gradio_app.download_and_process_models")
+    def test_batch_mode_logs_normalize_settings_warnings(
+        self,
+        mock_download,
+        mock_load_settings,
+        mock_normalize,
+        mock_analyze,
+        mock_load_models,
+        mock_mkdir,
+        cli_args_batch,
+        sample_settings_df,
+    ):
+        """normalize_settings warnings are logged (not silently dropped) in CLI mode.
+
+        The CLI path calls normalize_settings directly (no Gradio), so warnings
+        must be emitted via logger rather than gr.Warning.  This test verifies
+        the batch path processes all slides even when warnings are present.
+        """
+        from PIL import Image
+
+        mock_download.return_value = ({"Unknown": "UNK"}, {"UNK": "Unknown"}, [])
+        mock_load_settings.return_value = sample_settings_df
+        # normalize_settings always returns a (df, warnings) tuple — never a sentinel.
+        mock_normalize.return_value = (sample_settings_df, ["Some validation warning"])
+
+        def mock_analyze_side_effect(*args, **kwargs):
+            mask = Image.new("RGB", (100, 100), color="red")
+            aeon_results = pd.DataFrame(
+                {"Cancer Subtype": ["LUAD"], "Confidence": [0.95]}
+            )
+            paladin_results = pd.DataFrame(
+                {
+                    "Cancer Subtype": ["LUAD", "LUAD"],
+                    "Biomarker": ["TP53", "KRAS"],
+                    "Prob. Present": [0.85, 0.72],
+                }
+            )
+            return (mask, aeon_results, paladin_results)
+
+        mock_analyze.side_effect = mock_analyze_side_effect
+
+        mock_cache = Mock()
+        mock_cache.cleanup = Mock()
+        mock_load_models.return_value = mock_cache
+
+        with patch(
+            "mosaic.gradio_app.ArgumentParser.parse_args", return_value=cli_args_batch
+        ):
+            with patch("pandas.DataFrame.to_csv"):
+                with patch("PIL.Image.Image.save"):
+                    from mosaic.gradio_app import main
+
+                    # Must not raise even when warnings are returned
+                    main()
+
+        # All slides from the normalized DataFrame should still be processed.
+        assert mock_analyze.call_count == len(sample_settings_df)

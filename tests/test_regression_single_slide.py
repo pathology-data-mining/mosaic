@@ -87,7 +87,7 @@ class TestSingleSlideRegression:
         mock_aeon.return_value = mock_aeon_results
 
         mock_paladin_results = pd.DataFrame(
-            {"Cancer Subtype": ["LUAD"], "Biomarker": ["EGFR"], "Score": [0.75]}
+            {"Cancer Subtype": ["LUAD"], "Biomarker": ["EGFR"], "Prob. Present": [0.75]}
         )
         mock_paladin.return_value = mock_paladin_results
 
@@ -152,7 +152,11 @@ class TestSingleSlideRegression:
             mock_mask = Mock()
             mock_aeon = pd.DataFrame({"Cancer Subtype": ["LUAD"], "Confidence": [0.9]})
             mock_paladin = pd.DataFrame(
-                {"Cancer Subtype": ["LUAD"], "Biomarker": ["EGFR"], "Score": [0.8]}
+                {
+                    "Cancer Subtype": ["LUAD"],
+                    "Biomarker": ["EGFR"],
+                    "Prob. Present": [0.8],
+                }
             )
             mock_analyze_slide.return_value = (mock_mask, mock_aeon, mock_paladin)
 
@@ -180,8 +184,10 @@ class TestSingleSlideRegression:
                     settings,
                     masks,
                     aeon,
+                    aeon_note,
                     aeon_btn,
                     paladin,
+                    paladin_note,
                     paladin_btn,
                     user_dir,
                     analyze_btn,
@@ -261,7 +267,7 @@ class TestSingleSlideRegression:
         mock_filter.return_value = (None, np.array([[0, 0]]))
         mock_optimus.return_value = np.random.rand(10, 1536)
         mock_paladin.return_value = pd.DataFrame(
-            {"Cancer Subtype": ["LUAD"], "Biomarker": ["EGFR"], "Score": [0.8]}
+            {"Cancer Subtype": ["LUAD"], "Biomarker": ["EGFR"], "Prob. Present": [0.8]}
         )
 
         with patch("mosaic.analysis._run_aeon_inference_with_model") as mock_aeon:
