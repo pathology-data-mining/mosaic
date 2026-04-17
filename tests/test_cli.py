@@ -32,7 +32,7 @@ class TestArgumentParsing:
         assert mock_launch.called
         assert mock_launch.call_count == 1
 
-    @patch("mosaic.gradio_app.analyze_slide")
+    @patch("mosaic.cli.runners.analyze_slide")
     @patch("mosaic.gradio_app.download_and_process_models")
     @patch(
         "sys.argv",
@@ -45,16 +45,16 @@ class TestArgumentParsing:
 
         from mosaic.gradio_app import main
 
-        with patch("mosaic.gradio_app.Path.mkdir"):
+        with patch("mosaic.cli.runners.Path.mkdir"):
             main()
 
         # Should call analyze_slide
         assert mock_analyze.called
 
-    @patch("mosaic.gradio_app.load_all_models")
-    @patch("mosaic.gradio_app.load_settings")
-    @patch("mosaic.gradio_app.normalize_settings")
-    @patch("mosaic.gradio_app.analyze_slide")
+    @patch("mosaic.cli.runners.load_all_models")
+    @patch("mosaic.cli.runners.load_settings")
+    @patch("mosaic.cli.runners.normalize_settings")
+    @patch("mosaic.cli.runners.analyze_slide")
     @patch("mosaic.gradio_app.download_and_process_models")
     @patch("sys.argv", ["mosaic", "--slide-csv", "test.csv", "--output-dir", "out"])
     def test_slide_csv_routes_to_batch_mode(
@@ -88,7 +88,7 @@ class TestArgumentParsing:
 
         from mosaic.gradio_app import main
 
-        with patch("mosaic.gradio_app.Path.mkdir"):
+        with patch("mosaic.cli.runners.Path.mkdir"):
             main()
 
         # Should call load_all_models (batch mode)
@@ -98,8 +98,8 @@ class TestArgumentParsing:
 class TestSingleSlideMode:
     """Test single-slide processing mode."""
 
-    @patch("mosaic.gradio_app.Path.mkdir")
-    @patch("mosaic.gradio_app.analyze_slide")
+    @patch("mosaic.cli.runners.Path.mkdir")
+    @patch("mosaic.cli.runners.analyze_slide")
     @patch("mosaic.gradio_app.download_and_process_models")
     def test_analyze_slide_called_with_correct_params(
         self, mock_download, mock_analyze, mock_mkdir, cli_args_single
@@ -126,8 +126,8 @@ class TestSingleSlideMode:
         assert call_args[2] == cli_args_single.site_type  # site_type
 
     @patch("PIL.Image.Image.save")
-    @patch("mosaic.gradio_app.Path.mkdir")
-    @patch("mosaic.gradio_app.analyze_slide")
+    @patch("mosaic.cli.runners.Path.mkdir")
+    @patch("mosaic.cli.runners.analyze_slide")
     @patch("mosaic.gradio_app.download_and_process_models")
     def test_output_files_saved_correctly(
         self,
@@ -164,11 +164,11 @@ class TestSingleSlideMode:
 class TestBatchCsvMode:
     """Test batch CSV processing mode."""
 
-    @patch("mosaic.gradio_app.Path.mkdir")
-    @patch("mosaic.gradio_app.load_all_models")
-    @patch("mosaic.gradio_app.analyze_slide")
-    @patch("mosaic.gradio_app.normalize_settings")
-    @patch("mosaic.gradio_app.load_settings")
+    @patch("mosaic.cli.runners.Path.mkdir")
+    @patch("mosaic.cli.runners.load_all_models")
+    @patch("mosaic.cli.runners.analyze_slide")
+    @patch("mosaic.cli.runners.normalize_settings")
+    @patch("mosaic.cli.runners.load_settings")
     @patch("mosaic.gradio_app.download_and_process_models")
     def test_load_all_models_called_once(
         self,
@@ -232,11 +232,11 @@ class TestBatchCsvMode:
         # cleanup should be called
         assert mock_cache.cleanup.called
 
-    @patch("mosaic.gradio_app.Path.mkdir")
-    @patch("mosaic.gradio_app.load_all_models")
-    @patch("mosaic.gradio_app.analyze_slide")
-    @patch("mosaic.gradio_app.normalize_settings")
-    @patch("mosaic.gradio_app.load_settings")
+    @patch("mosaic.cli.runners.Path.mkdir")
+    @patch("mosaic.cli.runners.load_all_models")
+    @patch("mosaic.cli.runners.analyze_slide")
+    @patch("mosaic.cli.runners.normalize_settings")
+    @patch("mosaic.cli.runners.load_settings")
     @patch("mosaic.gradio_app.download_and_process_models")
     def test_combined_outputs_generated(
         self,
@@ -301,11 +301,11 @@ class TestBatchCsvMode:
         combined_files = [c for c in csv_calls if "combined" in c]
         assert len(combined_files) >= 2  # combined_aeon and combined_paladin
 
-    @patch("mosaic.gradio_app.Path.mkdir")
-    @patch("mosaic.gradio_app.load_all_models")
-    @patch("mosaic.gradio_app.analyze_slide")
-    @patch("mosaic.gradio_app.normalize_settings")
-    @patch("mosaic.gradio_app.load_settings")
+    @patch("mosaic.cli.runners.Path.mkdir")
+    @patch("mosaic.cli.runners.load_all_models")
+    @patch("mosaic.cli.runners.analyze_slide")
+    @patch("mosaic.cli.runners.normalize_settings")
+    @patch("mosaic.cli.runners.load_settings")
     @patch("mosaic.gradio_app.download_and_process_models")
     def test_batch_mode_logs_normalize_settings_warnings(
         self,
