@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 import gradio as gr
+import pandas as pd
 import requests
 
 from mosaic.settings import (
@@ -37,6 +38,8 @@ __all__ = [
     "normalize_settings",
     "validate_settings",
     "get_oncotree_code_name",
+    "format_cancer_subtype",
+    "expand_cancer_subtype_column",
     "create_user_directory",
     "export_to_csv",
     "TEMP_USER_DATA_DIR",
@@ -102,6 +105,33 @@ def get_oncotree_code_name(code):
 
     oncotree_code_map[code] = code_name
     return code_name
+
+
+def format_cancer_subtype(code: str) -> str:
+    """Format an OncoTree code as a human-readable display string.
+
+    Args:
+        code: OncoTree cancer subtype code (e.g. ``"LUAD"``).
+
+    Returns:
+        Display string of the form ``"<Name> (<CODE>)"``
+        (e.g. ``"Lung Adenocarcinoma (LUAD)"``).
+    """
+    return f"{get_oncotree_code_name(code)} ({code})"
+
+
+def expand_cancer_subtype_column(df: pd.DataFrame) -> pd.DataFrame:
+    """Replace raw OncoTree codes in the ``"Cancer Subtype"`` column with display names.
+
+    Args:
+        df: DataFrame with a ``"Cancer Subtype"`` column of OncoTree codes.
+
+    Returns:
+        The same DataFrame (mutated in-place) with ``"Cancer Subtype"`` values
+        replaced by ``"<Name> (<CODE>)"`` display strings.
+    """
+    df["Cancer Subtype"] = df["Cancer Subtype"].map(format_cancer_subtype)
+    return df
 
 
 def create_user_directory(state, request: gr.Request):

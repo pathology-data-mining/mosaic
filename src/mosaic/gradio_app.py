@@ -19,10 +19,13 @@ from loguru import logger
 from mosaic.data_directory import get_data_directory
 from mosaic.cli.args import build_parser
 from mosaic.cli.runners import run_batch, run_single_slide
-from mosaic.model_download import download_and_process_models, download_metadata
+from mosaic.model_download import (
+    build_cancer_subtype_maps,
+    download_and_process_models,
+    download_metadata,
+)
 from mosaic.ui import launch_gradio
 from mosaic.ui.pipeline import set_cancer_subtype_maps
-from mosaic.ui.utils import get_oncotree_code_name
 
 
 def main():
@@ -63,16 +66,9 @@ def main():
         cache_dir = get_data_directory()
         model_map = pd.read_csv(Path(cache_dir) / "paladin_model_map.csv")
         cancer_subtypes = model_map["cancer_subtype"].unique().tolist()
-        cancer_subtype_name_map = {"Unknown": "UNK"}
-        cancer_subtype_name_map.update(
-            {
-                f"{get_oncotree_code_name(code)} ({code})": code
-                for code in cancer_subtypes
-            }
+        cancer_subtype_name_map, reversed_cancer_subtype_name_map = (
+            build_cancer_subtype_maps(cancer_subtypes)
         )
-        reversed_cancer_subtype_name_map = {
-            value: key for key, value in cancer_subtype_name_map.items()
-        }
         set_cancer_subtype_maps(
             cancer_subtype_name_map, reversed_cancer_subtype_name_map, cancer_subtypes
         )

@@ -11,7 +11,28 @@ from loguru import logger
 
 from mosaic.data_directory import set_data_directory
 from mosaic.ui.pipeline import set_cancer_subtype_maps
-from mosaic.ui.utils import get_oncotree_code_name
+from mosaic.ui.utils import format_cancer_subtype
+
+
+def build_cancer_subtype_maps(cancer_subtypes: list) -> tuple[dict, dict]:
+    """Build the cancer-subtype display-name ↔ OncoTree-code maps.
+
+    Args:
+        cancer_subtypes: List of OncoTree code strings (e.g. ``["LUAD", "BRCA"]``).
+
+    Returns:
+        ``(cancer_subtype_name_map, reversed_cancer_subtype_name_map)`` where
+        *cancer_subtype_name_map* maps display strings → codes and
+        *reversed_cancer_subtype_name_map* is the inverse.
+    """
+    cancer_subtype_name_map = {"Unknown": "UNK"}
+    cancer_subtype_name_map.update(
+        {format_cancer_subtype(code): code for code in cancer_subtypes}
+    )
+    reversed_cancer_subtype_name_map = {
+        value: key for key, value in cancer_subtype_name_map.items()
+    }
+    return cancer_subtype_name_map, reversed_cancer_subtype_name_map
 
 
 def download_metadata():
@@ -50,13 +71,9 @@ def download_metadata():
 
     model_map = pd.read_csv(Path(cache_dir) / "paladin_model_map.csv")
     cancer_subtypes = model_map["cancer_subtype"].unique().tolist()
-    cancer_subtype_name_map = {"Unknown": "UNK"}
-    cancer_subtype_name_map.update(
-        {f"{get_oncotree_code_name(code)} ({code})": code for code in cancer_subtypes}
+    cancer_subtype_name_map, reversed_cancer_subtype_name_map = (
+        build_cancer_subtype_maps(cancer_subtypes)
     )
-    reversed_cancer_subtype_name_map = {
-        value: key for key, value in cancer_subtype_name_map.items()
-    }
 
     # Set the global maps in the UI module
     set_cancer_subtype_maps(

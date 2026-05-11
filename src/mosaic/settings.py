@@ -22,15 +22,25 @@ from mosaic.data_directory import get_data_directory
 IHC_SUBTYPES = ["", "HR+/HER2+", "HR+/HER2-", "HR-/HER2+", "HR-/HER2-"]
 SEX_OPTIONS = ["Male", "Female"]
 
+# Column name constants — single source of truth for CSV column names.
+COL_SLIDE = "Slide"
+COL_SITE_TYPE = "Site Type"
+COL_SEX = "Sex"
+COL_TISSUE_SITE = "Tissue Site"
+COL_CANCER_SUBTYPE = "Cancer Subtype"
+COL_IHC_SUBTYPE = "IHC Subtype"
+COL_SEG_CONFIG = "Segmentation Config"
+COL_SAMPLE_ID = "Sample ID"
+
 SETTINGS_COLUMNS = [
-    "Slide",
-    "Site Type",
-    "Sex",
-    "Tissue Site",
-    "Cancer Subtype",
-    # "IHC Subtype",  # Not yet in use
-    "Segmentation Config",
-    "Sample ID",  # Optional: slides sharing a Sample ID are aggregated before inference
+    COL_SLIDE,
+    COL_SITE_TYPE,
+    COL_SEX,
+    COL_TISSUE_SITE,
+    COL_CANCER_SUBTYPE,
+    # COL_IHC_SUBTYPE,  # Not yet in use
+    COL_SEG_CONFIG,
+    COL_SAMPLE_ID,  # Optional: slides sharing a Sample ID are aggregated before inference
 ]
 
 # ---------------------------------------------------------------------------
@@ -92,21 +102,21 @@ def load_settings(slide_csv_path: str) -> pd.DataFrame:
         ValueError: If a required column is missing from the CSV.
     """
     settings_df = pd.read_csv(slide_csv_path, na_filter=False)
-    if "Segmentation Config" not in settings_df.columns:
-        settings_df["Segmentation Config"] = "Biopsy"
-    if "Cancer Subtype" not in settings_df.columns:
-        settings_df["Cancer Subtype"] = "Unknown"
-    if "Tissue Site" not in settings_df.columns:
-        settings_df["Tissue Site"] = "Unknown"
-    if "Sample ID" not in settings_df.columns:
-        settings_df["Sample ID"] = ""
-    required = [c for c in SETTINGS_COLUMNS if c != "Sample ID"]
+    if COL_SEG_CONFIG not in settings_df.columns:
+        settings_df[COL_SEG_CONFIG] = "Biopsy"
+    if COL_CANCER_SUBTYPE not in settings_df.columns:
+        settings_df[COL_CANCER_SUBTYPE] = "Unknown"
+    if COL_TISSUE_SITE not in settings_df.columns:
+        settings_df[COL_TISSUE_SITE] = "Unknown"
+    if COL_SAMPLE_ID not in settings_df.columns:
+        settings_df[COL_SAMPLE_ID] = ""
+    required = [c for c in SETTINGS_COLUMNS if c != COL_SAMPLE_ID]
     if not set(required).issubset(settings_df.columns):
         raise ValueError("Missing required column in CSV file")
     settings_df = settings_df[SETTINGS_COLUMNS]
     # Backfill blank Sample IDs with the slide filename stem
-    mask = settings_df["Sample ID"].astype(str).str.strip() == ""
-    settings_df.loc[mask, "Sample ID"] = settings_df.loc[mask, "Slide"].apply(
+    mask = settings_df[COL_SAMPLE_ID].astype(str).str.strip() == ""
+    settings_df.loc[mask, COL_SAMPLE_ID] = settings_df.loc[mask, COL_SLIDE].apply(
         lambda p: Path(p).stem
     )
     return settings_df
@@ -150,51 +160,71 @@ def normalize_settings(
     tissue_sites = get_tissue_sites()
 
     for idx, row in settings_df.iterrows():
-        slide_name = row["Slide"]
-        subtype = row["Cancer Subtype"]
+        slide_name = row[COL_SLIDE]
+        subtype = row[COL_CANCER_SUBTYPE]
 
         # Normalize raw oncotree code → display name
         if subtype in cancer_subtypes:
-            settings_df.at[idx, "Cancer Subtype"] = reversed_cancer_subtype_name_map[
+            settings_df.at[idx, COL_CANCER_SUBTYPE] = reversed_cancer_subtype_name_map[
                 subtype
             ]
-        if settings_df.at[idx, "Cancer Subtype"] not in cancer_subtype_name_map:
+        if settings_df.at[idx, COL_CANCER_SUBTYPE] not in cancer_subtype_name_map:
             warnings.append(
                 f"Slide {slide_name}: Unknown cancer subtype. "
                 f"Valid subtypes are: {', '.join(cancer_subtype_name_map)}. "
             )
-            settings_df.at[idx, "Cancer Subtype"] = "Unknown"
+            settings_df.at[idx, COL_CANCER_SUBTYPE] = "Unknown"
 
-        if row["Site Type"] not in ["Metastatic", "Primary"]:
+        if row[COL_SITE_TYPE] not in ["Metastatic", "Primary"]:
             warnings.append(
                 f"Slide {slide_name}: Unknown site type. "
                 "Valid types are: Metastatic, Primary. "
             )
-            settings_df.at[idx, "Site Type"] = "Primary"
+            settings_df.at[idx, COL_SITE_TYPE] = "Primary"
 
-        sex_value = row["Sex"]
+        sex_value = row[COL_SEX]
         if sex_value == "Unknown":
             # Silently convert legacy "Unknown" to the canonical empty string
-            settings_df.at[idx, "Sex"] = ""
+            settings_df.at[idx, COL_SEX] = ""
         elif sex_value and sex_value not in SEX_OPTIONS:
             warnings.append(
                 f"Slide {slide_name}: Invalid sex value '{sex_value}'. "
                 f"Valid options are: {', '.join(SEX_OPTIONS)}. "
             )
-            settings_df.at[idx, "Sex"] = ""
+            settings_df.at[idx, COL_SEX] = ""
 
-        if row["Tissue Site"] not in tissue_sites:
+        if row[COL_TISSUE_SITE] not in tissue_sites:
             warnings.append(
                 f"Slide {slide_name}: Unknown tissue site. "
                 f"Valid tissue sites are: {', '.join(tissue_sites)}. "
             )
-            settings_df.at[idx, "Tissue Site"] = "Unknown"
+            settings_df.at[idx, COL_TISSUE_SITE] = "Unknown"
 
-        if row["Segmentation Config"] not in ["Biopsy", "Resection", "TCGA"]:
+        if row[COL_SEG_CONFIG] not in ["Biopsy", "Resection", "TCGA"]:
             warnings.append(
                 f"Slide {slide_name}: Unknown segmentation config. "
                 "Valid configs are: Biopsy, Resection, TCGA. "
             )
-            settings_df.at[idx, "Segmentation Config"] = "Biopsy"
+            settings_df.at[idx, COL_SEG_CONFIG] = "Biopsy"
 
     return settings_df, warnings
+
+
+def row_to_slide_kwargs(row) -> dict:
+    """Extract the standard ``analyze_slide`` keyword arguments from a settings row.
+
+    Args:
+        row: A row from a settings DataFrame (e.g. ``settings_df.iloc[i]``).
+
+    Returns:
+        Dict ready for ``**``-unpacking into :func:`mosaic.analysis.analyze_slide`,
+        :func:`mosaic.tcga.compute_settings_hash`, and similar functions.
+    """
+    return {
+        "seg_config": row[COL_SEG_CONFIG],
+        "site_type": row[COL_SITE_TYPE],
+        "sex": row[COL_SEX],
+        "tissue_site": row.get(COL_TISSUE_SITE, "Unknown"),
+        "cancer_subtype": row[COL_CANCER_SUBTYPE],
+        "ihc_subtype": row.get(COL_IHC_SUBTYPE, ""),
+    }
