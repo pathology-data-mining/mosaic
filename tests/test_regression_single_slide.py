@@ -164,7 +164,7 @@ class TestSingleSlideRegression:
 
             # Call analyze_slides with a single slide (generator function)
             with patch(
-                "mosaic.ui.pipeline.get_oncotree_code_name",
+                "mosaic.ui.utils.get_oncotree_code_name",
                 return_value="Lung Adenocarcinoma",
             ):
                 gen = analyze_slides(

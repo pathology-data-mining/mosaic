@@ -5,14 +5,25 @@ from argparse import Namespace
 from pathlib import Path
 from loguru import logger
 
-from mosaic.settings import SETTINGS_COLUMNS, load_settings, normalize_settings
+from mosaic.settings import (
+    SETTINGS_COLUMNS,
+    COL_SLIDE,
+    COL_SAMPLE_ID,
+    COL_SEG_CONFIG,
+    load_settings,
+    normalize_settings,
+    row_to_slide_kwargs,
+)
 from mosaic.analysis import (
     analyze_slide,
     extract_slide_features,
     run_inference_from_features,
 )
 from mosaic.model_manager import load_all_models
-from mosaic.ui.utils import get_oncotree_code_name
+from mosaic.ui.utils import expand_cancer_subtype_column
+
+
+_NOOP_PROGRESS = lambda frac=None, desc=None: None  # noqa: E731
 
 
 def run_single_slide(
@@ -130,13 +141,13 @@ def run_batch(
         logger.warning(warning)
     settings_df = normalized
 
-    slides = settings_df["Slide"].tolist()
+    slides = settings_df[COL_SLIDE].tolist()
 
     # Build sample groups: sample_id → list of (idx, slide_path, row)
     sample_groups: dict = {}
     for idx in range(len(slides)):
         row = settings_df.iloc[idx]
-        sid = str(row.get("Sample ID", "")) or Path(str(row["Slide"])).stem
+        sid = str(row.get(COL_SAMPLE_ID, "")) or Path(str(row[COL_SLIDE])).stem
         sample_groups.setdefault(sid, []).append((idx, slides[idx], row))
 
     is_multi_slide = any(len(v) > 1 for v in sample_groups.values())
@@ -193,6 +204,23 @@ def run_batch(
 # ---------------------------------------------------------------------------
 
 
+def _accumulate_results(
+    sample_id,
+    aeon_results,
+    paladin_results,
+    all_aeon_results,
+    all_paladin_results,
+) -> None:
+    """Append non-None inference results to the shared batch accumulators."""
+    if aeon_results is not None:
+        all_aeon_results.append((sample_id, aeon_results))
+    if paladin_results is not None:
+        paladin_results.insert(
+            0, "Sample", pd.Series([sample_id] * len(paladin_results))
+        )
+        all_paladin_results.append(paladin_results)
+
+
 def _process_single_slide_in_batch(
     sample_id,
     slide_list,
@@ -204,34 +232,25 @@ def _process_single_slide_in_batch(
     all_paladin_results,
 ):
     idx, slide_path, row = slide_list[0]
-    slide_name = row["Slide"]
+    slide_name = row[COL_SLIDE]
     slide_stem = f"{idx:03d}_{Path(slide_name).stem}"
     logger.info(f"[{sample_id}] 1 slide: {slide_name}")
 
     slide_mask, aeon_results, paladin_results = analyze_slide(
         slide_path=slide_path,
-        seg_config=row["Segmentation Config"],
-        site_type=row["Site Type"],
-        sex=row["Sex"],
-        tissue_site=row.get("Tissue Site", "Unknown"),
-        cancer_subtype=row["Cancer Subtype"],
+        **row_to_slide_kwargs(row),
         cancer_subtype_name_map=cancer_subtype_name_map,
-        ihc_subtype=row.get("IHC Subtype", ""),
         num_workers=args.num_workers,
-        progress=lambda frac=None, desc=None: None,
+        progress=_NOOP_PROGRESS,
         request=None,
         model_cache=model_cache,
     )
 
     if slide_mask is not None:
         all_slide_masks.append((slide_mask, slide_stem))
-    if aeon_results is not None:
-        all_aeon_results.append((sample_id, aeon_results))
-    if paladin_results is not None:
-        paladin_results.insert(
-            0, "Sample", pd.Series([sample_id] * len(paladin_results))
-        )
-        all_paladin_results.append(paladin_results)
+    _accumulate_results(
+        sample_id, aeon_results, paladin_results, all_aeon_results, all_paladin_results
+    )
 
 
 def _process_multi_slide_sample(
@@ -254,15 +273,15 @@ def _process_multi_slide_sample(
     per_sample_ids = []
 
     for sub_idx, (idx, slide_path, row) in enumerate(slide_list):
-        slide_name = row["Slide"]
+        slide_name = row[COL_SLIDE]
         slide_stem = f"{idx:03d}_{Path(slide_name).stem}"
         logger.info(f"  [{sub_idx + 1}/{len(slide_list)}] Extracting: {slide_name}")
 
         slide_mask, features, coords = extract_slide_features(
             slide_path=slide_path,
-            seg_config=row["Segmentation Config"],
+            seg_config=row[COL_SEG_CONFIG],
             num_workers=args.num_workers,
-            progress=lambda frac=None, desc=None: None,
+            progress=_NOOP_PROGRESS,
             model_cache=model_cache,
         )
 
@@ -289,28 +308,25 @@ def _process_multi_slide_sample(
 
     # Run inference on aggregated features
     first_row = slide_list[0][2]
-    sex_idx_val = encode_sex(first_row["Sex"]) if first_row.get("Sex") else None
-    ts_idx_val = encode_tissue_site(first_row.get("Tissue Site", "Unknown"))
+    kw = row_to_slide_kwargs(first_row)
+    sex_idx_val = encode_sex(kw["sex"]) if kw["sex"] else None
+    ts_idx_val = encode_tissue_site(kw["tissue_site"])
 
     aeon_results, paladin_results = run_inference_from_features(
         features=agg_features,
-        site_type=first_row["Site Type"],
+        site_type=kw["site_type"],
         sex_idx=sex_idx_val,
         tissue_site_idx=ts_idx_val,
-        cancer_subtype=first_row["Cancer Subtype"],
+        cancer_subtype=kw["cancer_subtype"],
         cancer_subtype_name_map=cancer_subtype_name_map,
         model_cache=model_cache,
         num_workers=args.num_workers,
-        progress=lambda frac=None, desc=None: None,
+        progress=_NOOP_PROGRESS,
     )
 
-    if aeon_results is not None:
-        all_aeon_results.append((sample_id, aeon_results))
-    if paladin_results is not None:
-        paladin_results.insert(
-            0, "Sample", pd.Series([sample_id] * len(paladin_results))
-        )
-        all_paladin_results.append(paladin_results)
+    _accumulate_results(
+        sample_id, aeon_results, paladin_results, all_aeon_results, all_paladin_results
+    )
 
 
 def _save_batch_outputs(
@@ -338,22 +354,14 @@ def _save_batch_outputs(
     if all_aeon_results:
         combined_aeon_results = pd.concat([df for _, df in all_aeon_results], axis=1)
         combined_aeon_results.reset_index(inplace=True)
-        cancer_subtype_names = [
-            f"{get_oncotree_code_name(code)} ({code})"
-            for code in combined_aeon_results["Cancer Subtype"]
-        ]
-        combined_aeon_results["Cancer Subtype"] = cancer_subtype_names
+        expand_cancer_subtype_column(combined_aeon_results)
         combined_aeon_output_path = output_dir / "combined_aeon_results.csv"
         combined_aeon_results.to_csv(combined_aeon_output_path, index=False)
         logger.info(f"Saved combined Aeon results to {combined_aeon_output_path}")
 
     if all_paladin_results:
         combined_paladin_results = pd.concat(all_paladin_results, ignore_index=True)
-        cancer_subtype_names = [
-            f"{get_oncotree_code_name(code)} ({code})"
-            for code in combined_paladin_results["Cancer Subtype"]
-        ]
-        combined_paladin_results["Cancer Subtype"] = cancer_subtype_names
+        expand_cancer_subtype_column(combined_paladin_results)
         combined_paladin_output_path = output_dir / "combined_paladin_results.csv"
         combined_paladin_results.to_csv(combined_paladin_output_path, index=False)
         logger.info(f"Saved combined Paladin results to {combined_paladin_output_path}")

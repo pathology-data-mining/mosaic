@@ -26,11 +26,12 @@ from mussel.utils.feature_extract import aggregate_sample_features
 from PIL import Image
 
 from mosaic.ui.utils import (
-    get_oncotree_code_name,
+    expand_cancer_subtype_column,
     create_user_directory,
     validate_settings,
     SETTINGS_COLUMNS,
 )
+from mosaic.settings import row_to_slide_kwargs
 from mosaic.analysis import (
     analyze_slide,
     extract_slide_features,
@@ -421,12 +422,7 @@ def analyze_slides(
                         file_uuid = slide_path_obj.parent.name
                         is_tcga_slide = True
                         settings_hash = compute_settings_hash(
-                            seg_config=row["Segmentation Config"],
-                            site_type=row["Site Type"],
-                            sex=row["Sex"],
-                            tissue_site=row.get("Tissue Site", "Unknown"),
-                            cancer_subtype=row["Cancer Subtype"],
-                            ihc_subtype=row.get("IHC Subtype", ""),
+                            **row_to_slide_kwargs(row)
                         )
                         cached = load_analysis_results(file_uuid, settings_hash)
                         if cached is not None:
@@ -463,13 +459,8 @@ def analyze_slides(
 
                     slide_mask, aeon_results, paladin_results = analyze_slide(
                         slide_path=slide_path,
-                        seg_config=row["Segmentation Config"],
-                        site_type=row["Site Type"],
-                        sex=row["Sex"],
-                        tissue_site=row.get("Tissue Site", "Unknown"),
-                        cancer_subtype=row["Cancer Subtype"],
+                        **row_to_slide_kwargs(row),
                         cancer_subtype_name_map=cancer_subtype_name_map,
-                        ihc_subtype=row.get("IHC Subtype", ""),
                         num_workers=DEFAULT_NUM_WORKERS,
                         progress=sample_progress,
                         request=request,
@@ -483,12 +474,7 @@ def analyze_slides(
                     if is_tcga_slide and file_uuid is not None:
                         try:
                             settings_hash = compute_settings_hash(
-                                seg_config=row["Segmentation Config"],
-                                site_type=row["Site Type"],
-                                sex=row["Sex"],
-                                tissue_site=row.get("Tissue Site", "Unknown"),
-                                cancer_subtype=row["Cancer Subtype"],
-                                ihc_subtype=row.get("IHC Subtype", ""),
+                                **row_to_slide_kwargs(row)
                             )
                             save_analysis_results(
                                 file_uuid=file_uuid,
@@ -789,11 +775,7 @@ def analyze_slides(
         combined_aeon_results.reset_index(inplace=True)
 
         combined_aeon_results = combined_aeon_results.round(3)
-        cancer_subtype_names = [
-            f"{get_oncotree_code_name(code)} ({code})"
-            for code in combined_aeon_results["Cancer Subtype"]
-        ]
-        combined_aeon_results["Cancer Subtype"] = cancer_subtype_names
+        expand_cancer_subtype_column(combined_aeon_results)
 
         aeon_output_path = user_dir / f"aeon_results-{timestamp}.csv"
         combined_aeon_results.to_csv(aeon_output_path)
@@ -806,11 +788,7 @@ def analyze_slides(
     paladin_output = gr.DownloadButton(visible=False)
     paladin_note_update = gr.update(visible=False)
     if len(combined_paladin_results) > 0:
-        cancer_subtype_names = [
-            f"{get_oncotree_code_name(code)} ({code})"
-            for code in combined_paladin_results["Cancer Subtype"]
-        ]
-        combined_paladin_results["Cancer Subtype"] = cancer_subtype_names
+        expand_cancer_subtype_column(combined_paladin_results)
 
         # Ensure Score is numeric before rounding
         combined_paladin_results["Prob. Present"] = pd.to_numeric(
