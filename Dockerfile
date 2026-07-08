@@ -34,6 +34,9 @@ USER user
 ENV PATH="/app/.venv/bin:$PATH"
 # Set OMP_NUM_THREADS to a safe default to avoid libgomp errors
 ENV OMP_NUM_THREADS=4
+# Prevent PyTorch from calling getpass.getuser() which fails with arbitrary UIDs
+# (common in OpenShift/Kubernetes environments)
+ENV TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor_cache
 
 EXPOSE 7860
 
