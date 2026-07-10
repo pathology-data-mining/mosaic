@@ -103,7 +103,7 @@ run-batch: ## Run batch analysis from CSV (usage: make run-batch CSV=settings.cs
 # Docker run options matching the mosaic entrypoint script
 DOCKER_GPU_ARGS := --gpus=all --runtime=nvidia
 HF_CACHE_DIR := $(HOME)/.cache/huggingface
-DOCKER_COMMON_ARGS := --shm-size=3G --env HF_TOKEN="$(HF_TOKEN)" --env HF_HOME=/mnt/hf_cache --env TRANSFORMERS_CACHE=/mnt/hf_cache --user $(shell id -u):$(shell id -g) -v $(HF_CACHE_DIR):/mnt/hf_cache
+DOCKER_COMMON_ARGS := --shm-size=3G --env HF_TOKEN="$(HF_TOKEN)" --env HF_HOME=/mnt/hf_cache --env TRANSFORMERS_CACHE=/mnt/hf_cache --env TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor_cache --env USER=mosaic --env LOGNAME=mosaic --user $(shell id -u):$(shell id -g) -v $(HF_CACHE_DIR):/mnt/hf_cache
 
 docker-build: ## Build Docker image
 	@echo "Building Docker image..."
