@@ -16,6 +16,7 @@ from mosaic.ui.app import (
     analyze_slides,
     set_cancer_subtype_maps,
 )
+from mosaic.ui import pipeline
 from mosaic.ui.utils import SETTINGS_COLUMNS, validate_settings, load_settings
 
 
@@ -284,6 +285,34 @@ class TestGeneratorBehavior:
         # Tenth element should be clear button (re-enabled after processing)
         clear_button = final_yield[10]
         assert clear_button.get("interactive") is True
+
+
+class TestBackgroundModelDownload:
+    """Test background model download startup behavior."""
+
+    def test_start_background_model_download_uses_model_download_module(self, mocker):
+        """Background model download should call helpers from model_download."""
+        mock_core = mocker.patch("mosaic.model_download.download_core_models")
+        mock_paladin = mocker.patch("mosaic.model_download.download_paladin_models")
+
+        class ImmediateThread:
+            def __init__(self, target, daemon):
+                self.target = target
+                self.daemon = daemon
+
+            def start(self):
+                self.target()
+
+        mocker.patch("threading.Thread", ImmediateThread)
+        pipeline._model_download_thread = None
+        pipeline._core_models_complete = False
+        pipeline._shutdown_requested = False
+
+        pipeline.start_background_model_download()
+
+        mock_core.assert_called_once_with()
+        mock_paladin.assert_called_once_with()
+        assert pipeline._core_models_complete is True
 
     @patch("mosaic.ui.pipeline.load_all_models")
     @patch("mosaic.ui.pipeline.analyze_slide")

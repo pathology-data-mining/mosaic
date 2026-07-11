@@ -135,7 +135,10 @@ def start_background_model_download():
     def download_worker():
         global _core_models_complete, _shutdown_requested
         try:
-            from mosaic.gradio_app import download_core_models, download_paladin_models
+            from mosaic.model_download import (
+                download_core_models,
+                download_paladin_models,
+            )
 
             logger.info("🔄 Starting background download of all models...")
 
