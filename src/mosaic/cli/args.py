@@ -2,6 +2,8 @@
 
 from argparse import ArgumentParser
 
+from mosaic import __version__
+from mosaic.build_info import format_version_string
 from mosaic.settings import IHC_SUBTYPES, SEX_OPTIONS
 
 
@@ -95,5 +97,10 @@ def build_parser() -> ArgumentParser:
         "--download-models-only",
         action="store_true",
         help="Download models from HuggingFace and exit without running analysis",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=format_version_string(__version__),
     )
     return parser

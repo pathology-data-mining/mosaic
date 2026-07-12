@@ -1,5 +1,9 @@
 FROM python:3.10-slim AS env-builder
 
+ARG GIT_SHA=unknown
+ARG IMAGE_TAG=unset
+ARG IMAGE_DIGEST=unset
+
 # Install system build tools
 RUN apt-get update && apt-get install -y \
     build-essential \
@@ -11,6 +15,9 @@ RUN apt-get update && apt-get install -y \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
+
+LABEL org.opencontainers.image.revision=$GIT_SHA
+LABEL org.opencontainers.image.version=$IMAGE_TAG
 
 # Copy project files (including .git for faster HF Spaces dev)
 # CACHE BUST: 2026-02-10 - Added setuptools to fix pkg_resources import
@@ -32,6 +39,9 @@ RUN useradd -m -u 1000 user && \
 USER user
 
 ENV PATH="/app/.venv/bin:$PATH"
+ENV MOSAIC_BUILD_SHA=$GIT_SHA
+ENV MOSAIC_IMAGE_TAG=$IMAGE_TAG
+ENV MOSAIC_IMAGE_DIGEST=$IMAGE_DIGEST
 # Set OMP_NUM_THREADS to a safe default to avoid libgomp errors
 ENV OMP_NUM_THREADS=4
 # Prevent PyTorch from calling getpass.getuser() which fails with arbitrary UIDs

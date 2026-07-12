@@ -16,6 +16,8 @@ from argparse import ArgumentParser
 from pathlib import Path
 from loguru import logger
 
+from mosaic import __version__
+from mosaic.build_info import log_runtime_build_info
 from mosaic.data_directory import get_data_directory
 from mosaic.cli.args import build_parser
 from mosaic.cli.runners import run_batch, run_single_slide
@@ -27,6 +29,7 @@ from mosaic.ui.utils import get_oncotree_code_name
 
 def main():
     """Entry point: parse arguments and dispatch to the correct mode."""
+    log_runtime_build_info(__version__)
     parser = build_parser()
     args = parser.parse_args()
 

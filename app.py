@@ -29,10 +29,14 @@ except ImportError:
 # Add src directory to path for Hugging Face Spaces
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
+from mosaic import __version__
+from mosaic.build_info import log_runtime_build_info
 from mosaic.gradio_app import download_and_process_models
 from mosaic.ui import launch_gradio
 
 if __name__ == "__main__":
+    log_runtime_build_info(__version__)
+
     # Fix OMP_NUM_THREADS environment variable if invalid
     omp_threads = os.environ.get("OMP_NUM_THREADS", "")
     try:
