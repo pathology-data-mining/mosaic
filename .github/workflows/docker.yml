@@ -55,6 +55,12 @@ jobs:
         docker run --rm mosaic-smoke:ci mosaic --help
         docker run --rm mosaic-smoke:ci python -c "import mosaic; print(mosaic.__version__)"
 
+    - name: Cleanup smoke-test build artifacts
+      run: |
+        docker image rm -f mosaic-smoke:ci || true
+        docker builder prune --force || true
+        docker system df
+
     - name: Log in to GitHub Container Registry
       if: github.event_name != 'pull_request'
       uses: docker/login-action@v3
@@ -95,32 +101,40 @@ jobs:
           type=semver,pattern={{major}}.{{minor}}
           type=sha
 
-    - name: Build and push to GHCR
+    - name: Prepare publish metadata
+      id: publish-meta
+      if: github.event_name != 'pull_request'
+      env:
+        GHCR_TAGS: ${{ steps.meta-ghcr.outputs.tags }}
+        GHCR_LABELS: ${{ steps.meta-ghcr.outputs.labels }}
+        DOCKERHUB_TAGS: ${{ steps.meta-dockerhub.outputs.tags }}
+      run: |
+        {
+          echo 'tags<<EOF'
+          echo "$GHCR_TAGS"
+          if [ "${{ github.ref }}" = "refs/heads/main" ] && [ -n "$DOCKERHUB_TAGS" ]; then
+            echo "$DOCKERHUB_TAGS"
+          fi
+          echo 'EOF'
+        } >> "$GITHUB_OUTPUT"
+        {
+          echo 'labels<<EOF'
+          echo "$GHCR_LABELS"
+          echo 'EOF'
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Build and push image
       uses: docker/build-push-action@v5
       with:
         context: .
         push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta-ghcr.outputs.tags }}
-        labels: ${{ steps.meta-ghcr.outputs.labels }}
+        tags: ${{ github.event_name == 'pull_request' && steps.meta-ghcr.outputs.tags || steps.publish-meta.outputs.tags }}
+        labels: ${{ github.event_name == 'pull_request' && steps.meta-ghcr.outputs.labels || steps.publish-meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
         build-args: |
           GIT_SHA=${{ github.sha }}
           IMAGE_TAG=ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-          IMAGE_DIGEST=unavailable-at-build-time
-
-    - name: Build and push to Docker Hub
-      if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: true
-        tags: ${{ steps.meta-dockerhub.outputs.tags }}
-        labels: ${{ steps.meta-dockerhub.outputs.labels }}
-        cache-from: type=gha
-        build-args: |
-          GIT_SHA=${{ github.sha }}
-          IMAGE_TAG=docker.io/${{ env.DOCKER_HUB_IMAGE }}:latest
           IMAGE_DIGEST=unavailable-at-build-time
 
     - name: Docker Summary
