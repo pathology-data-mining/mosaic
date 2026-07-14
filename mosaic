@@ -20,9 +20,14 @@
 #       in the same directory tree. Slides can be in subdirectories relative to
 #       the CSV file location.
 
-DOCKER_IMAGE="mskmind/mosaic"
+DOCKER_IMAGE_REPO="${DOCKER_IMAGE_REPO:-mskmind/mosaic}"
+DOCKER_IMAGE_TAG="${DOCKER_IMAGE_TAG:-latest}"
+DOCKER_IMAGE="${DOCKER_IMAGE_REPO}:${DOCKER_IMAGE_TAG}"
 USE_GPU=true
-HF_CACHE_DIR="${HOME}/.cache/huggingface"
+HOST_HOME="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}"
+HF_HOME_HOST="${HF_HOME_HOST:-${HF_HOME:-${HF_CACHE_DIR:-${HOST_HOME}/.cache/huggingface}}}"
+MPL_CONFIG_DIR="${MPL_CONFIG_DIR:-${HOST_HOME}/.config/matplotlib}"
+CONTAINER_HOME="/tmp/mosaic-home"
 
 die() {
   echo "FATAL: $*" >&2
@@ -35,8 +40,15 @@ command -v docker >/dev/null 2>&1 || die "Docker is not installed or not in PATH
 # Check if HF_TOKEN is set
 [[ -n $HF_TOKEN ]] || die "HF_TOKEN environment variable is not set. Please set it to your HuggingFace access token."
 
-# Create HuggingFace cache directory if it doesn't exist
-mkdir -p "$HF_CACHE_DIR"
+# Create cache/config directories if they don't exist
+mkdir -p "$HF_HOME_HOST"
+mkdir -p "$MPL_CONFIG_DIR"
+
+# Always pull the requested tag so the wrapper does not keep using a stale local image.
+echo "Pulling Docker image: ${DOCKER_IMAGE}" >&2
+docker pull "${DOCKER_IMAGE}" >/dev/null || die "Failed to pull Docker image: ${DOCKER_IMAGE}"
+
+echo "Using Hugging Face cache: ${HF_HOME_HOST}" >&2
 
 # Check if nvidia runtime is available
 if docker info 2>/dev/null | grep -q nvidia; then
@@ -133,11 +145,16 @@ docker run --rm \
   --env HF_TOKEN="${HF_TOKEN}" \
   --env HF_HOME=/mnt/hf_cache \
   --env TRANSFORMERS_CACHE=/mnt/hf_cache \
+  --env HF_HUB_CACHE=/mnt/hf_cache/hub \
+  --env HF_DATASETS_CACHE=/mnt/hf_cache/datasets \
+  --env HOME="${CONTAINER_HOME}" \
+  --env MPLCONFIGDIR=/mnt/mpl_config \
   --env TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor_cache \
   --env USER=mosaic \
   --env LOGNAME=mosaic \
   --shm-size=3G \
-  -v "${HF_CACHE_DIR}:/mnt/hf_cache" \
+  -v "${HF_HOME_HOST}:/mnt/hf_cache" \
+  -v "${MPL_CONFIG_DIR}:/mnt/mpl_config" \
   "${VOLUME_ARGS[@]}" \
   --entrypoint mosaic \
   "$DOCKER_IMAGE" \
