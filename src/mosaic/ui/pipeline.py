@@ -289,13 +289,18 @@ def analyze_slides(
     if len(slides) != len(settings_input):
         raise gr.Error("Missing settings for uploaded slides")
 
-    # Check that all slides have sex specified
-    if (
-        settings_input["Sex"].isna().any()
-        or (settings_input["Sex"] == "").any()
-        or (settings_input["Sex"] == None).any()
-    ):
-        raise gr.Error("Sex is required for all slides. Please select Male or Female.")
+    # Sex is only required when Aeon must infer the cancer subtype.
+    aeon_rows = settings_input["Cancer Subtype"].isin(["Unknown", None, ""])
+    missing_sex = (
+        settings_input["Sex"].isna()
+        | (settings_input["Sex"] == "")
+        | (settings_input["Sex"] == None)
+    )
+    if (aeon_rows & missing_sex).any():
+        raise gr.Error(
+            "Sex is required for slides with Cancer Subtype set to Unknown "
+            "(Aeon inference required). Please select Male or Female."
+        )
 
     # Build sample groups: sample_id → list of (idx, slide_path, row)
     # When all sample IDs are unique, this is identical to the original per-slide loop.

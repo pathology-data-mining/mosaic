@@ -313,6 +313,15 @@ def _run_paladin_inference(
     return paladin_results
 
 
+def _validate_aeon_metadata(cancer_subtype, sex):
+    """Ensure required metadata is present when Aeon inference is needed."""
+    if cancer_subtype in ["Unknown", None, ""] and not sex:
+        raise ValueError(
+            "Sex is required when Cancer Subtype is Unknown "
+            "(Aeon inference required). Please provide Male or Female."
+        )
+
+
 @spaces.GPU(duration=60)
 def _run_inference_pipeline_free(
     coords,
@@ -914,6 +923,7 @@ def run_inference_from_features(
     """
     progress(0.7, desc="Running Aeon for cancer subtype inference")
     if cancer_subtype in ["Unknown", None, ""]:
+        _validate_aeon_metadata(cancer_subtype, sex_idx)
         aeon_results = _run_aeon_inference_with_model(
             features,
             model_cache.aeon_model,
@@ -1060,8 +1070,10 @@ def analyze_slide(
     # Convert sex and tissue_site to indices for Aeon model
     from mosaic.inference.data import encode_sex, encode_tissue_site
 
+    _validate_aeon_metadata(cancer_subtype, sex)
+
     sex_idx = None
-    if sex is not None:
+    if sex not in [None, ""]:
         sex_idx = encode_sex(sex)
 
     tissue_site_idx = None

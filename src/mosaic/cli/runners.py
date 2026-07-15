@@ -15,6 +15,18 @@ from mosaic.model_manager import load_all_models
 from mosaic.ui.utils import get_oncotree_code_name
 
 
+def _cancer_subtype_requires_aeon(cancer_subtype: str | None) -> bool:
+    return cancer_subtype in ["Unknown", None, ""]
+
+
+def _validate_sex_for_aeon(cancer_subtype: str | None, sex: str | None, scope: str) -> None:
+    if _cancer_subtype_requires_aeon(cancer_subtype) and not sex:
+        raise ValueError(
+            f"Sex is required for {scope} when Cancer Subtype is Unknown "
+            "(Aeon inference required). Please provide Male or Female."
+        )
+
+
 def run_single_slide(
     args: Namespace,
     cancer_subtype_name_map: dict,
@@ -30,14 +42,14 @@ def run_single_slide(
         reversed_cancer_subtype_name_map: Mapping from OncoTree code to display name.
 
     Raises:
-        ValueError: If --output-dir or --sex are not provided.
+        ValueError: If --output-dir is not provided, or if Aeon inference is
+            required but ``--sex`` is missing.
     """
     if not args.output_dir:
         raise ValueError("Please provide --output-dir to save results")
-    if not args.sex:
-        raise ValueError(
-            "Please provide --sex (Male or Female) for single slide processing"
-        )
+    _validate_sex_for_aeon(
+        args.cancer_subtype, args.sex, "single-slide processing"
+    )
 
     settings_df = pd.DataFrame(
         [
@@ -62,13 +74,15 @@ def run_single_slide(
     for warning in warnings:
         logger.warning(warning)
 
+    normalized_row = normalized.iloc[0]
+
     slide_mask, aeon_results, paladin_results = analyze_slide(
         args.slide_path,
         args.segmentation_config,
         args.site_type,
-        args.sex,
-        args.tissue_site,
-        args.cancer_subtype,
+        normalized_row["Sex"],
+        normalized_row["Tissue Site"],
+        normalized_row["Cancer Subtype"],
         cancer_subtype_name_map,
         args.ihc_subtype,
         num_workers=args.num_workers,
@@ -129,6 +143,11 @@ def run_batch(
     for warning in warnings:
         logger.warning(warning)
     settings_df = normalized
+
+    for _, row in settings_df.iterrows():
+        _validate_sex_for_aeon(
+            row["Cancer Subtype"], row.get("Sex"), f"slide '{row['Slide']}'"
+        )
 
     slides = settings_df["Slide"].tolist()
 

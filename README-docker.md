@@ -83,38 +83,40 @@ or
 
 ### Command Line Interface (CLI)
 
-For seamless CLI usage via Docker, use the provided `mosaic` wrapper script. This script
-automatically handles volume mounting and passes all arguments to the containerized
+If you need to run Mosaic through Docker, use the provided `mosaic-docker` wrapper script.
+It automatically handles volume mounting and passes all arguments to the containerized
 Mosaic CLI.
+
+If Docker is not required, prefer the native `mosaic` command documented in [README.md](README.md).
 
 #### Basic Usage
 
 ```bash
 # Show help
-./mosaic --help
+./mosaic-docker --help
 
 # Process a single slide
-./mosaic --slide-path /path/to/slide.svs \
-         --output-dir /path/to/output \
-         --site-type Primary \
-         --cancer-subtype Unknown \
-         --segmentation-config Resection
+./mosaic-docker --slide-path /path/to/slide.svs \
+                --output-dir /path/to/output \
+                --site-type Primary \
+                --cancer-subtype Unknown \
+                --segmentation-config Resection
 
 # Process multiple slides from a CSV file
-./mosaic --slide-csv /path/to/slides.csv \
-         --output-dir /path/to/output
+./mosaic-docker --slide-csv /path/to/slides.csv \
+                --output-dir /path/to/output
 
 # Process a breast cancer slide with IHC subtype
-./mosaic --slide-path /path/to/breast_slide.svs \
-         --output-dir /path/to/output \
-         --site-type Primary \
-         --cancer-subtype BRCA \
-         --ihc-subtype "HR+/HER2-"
+./mosaic-docker --slide-path /path/to/breast_slide.svs \
+                --output-dir /path/to/output \
+                --site-type Primary \
+                --cancer-subtype BRCA \
+                --ihc-subtype "HR+/HER2-"
 ```
 
 #### How it works
 
-The `mosaic` wrapper script:
+The `mosaic-docker` wrapper script:
 - Automatically mounts input slide directories and output directories into the container
 - Passes through all Mosaic CLI arguments
 - Handles the HF_TOKEN environment variable
@@ -136,4 +138,3 @@ the CSV to use relative paths or run the docker command directly with additional
 - After you start up the application, it will download the necessary models from
 HuggingFace. This may take some time (up to a few minutes) depending on your
 internet connection.
-

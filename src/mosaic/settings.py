@@ -89,20 +89,26 @@ def load_settings(slide_csv_path: str) -> pd.DataFrame:
         ``pd.DataFrame`` with exactly the columns in :data:`SETTINGS_COLUMNS`.
 
     Raises:
-        ValueError: If a required column is missing from the CSV.
+        ValueError: If one or more required columns are missing from the CSV.
     """
     settings_df = pd.read_csv(slide_csv_path, na_filter=False)
     if "Segmentation Config" not in settings_df.columns:
         settings_df["Segmentation Config"] = "Biopsy"
     if "Cancer Subtype" not in settings_df.columns:
         settings_df["Cancer Subtype"] = "Unknown"
+    if "Sex" not in settings_df.columns:
+        settings_df["Sex"] = ""
     if "Tissue Site" not in settings_df.columns:
         settings_df["Tissue Site"] = "Unknown"
     if "Sample ID" not in settings_df.columns:
         settings_df["Sample ID"] = ""
     required = [c for c in SETTINGS_COLUMNS if c != "Sample ID"]
-    if not set(required).issubset(settings_df.columns):
-        raise ValueError("Missing required column in CSV file")
+    missing_columns = [c for c in required if c not in settings_df.columns]
+    if missing_columns:
+        raise ValueError(
+            "Missing required column(s) in CSV file: "
+            + ", ".join(missing_columns)
+        )
     settings_df = settings_df[SETTINGS_COLUMNS]
     # Backfill blank Sample IDs with the slide filename stem
     mask = settings_df["Sample ID"].astype(str).str.strip() == ""

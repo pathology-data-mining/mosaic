@@ -272,7 +272,7 @@ def cli_args_single():
         slide_csv=None,
         output_dir="test_output",
         site_type="Primary",
-        sex="Unknown",
+        sex="Male",
         tissue_site="Unknown",
         cancer_subtype="Unknown",
         ihc_subtype="",

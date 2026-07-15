@@ -92,9 +92,9 @@ class TestLoadSettings:
     def temp_minimal_settings_csv(self):
         """Create a temporary settings CSV file with minimal columns."""
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
-            f.write("Slide,Site Type,Sex\n")
-            f.write("slide1.svs,Primary,Male\n")
-            f.write("slide2.svs,Metastatic,Female\n")
+            f.write("Slide,Site Type\n")
+            f.write("slide1.svs,Primary\n")
+            f.write("slide2.svs,Metastatic\n")
             temp_path = f.name
         yield temp_path
         Path(temp_path).unlink()
@@ -115,9 +115,11 @@ class TestLoadSettings:
         df = load_settings(temp_minimal_settings_csv)
         assert "Segmentation Config" in df.columns
         assert "Cancer Subtype" in df.columns
+        assert "Sex" in df.columns
         # assert "IHC Subtype" in df.columns  # Not yet in use
         assert df["Segmentation Config"].iloc[0] == "Biopsy"
         assert df["Cancer Subtype"].iloc[0] == "Unknown"
+        assert df["Sex"].iloc[0] == ""
         # assert df["IHC Subtype"].iloc[0] == ""  # Not yet in use
 
     def test_load_settings_preserves_data(self, temp_settings_csv):
@@ -135,7 +137,9 @@ class TestLoadSettings:
             temp_path = f.name
 
         try:
-            with pytest.raises(ValueError, match="Missing required column"):
+            with pytest.raises(
+                ValueError, match=r"Missing required column\(s\) in CSV file: .*Slide"
+            ):
                 load_settings(temp_path)
         finally:
             Path(temp_path).unlink()

@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # Mosaic CLI wrapper script for Docker
-# This script enables seamless usage of the Mosaic CLI through Docker
+# Use this only when you specifically want to run Mosaic via Docker.
 #
-# Usage: ./mosaic [mosaic-arguments]
+# Usage: ./mosaic-docker [mosaic-arguments]
 #
 # Examples:
-#   ./mosaic --help
-#   ./mosaic --slide-path /path/to/slide.svs --output-dir /path/to/output
-#   ./mosaic --slide-csv /path/to/slides.csv --output-dir /path/to/output
+#   ./mosaic-docker --help
+#   ./mosaic-docker --slide-path /path/to/slide.svs --output-dir /path/to/output
+#   ./mosaic-docker --slide-csv /path/to/slides.csv --output-dir /path/to/output
 #
 # Requirements:
 #   - Docker installed and running

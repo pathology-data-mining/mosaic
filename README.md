@@ -76,6 +76,26 @@ source mosaic-venv/bin/activate
 uv pip install git+https://github.com/kmboehm/paladin.git@main
 ```
 
+### Tesla P40 Environment
+
+Recent prebuilt PyTorch CUDA wheels no longer include `sm_61`, so Tesla P40 GPUs
+require a separate environment with source-built `torch` and `torchvision`.
+
+```bash
+make install-p40
+source mosaic-p40/bin/activate
+pytest tests/test_hardware.py -v
+```
+
+Prerequisites:
+- `python3.11`
+- CUDA development toolkit at `/usr/local/cuda-12.4` or `CUDA_HOME` set explicitly
+- `git` and `cmake`
+
+The bootstrap script lives at `scripts/setup_mosaic_p40_env.sh` and builds
+`torch==2.5.1` plus `torchvision==0.20.1` from source with
+`TORCH_CUDA_ARCH_LIST=6.1`.
+
 ## Deploying to Hugging Face Spaces
 
 This repository is configured for deployment on Hugging Face Spaces with Zero GPU support.
@@ -141,6 +161,9 @@ To process a batch of WSIs, use:
 ```bash
 mosaic --slide-csv /path/to/your/wsi_list.csv --output-dir /path/to/output/directory
 ```
+
+Use the native `mosaic` command unless you specifically need Docker. For Docker-based
+execution, use `./mosaic-docker` and see [README-docker.md](README-docker.md).
 
 #### Complete CLI Options Reference
 
@@ -452,6 +475,11 @@ When processing multiple slides using the `--slide-csv` option, the CSV file mus
 - **Slide**: Full path to the WSI file (e.g., `/path/to/slide.svs`)
 - **Site Type**: Either `Primary` or `Metastatic`
 
+### Conditionally Required Columns
+
+- **Sex**: Required when **Cancer Subtype** is `Unknown`, because Aeon needs it
+  to infer the cancer subtype. Must be `Male` or `Female` in that case.
+
 ### Optional Columns
 
 - **Cancer Subtype**: OncoTree code for the cancer subtype (e.g., `LUAD`, `BRCA`, `COAD`). Use `Unknown` to let Aeon infer the cancer type.
@@ -461,7 +489,7 @@ When processing multiple slides using the `--slide-csv` option, the CSV file mus
   - `HR+/HER2-`
   - `HR-/HER2+`
   - `HR-/HER2-`
-- **Sex**: Patient sex for improved Aeon cancer subtype inference. One of `Male`, `Female`, or `Unknown`.
+- **Sex**: Patient sex for improved Aeon cancer subtype inference. One of `Male`, `Female`, or blank when **Cancer Subtype** is known.
 - **Tissue Site**: Primary tissue site for improved Aeon cancer subtype inference. Examples include:
   - `Lung`
   - `Breast`

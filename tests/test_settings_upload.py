@@ -308,7 +308,10 @@ class TestCsvFormatEdgeCases:
 
         try:
             # Should fail because columns won't be parsed correctly
-            with pytest.raises(ValueError, match="Missing required column"):
+            with pytest.raises(
+                ValueError,
+                match=r"Missing required column\(s\) in CSV file: .*Slide.*Site Type",
+            ):
                 load_settings(temp_path)
         finally:
             Path(temp_path).unlink(missing_ok=True)
@@ -442,7 +445,10 @@ class TestErrorRecoveryScenarios:
 
         try:
             # First load should fail
-            with pytest.raises(ValueError, match="Missing required column"):
+            with pytest.raises(
+                ValueError,
+                match=r"Missing required column\(s\) in CSV file: .*Slide.*Site Type",
+            ):
                 load_settings(invalid_path)
 
             # Second load should succeed

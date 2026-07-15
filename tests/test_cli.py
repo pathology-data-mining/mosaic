@@ -12,6 +12,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock, call
 from pathlib import Path
 import pandas as pd
+from argparse import Namespace
 
 
 class TestArgumentParsing:
@@ -160,6 +161,50 @@ class TestSingleSlideMode:
         # Verify save was called for mask
         assert mock_save.called
 
+    @patch("mosaic.gradio_app.download_and_process_models")
+    def test_known_cancer_subtype_does_not_require_sex(self, mock_download, cli_args_single):
+        """Known subtype should bypass the single-slide sex requirement."""
+        args = Namespace(**vars(cli_args_single))
+        args.sex = None
+        args.cancer_subtype = "Lung Adenocarcinoma (LUAD)"
+
+        mock_download.return_value = (
+            {"Unknown": "UNK", "Lung Adenocarcinoma (LUAD)": "LUAD"},
+            {"UNK": "Unknown", "LUAD": "Lung Adenocarcinoma (LUAD)"},
+            ["LUAD"],
+        )
+
+        with patch("mosaic.cli.runners.Path.mkdir"), patch(
+            "mosaic.cli.runners.analyze_slide", return_value=(None, None, None)
+        ) as mock_analyze:
+            with patch(
+                "mosaic.gradio_app.ArgumentParser.parse_args", return_value=args
+            ):
+                from mosaic.gradio_app import main
+
+                main()
+
+        assert mock_analyze.called
+
+    def test_unknown_cancer_subtype_requires_sex(self, cli_args_single):
+        """Unknown subtype should still require sex for single-slide Aeon."""
+        from mosaic.cli.runners import run_single_slide
+
+        args = Namespace(**vars(cli_args_single))
+        args.sex = None
+        args.cancer_subtype = "Unknown"
+
+        with pytest.raises(
+            ValueError,
+            match="Sex is required for single-slide processing when Cancer Subtype is Unknown",
+        ):
+            run_single_slide(
+                args,
+                {"Unknown": "UNK"},
+                [],
+                {"UNK": "Unknown"},
+            )
+
 
 class TestBatchCsvMode:
     """Test batch CSV processing mode."""
@@ -231,6 +276,73 @@ class TestBatchCsvMode:
 
         # cleanup should be called
         assert mock_cache.cleanup.called
+
+    def test_batch_allows_missing_sex_when_cancer_subtype_is_known(self, cli_args_batch):
+        """Batch CSV should accept missing sex for known subtype rows."""
+        from mosaic.cli.runners import run_batch
+
+        settings_df = pd.DataFrame(
+            {
+                "Slide": ["test.svs"],
+                "Site Type": ["Primary"],
+                "Sex": [""],
+                "Tissue Site": ["Unknown"],
+                "Cancer Subtype": ["Lung Adenocarcinoma (LUAD)"],
+                "Segmentation Config": ["Biopsy"],
+                "Sample ID": ["test"],
+            }
+        )
+
+        mock_cache = Mock()
+        mock_cache.cleanup = Mock()
+
+        with patch("mosaic.cli.runners.Path.mkdir"), patch(
+            "mosaic.cli.runners.load_settings", return_value=settings_df
+        ), patch(
+            "mosaic.cli.runners.normalize_settings", return_value=(settings_df, [])
+        ), patch(
+            "mosaic.cli.runners.load_all_models", return_value=mock_cache
+        ), patch(
+            "mosaic.cli.runners.analyze_slide", return_value=(None, None, None)
+        ):
+            run_batch(
+                cli_args_batch,
+                {"Unknown": "UNK", "Lung Adenocarcinoma (LUAD)": "LUAD"},
+                ["LUAD"],
+                {"UNK": "Unknown", "LUAD": "Lung Adenocarcinoma (LUAD)"},
+            )
+
+    def test_batch_requires_sex_when_cancer_subtype_is_unknown(self, cli_args_batch):
+        """Batch CSV should reject missing sex when Aeon inference is required."""
+        from mosaic.cli.runners import run_batch
+
+        settings_df = pd.DataFrame(
+            {
+                "Slide": ["test.svs"],
+                "Site Type": ["Primary"],
+                "Sex": [""],
+                "Tissue Site": ["Unknown"],
+                "Cancer Subtype": ["Unknown"],
+                "Segmentation Config": ["Biopsy"],
+                "Sample ID": ["test"],
+            }
+        )
+
+        with patch("mosaic.cli.runners.Path.mkdir"), patch(
+            "mosaic.cli.runners.load_settings", return_value=settings_df
+        ), patch(
+            "mosaic.cli.runners.normalize_settings", return_value=(settings_df, [])
+        ):
+            with pytest.raises(
+                ValueError,
+                match=r"Sex is required for slide 'test\.svs' when Cancer Subtype is Unknown",
+            ):
+                run_batch(
+                    cli_args_batch,
+                    {"Unknown": "UNK"},
+                    [],
+                    {"UNK": "Unknown"},
+                )
 
     @patch("mosaic.cli.runners.Path.mkdir")
     @patch("mosaic.cli.runners.load_all_models")
