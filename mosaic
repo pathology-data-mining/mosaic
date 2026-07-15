@@ -121,12 +121,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Remove duplicate volume mounts
-UNIQUE_MOUNTS=$(printf '%s\n' "${VOLUME_MOUNTS[@]}" | awk '!seen[$0]++')
+# Remove duplicate volume mounts while preserving each `-v host:container[:mode]` pair.
 VOLUME_ARGS=()
-while IFS= read -r mount; do
-  [[ -n "$mount" ]] && VOLUME_ARGS+=("$mount")
-done <<<"$UNIQUE_MOUNTS"
+declare -A SEEN_MOUNTS=()
+for ((i = 0; i < ${#VOLUME_MOUNTS[@]}; i += 2)); do
+  flag="${VOLUME_MOUNTS[i]}"
+  mount="${VOLUME_MOUNTS[i + 1]}"
+
+  if [[ "$flag" != "-v" || -z "$mount" ]]; then
+    die "Internal error while constructing Docker volume mounts."
+  fi
+
+  if [[ -z "${SEEN_MOUNTS[$mount]}" ]]; then
+    VOLUME_ARGS+=("$flag" "$mount")
+    SEEN_MOUNTS["$mount"]=1
+  fi
+done
 
 # Run the Docker container with the mosaic CLI
 # Override the entrypoint to run mosaic command instead of gradio_app
