@@ -270,6 +270,48 @@ If you already have test results and just want to verify them:
 uv run python scripts/verify_aeon_results.py
 ```
 
+## HF Space Health Check
+
+### hf_space_e2e.py
+
+End-to-end check of the deployed Space (https://raylim-mosaic.hf.space). It drives
+the real UI with Playwright and runs a full analysis on a public TCGA-OV slide
+(`TCGA-57-1582-01Z-00-DX1`, ~90 MB, downloaded from GDC). It does not import
+`mosaic`, so it only needs Playwright:
+
+```bash
+pip install playwright && playwright install --with-deps chromium
+python scripts/hf_space_e2e.py --out-dir hf_e2e_out/   # or: make e2e-hf-space
+```
+
+| Stage | Checks |
+|-------|--------|
+| `runtime` | HF runtime API reports `RUNNING` (wakes a sleeping Space, waits up to 25 min) |
+| `ui_load` | Page loads, Analyze button visible |
+| `tcga_fetch` | "Fetch from TCGA" downloads the slide on the Space |
+| `download` | Slide downloaded locally from GDC (cached in `~/.cache/mosaic-hf-e2e`) |
+| `analysis` | Slide uploaded, analysis completes |
+| `results` | Aeon top 3 contains HGSOC, Paladin probabilities in [0, 1], no browser freeze |
+
+The analysis uploads the slide rather than using the TCGA path because
+TCGA results are cached by settings, so later runs would skip inference.
+
+Output: `report.json` (per-stage status, timings, failure category) plus a
+screenshot for each failed browser stage. Exit code 0 means all stages passed.
+`--restart-on-infra-error` factory-restarts the Space once (using `HF_TOKEN`)
+when it is down with an HF host error such as the containerd/NVIDIA mount failure.
+
+### hf_space_e2e_agent.sh
+
+Scheduled wrapper. It runs the check with `--restart-on-infra-error`, then a
+`claude -p` agent (`hf_space_e2e_agent_prompt.md`) reads the report, diagnoses
+any failure and files or updates a Jira issue labelled `mosaic-hf-e2e`. The
+agent can only read files, query the HF API and git log, and use four Jira
+tools. Schedule it from cron by submitting it with `sbatch` (the script header
+has an example entry). Because cron doesn't read `~/.bashrc`, put `PATH`,
+`JIRA_PROJECT`, optional `JIRA_ASSIGNEE`, `HF_TOKEN` (write access to `raylim/mosaic`) and any `JIRA_*`
+credentials in `~/.config/mosaic-hf-e2e.env`, which the script sources.
+
 ## Test Samples Format
 
 The test samples JSON file should have this format:
