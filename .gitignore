@@ -38,3 +38,7 @@ output/
 md/
 models--*/
 aggregated_auroc*.csv
+
+# HF Space e2e health-check runs
+hf_e2e_out/
+logs/

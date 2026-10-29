@@ -758,10 +758,12 @@ Peak GPU memory: 14.10 GB
 ============================================================
 ```
 
-For automated daily reports, add a cron entry:
+For automated daily reports, add a cron entry. Set `SMTP_FROM` to a real
+address that is allowed to post to the recipient; mailing lists often silently
+drop mail from the placeholder default sender (`mosaic-telemetry@noreply.local`):
 
 ```
-0 8 * * * python /app/scripts/telemetry_report.py /data/telemetry --daily --email team@example.com --skip-empty
+0 8 * * * SMTP_FROM=you@example.com python /app/scripts/telemetry_report.py /data/telemetry --daily --email team@example.com --skip-empty
 ```
 
 ### Transparency
