@@ -162,7 +162,9 @@ class TestSingleSlideMode:
         assert mock_save.called
 
     @patch("mosaic.gradio_app.download_and_process_models")
-    def test_known_cancer_subtype_does_not_require_sex(self, mock_download, cli_args_single):
+    def test_known_cancer_subtype_does_not_require_sex(
+        self, mock_download, cli_args_single
+    ):
         """Known subtype should bypass the single-slide sex requirement."""
         args = Namespace(**vars(cli_args_single))
         args.sex = None
@@ -174,9 +176,12 @@ class TestSingleSlideMode:
             ["LUAD"],
         )
 
-        with patch("mosaic.cli.runners.Path.mkdir"), patch(
-            "mosaic.cli.runners.analyze_slide", return_value=(None, None, None)
-        ) as mock_analyze:
+        with (
+            patch("mosaic.cli.runners.Path.mkdir"),
+            patch(
+                "mosaic.cli.runners.analyze_slide", return_value=(None, None, None)
+            ) as mock_analyze,
+        ):
             with patch(
                 "mosaic.gradio_app.ArgumentParser.parse_args", return_value=args
             ):
@@ -277,7 +282,9 @@ class TestBatchCsvMode:
         # cleanup should be called
         assert mock_cache.cleanup.called
 
-    def test_batch_allows_missing_sex_when_cancer_subtype_is_known(self, cli_args_batch):
+    def test_batch_allows_missing_sex_when_cancer_subtype_is_known(
+        self, cli_args_batch
+    ):
         """Batch CSV should accept missing sex for known subtype rows."""
         from mosaic.cli.runners import run_batch
 
@@ -296,14 +303,14 @@ class TestBatchCsvMode:
         mock_cache = Mock()
         mock_cache.cleanup = Mock()
 
-        with patch("mosaic.cli.runners.Path.mkdir"), patch(
-            "mosaic.cli.runners.load_settings", return_value=settings_df
-        ), patch(
-            "mosaic.cli.runners.normalize_settings", return_value=(settings_df, [])
-        ), patch(
-            "mosaic.cli.runners.load_all_models", return_value=mock_cache
-        ), patch(
-            "mosaic.cli.runners.analyze_slide", return_value=(None, None, None)
+        with (
+            patch("mosaic.cli.runners.Path.mkdir"),
+            patch("mosaic.cli.runners.load_settings", return_value=settings_df),
+            patch(
+                "mosaic.cli.runners.normalize_settings", return_value=(settings_df, [])
+            ),
+            patch("mosaic.cli.runners.load_all_models", return_value=mock_cache),
+            patch("mosaic.cli.runners.analyze_slide", return_value=(None, None, None)),
         ):
             run_batch(
                 cli_args_batch,
@@ -328,10 +335,12 @@ class TestBatchCsvMode:
             }
         )
 
-        with patch("mosaic.cli.runners.Path.mkdir"), patch(
-            "mosaic.cli.runners.load_settings", return_value=settings_df
-        ), patch(
-            "mosaic.cli.runners.normalize_settings", return_value=(settings_df, [])
+        with (
+            patch("mosaic.cli.runners.Path.mkdir"),
+            patch("mosaic.cli.runners.load_settings", return_value=settings_df),
+            patch(
+                "mosaic.cli.runners.normalize_settings", return_value=(settings_df, [])
+            ),
         ):
             with pytest.raises(
                 ValueError,
