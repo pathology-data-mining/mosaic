@@ -19,8 +19,9 @@ Usage:
     # Detailed report with per-session breakdown
     python scripts/telemetry_report.py /path/to/telemetry --long
 
-    # Email output (pipe to sendmail or use with cron)
-    python scripts/telemetry_report.py /path/to/telemetry --daily --email user@example.com
+    # Email output (pipe to sendmail or use with cron). Set SMTP_FROM to a real
+    # address: mailing lists often drop mail from the placeholder default.
+    SMTP_FROM=you@example.com python scripts/telemetry_report.py /path/to/telemetry --daily --email user@example.com
 
     # Skip email if report is empty (useful for automated daily reports)
     python scripts/telemetry_report.py /path/to/telemetry --daily --email user@example.com --skip-empty
@@ -38,7 +39,7 @@ Usage:
     python scripts/telemetry_report.py /path/to/telemetry --hf-repo PDM-Group/mosaic-telemetry
 
 Example cron entry (daily report at 8am, skip if empty):
-    0 8 * * * python /app/scripts/telemetry_report.py /data/telemetry --daily --email team@example.com --skip-empty
+    0 8 * * * SMTP_FROM=you@example.com python /app/scripts/telemetry_report.py /data/telemetry --daily --email team@example.com --skip-empty
 """
 
 import argparse
@@ -825,6 +826,10 @@ def generate_html_report(telemetry_dir: Path, date: Optional[str] = None, long: 
     return "\n".join(html)
 
 
+# Placeholder sender used when SMTP_FROM is unset.
+DEFAULT_SMTP_FROM = "mosaic-telemetry@noreply.local"
+
+
 def send_email(report: str, to_email: str, subject: str, format: str = "text"):
     """Send report via email using SMTP.
 
@@ -834,7 +839,15 @@ def send_email(report: str, to_email: str, subject: str, format: str = "text"):
         subject: Email subject
         format: "text" or "html"
     """
-    from_email = os.environ.get("SMTP_FROM", "mosaic-telemetry@noreply.local")
+    from_email = os.environ.get("SMTP_FROM")
+    if not from_email:
+        from_email = DEFAULT_SMTP_FROM
+        print(
+            f"Warning: SMTP_FROM is not set; sending as {from_email}. Mailing "
+            "lists often silently drop mail from this placeholder address; set "
+            "SMTP_FROM to a real address that may post to the recipient.",
+            file=sys.stderr,
+        )
     smtp_host = os.environ.get("SMTP_HOST", "localhost")
     smtp_port_env = os.environ.get("SMTP_PORT", "25")
     try:

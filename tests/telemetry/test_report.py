@@ -528,7 +528,7 @@ class TestSendEmail:
             "SMTP_FROM": "noreply@example.com",
         },
     )
-    def test_send_email_custom_config(self, mock_smtp):
+    def test_send_email_custom_config(self, mock_smtp, capsys):
         """Test sending email with custom SMTP configuration."""
         mock_server = MagicMock()
         mock_smtp.return_value.__enter__.return_value = mock_server
@@ -537,6 +537,21 @@ class TestSendEmail:
         send_email(report, "test@example.com", "Test Subject")
 
         mock_smtp.assert_called_once_with("mail.example.com", 587)
+        sender = mock_server.sendmail.call_args[0][0]
+        assert sender == "noreply@example.com"
+        assert "SMTP_FROM" not in capsys.readouterr().err
+
+    @patch("telemetry_report.smtplib.SMTP")
+    def test_send_email_warns_without_smtp_from(self, mock_smtp, monkeypatch, capsys):
+        """The placeholder sender is often dropped by list servers; warn about it."""
+        monkeypatch.delenv("SMTP_FROM", raising=False)
+        mock_server = MagicMock()
+        mock_smtp.return_value.__enter__.return_value = mock_server
+
+        send_email("Test report", "test@example.com", "Test Subject")
+
+        mock_server.sendmail.assert_called_once()
+        assert "SMTP_FROM" in capsys.readouterr().err
 
 
 class TestIntegration:

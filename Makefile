@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-coverage test-verbose lint format clean docker-build docker-run docker-run-cli docker-push docker-clean run-ui run-cli test-e2e test-e2e-headed test-e2e-slurm test-e2e-slurm-firefox
+.PHONY: help install install-dev test test-coverage test-verbose lint format clean docker-build docker-run docker-run-cli docker-push docker-clean run-ui run-cli test-e2e test-e2e-headed test-e2e-slurm test-e2e-slurm-firefox e2e-hf-space
 
 # Default target
 .DEFAULT_GOAL := help
@@ -64,6 +64,9 @@ test-e2e-slurm: ## Submit end-to-end browser test to SLURM (A100 GPU node)
 test-e2e-slurm-firefox: ## Submit end-to-end browser test to SLURM using Firefox
 	mkdir -p logs
 	sbatch --export=ALL,BROWSER=firefox scripts/submit_e2e_test.sh
+
+e2e-hf-space: ## Full e2e check of the deployed HF Space (needs only playwright)
+	python scripts/hf_space_e2e.py --out-dir hf_e2e_out
 
 test-watch: ## Run tests in watch mode (requires pytest-watch)
 	$(PYTEST) tests/ --watch
