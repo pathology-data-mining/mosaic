@@ -244,6 +244,32 @@ class TestRunInferenceFromFeatures:
         assert aeon_results is not None
         assert paladin_results is not None
 
+    def test_missing_sex_rejected_when_aeon_needed(self):
+        """sex_idx=None must still be rejected (sex_idx=0 is Male, not missing)."""
+        from mosaic.analysis import run_inference_from_features
+
+        features = np.random.rand(20, 768).astype(np.float32)
+        model_cache = _make_model_cache()
+        model_cache.device = "cpu"
+
+        with (
+            patch("mosaic.analysis._run_aeon_inference_with_model") as mock_aeon,
+            patch("mosaic.analysis._run_paladin_inference_with_models"),
+            pytest.raises(ValueError, match="Sex is required"),
+        ):
+            run_inference_from_features(
+                features=features,
+                site_type="Primary",
+                sex_idx=None,
+                tissue_site_idx=1,
+                cancer_subtype="Unknown",
+                cancer_subtype_name_map={},
+                model_cache=model_cache,
+                num_workers=1,
+                progress=lambda frac=None, desc=None: None,
+            )
+        mock_aeon.assert_not_called()
+
     def test_uses_known_cancer_subtype(self):
         from mosaic.analysis import run_inference_from_features
 

@@ -106,8 +106,7 @@ def load_settings(slide_csv_path: str) -> pd.DataFrame:
     missing_columns = [c for c in required if c not in settings_df.columns]
     if missing_columns:
         raise ValueError(
-            "Missing required column(s) in CSV file: "
-            + ", ".join(missing_columns)
+            "Missing required column(s) in CSV file: " + ", ".join(missing_columns)
         )
     settings_df = settings_df[SETTINGS_COLUMNS]
     # Backfill blank Sample IDs with the slide filename stem

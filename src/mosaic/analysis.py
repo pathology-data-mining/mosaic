@@ -314,8 +314,12 @@ def _run_paladin_inference(
 
 
 def _validate_aeon_metadata(cancer_subtype, sex):
-    """Ensure required metadata is present when Aeon inference is needed."""
-    if cancer_subtype in ["Unknown", None, ""] and not sex:
+    """Ensure required metadata is present when Aeon inference is needed.
+
+    ``sex`` may be the raw value ("Male"/"Female") or its encoded index, where
+    Male is 0, so only None/"" count as missing.
+    """
+    if cancer_subtype in ["Unknown", None, ""] and sex in [None, ""]:
         raise ValueError(
             "Sex is required when Cancer Subtype is Unknown "
             "(Aeon inference required). Please provide Male or Female."

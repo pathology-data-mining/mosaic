@@ -19,7 +19,9 @@ def _cancer_subtype_requires_aeon(cancer_subtype: str | None) -> bool:
     return cancer_subtype in ["Unknown", None, ""]
 
 
-def _validate_sex_for_aeon(cancer_subtype: str | None, sex: str | None, scope: str) -> None:
+def _validate_sex_for_aeon(
+    cancer_subtype: str | None, sex: str | None, scope: str
+) -> None:
     if _cancer_subtype_requires_aeon(cancer_subtype) and not sex:
         raise ValueError(
             f"Sex is required for {scope} when Cancer Subtype is Unknown "
@@ -47,9 +49,7 @@ def run_single_slide(
     """
     if not args.output_dir:
         raise ValueError("Please provide --output-dir to save results")
-    _validate_sex_for_aeon(
-        args.cancer_subtype, args.sex, "single-slide processing"
-    )
+    _validate_sex_for_aeon(args.cancer_subtype, args.sex, "single-slide processing")
 
     settings_df = pd.DataFrame(
         [
