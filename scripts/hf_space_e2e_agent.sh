@@ -9,6 +9,11 @@
 # Bash call is allowed to run. The agent's instructions are in
 # scripts/hf_space_e2e_agent_prompt.md.
 #
+# The check runs in an Apptainer image (scripts/hf_space_e2e.def: the official
+# Playwright image plus the Python package), so it does not depend on the
+# node's system libraries; several nodes lack the ones headless Chromium
+# needs. The image is built once to $E2E_IMAGE (needs `--fakeroot` builds).
+#
 # Schedule from cron by submitting it as a SLURM job (scrontab may be
 # disabled), e.g. every 3 days at 09:00 local time:
 #
@@ -17,7 +22,7 @@
 #
 # cron does not read ~/.bashrc, so the script first sources
 # $MOSAIC_E2E_ENV (default ~/.config/mosaic-hf-e2e.env) if it exists. Put
-# PATH additions (claude, a python3 with playwright) and credentials there.
+# PATH additions (claude, apptainer) and credentials there.
 #
 # Required environment:
 #   JIRA_PROJECT  Jira project key for failure tickets
@@ -26,6 +31,8 @@
 #                 read from ~/.cache/huggingface/token if unset
 #   JIRA_*        Credentials for the mcp-atlassian server, if it reads them
 #                 from the environment
+#   E2E_IMAGE     Apptainer image to run the check in (optional; default
+#                 ~/.cache/mosaic-hf-e2e/mosaic-hf-e2e-playwright-1.58.0.sif)
 #
 # Exits non-zero when the Space check fails, so `--mail-type=FAIL` emails you.
 
@@ -35,9 +42,6 @@
 #SBATCH --mem=8G
 #SBATCH --time=03:00:00
 #SBATCH --output=logs/hf_e2e_%j.out
-# These nodes lack the system libraries headless Chromium needs
-# (libatk-1.0, libatk-bridge-2.0, ...); Playwright fails to launch there.
-#SBATCH --exclude=pllimskhpc[1-3],tllihpcgpu[3-4]
 
 set -euo pipefail
 
@@ -63,11 +67,26 @@ export RUN_DIR JIRA_PROJECT HF_TOKEN JIRA_ASSIGNEE="${JIRA_ASSIGNEE:-}"  # HF_TO
 git fetch --quiet origin main 2>/dev/null || true
 git fetch --quiet hf main 2>/dev/null || true
 
+# Bump the file name when scripts/hf_space_e2e.def changes so a fresh image is built.
+E2E_IMAGE="${E2E_IMAGE:-$HOME/.cache/mosaic-hf-e2e/mosaic-hf-e2e-playwright-1.58.0.sif}"
+if [[ ! -f "$E2E_IMAGE" ]]; then
+    echo "Building $E2E_IMAGE from scripts/hf_space_e2e.def"
+    mkdir -p "$(dirname "$E2E_IMAGE")"
+    APPTAINER_CACHEDIR="$(mktemp -d)"
+    export APPTAINER_CACHEDIR
+    # Build to a temp name so a concurrent or interrupted build never leaves a
+    # partial image in place.
+    apptainer build --fakeroot "$E2E_IMAGE.$$.tmp" scripts/hf_space_e2e.def
+    mv "$E2E_IMAGE.$$.tmp" "$E2E_IMAGE"
+    rm -rf "$APPTAINER_CACHEDIR"
+fi
+
 echo "Mosaic HF Space e2e — run dir: $RUN_DIR"
 E2E_STATUS=0
 # E2E_EXTRA_ARGS: extra hf_space_e2e.py flags, e.g. to test the failure path.
 # shellcheck disable=SC2086
-python3 scripts/hf_space_e2e.py --out-dir "$RUN_DIR" --restart-on-infra-error \
+apptainer exec --bind "$REPO_DIR" --pwd "$REPO_DIR" "$E2E_IMAGE" \
+    python3 scripts/hf_space_e2e.py --out-dir "$RUN_DIR" --restart-on-infra-error \
     ${E2E_EXTRA_ARGS:-} 2>&1 | tee "$RUN_DIR/e2e.log" || E2E_STATUS=$?
 if [[ ! -f "$RUN_DIR/report.json" ]]; then
     echo "hf_space_e2e.py produced no report.json (exit $E2E_STATUS)" >&2

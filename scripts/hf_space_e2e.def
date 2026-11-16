@@ -1,0 +1,19 @@
+# Apptainer image for scripts/hf_space_e2e.py.
+#
+# The official Playwright image ships the browsers and every system library
+# they need, but not the Python package, so add it here. Keep the two
+# versions in step.
+#
+#   apptainer build --fakeroot mosaic-hf-e2e.sif scripts/hf_space_e2e.def
+
+Bootstrap: docker
+From: mcr.microsoft.com/playwright/python:v1.58.0-noble
+
+%post
+    apt-get update
+    apt-get install -y --no-install-recommends python3-pip
+    pip3 install --no-cache-dir --break-system-packages playwright==1.58.0
+    rm -rf /var/lib/apt/lists/*
+
+%test
+    python3 -c "from playwright.sync_api import sync_playwright"

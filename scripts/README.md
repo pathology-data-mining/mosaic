@@ -312,6 +312,15 @@ has an example entry). Because cron doesn't read `~/.bashrc`, put `PATH`,
 `JIRA_PROJECT`, optional `JIRA_ASSIGNEE`, `HF_TOKEN` (write access to `raylim/mosaic`) and any `JIRA_*`
 credentials in `~/.config/mosaic-hf-e2e.env`, which the script sources.
 
+The wrapper runs the check inside an Apptainer image built from
+`hf_space_e2e.def`: the official Playwright image (browsers plus every system
+library they need) with the Playwright Python package added. That makes it
+independent of the node's own libraries; several cluster nodes lack the ones
+headless Chromium needs. The image is built once to
+`~/.cache/mosaic-hf-e2e/` (this needs `apptainer build --fakeroot`). When you
+change `hf_space_e2e.def`, bump the image file name in the wrapper so a new
+image is built.
+
 ## Test Samples Format
 
 The test samples JSON file should have this format:
