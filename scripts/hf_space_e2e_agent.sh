@@ -35,6 +35,9 @@
 #SBATCH --mem=8G
 #SBATCH --time=03:00:00
 #SBATCH --output=logs/hf_e2e_%j.out
+# These nodes lack the system libraries headless Chromium needs
+# (libatk-1.0, libatk-bridge-2.0, ...); Playwright fails to launch there.
+#SBATCH --exclude=pllimskhpc[1-3],tllihpcgpu[3-4]
 
 set -euo pipefail
 
